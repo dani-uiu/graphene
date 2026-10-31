@@ -1,0 +1,8 @@
+#!graphene 0.1
+@intent "Two inputs claim the same node name"
+
+in x: u64 -> A
+in y: u64 -> A
+
+A -> f(x + y) -> B
+B -> out z: u64

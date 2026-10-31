@@ -1,0 +1,12 @@
+#!graphene 0.1
+@intent "A value from the async path reaches out"
+
+extern fx~ LogAsync(event: str)
+
+in x: u64 -> A
+
+A -> fx~ LogAsync(event: "seen") -> sink S1
+A -> f(x + S1) -> B
+B -> out y: u64
+
+assert indep(S1, out)

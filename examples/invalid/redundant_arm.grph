@@ -1,0 +1,9 @@
+#!graphene 0.1
+@intent "An arm after the wildcard can never match"
+
+in tier: str -> A
+
+A -> match tier { "gold" => G, _ => S, "silver" => S }
+G -> f(1.00) -> P
+S -> f(2.00) -> P
+P -> out price: dec

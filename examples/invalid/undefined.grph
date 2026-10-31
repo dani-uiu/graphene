@@ -1,0 +1,7 @@
+#!graphene 0.1
+@intent "References a name that was never defined"
+
+in x: u64 -> A
+
+A -> f(x + y) -> B
+B -> out z: u64

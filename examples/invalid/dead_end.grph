@@ -1,0 +1,8 @@
+#!graphene 0.1
+@intent "UNUSED never reaches out, fail, or a sink"
+
+in x: u64 -> A
+
+A -> f(x + 1) -> B
+A -> f(x * 2) -> UNUSED
+B -> out y: u64

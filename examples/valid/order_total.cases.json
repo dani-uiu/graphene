@@ -1,0 +1,11 @@
+[
+  {
+    "name": "tax and shipping joined into total",
+    "inputs": { "subtotal": "1000.00", "weight_kg": "2.00" },
+    "mock": null,
+    "expect": {
+      "result": { "ok": { "total": "1260.00" } },
+      "effects": []
+    }
+  }
+]

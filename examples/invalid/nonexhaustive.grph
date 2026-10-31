@@ -1,0 +1,9 @@
+#!graphene 0.1
+@intent "String match without a wildcard arm"
+
+in tier: str -> A
+
+A -> match tier { "gold" => G, "silver" => S }
+G -> f(1.00) -> P
+S -> f(2.00) -> P
+P -> out price: dec

@@ -1,0 +1,12 @@
+#!graphene 0.1
+@intent "Compute tax and shipping in parallel, then join into a total"
+
+in subtotal: dec -> S
+in weight_kg: dec -> W
+
+S -> f(subtotal * 0.16) -> TAX
+W -> f(weight_kg * 25.00 + 50.00) -> SHIP
+(S, TAX, SHIP) -> f(subtotal + TAX + SHIP) -> TOTAL
+TOTAL -> out total: dec
+
+assert total

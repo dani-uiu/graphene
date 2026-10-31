@@ -1,0 +1,155 @@
+(* ===================================================================== *)
+(*  Graphene v0.1 — grammar                                               *)
+(*                                                                        *)
+(*  Notation: ISO 14977-style EBNF.                                       *)
+(*    { x }  zero or more     [ x ]  optional     ( a | b )  choice       *)
+(*  Terminals in double quotes are written in their canonical ASCII      *)
+(*  form. The Unicode aliases in section L4 are accepted as the same     *)
+(*  tokens by the lexer.                                                  *)
+(*                                                                        *)
+(*  The grammar is deliberately a little more permissive than the        *)
+(*  language. Rules marked "checked:" are rejected by the checker, not   *)
+(*  the parser, so the user gets a precise diagnostic with a fix hint    *)
+(*  instead of a generic syntax error.                                    *)
+(* ===================================================================== *)
+
+
+(* --------------------------------------------------------------------- *)
+(*  L. LEXICAL STRUCTURE                                                  *)
+(* --------------------------------------------------------------------- *)
+
+(* L1. Lines. One statement per line. Newline is a token. Spaces and     *)
+(*     tabs separate tokens and are otherwise ignored. "\r\n" and "\n"   *)
+(*     are both accepted as NL.                                           *)
+
+NL          = [ "\r" ] , "\n" ;
+COMMENT     = "//" , { any character except NL } ;
+
+(* L2. Header. Only valid as the very first line of the file. "#" may    *)
+(*     not appear anywhere else (P005).                                   *)
+
+HEADER      = "#!graphene" , " " , VERSION ;
+VERSION     = DIGITS , "." , DIGITS ;           (* only "0.1" accepted: P003 *)
+
+(* L3. Atoms.                                                             *)
+
+IDENT       = ( LETTER | "_" ) , { LETTER | DIGIT | "_" } ;   (* not a reserved word *)
+INT         = DIGITS ;                          (* must fit in u64: P004 *)
+DECIMAL     = DIGITS , "." , DIGITS ;           (* exact; at most 28 significant digits: P004 *)
+STRING      = '"' , { STRCHAR | '\"' | '\\' } , '"' ;   (* any other escape: P002 *)
+STRCHAR     = any character except '"', '\', NL ;
+LETTER      = "A".."Z" | "a".."z" ;
+DIGIT       = "0".."9" ;
+DIGITS      = DIGIT , { DIGIT } ;
+
+(* L4. Reserved words (cannot be used as identifiers):                   *)
+(*       in out fail sink extern fx fx~ f match assert err true false    *)
+(*                                                                        *)
+(*     Contextual words (special only right after "assert", ordinary     *)
+(*     identifiers everywhere else, e.g. "out total: dec" is legal):     *)
+(*       total indep                                                      *)
+(*                                                                        *)
+(*     Unicode aliases (lexer maps them to the ASCII token):             *)
+(*       ➔ (U+2794)  ->        ⚙ (U+2699)  fx       ⊗ (U+2297)  fx~       *)
+(*       𝑓 (U+1D453) f         ?           match    × (U+00D7)  *         *)
+(*       ⫫ (U+2AEB)  indep                                                *)
+(*                                                                        *)
+(*     Maximal munch: "fx~" before "fx", "->" before "-", "||" before    *)
+(*     "|", "==" "!=" "<=" ">=" "=>" before their one-char prefixes.      *)
+
+
+(* --------------------------------------------------------------------- *)
+(*  S. STATEMENTS                                                         *)
+(* --------------------------------------------------------------------- *)
+
+program     = HEADER , NL , { line } , [ stmt ] , [ COMMENT ] ;   (* final NL optional *)
+line        = [ stmt ] , [ COMMENT ] , NL ;
+
+stmt        = meta
+            | extern_decl
+            | input
+            | assertion
+            | flow
+            | match_stmt
+            | output ;
+
+(* Dispatch is LL(2)/LL(3): "@", "extern", "in", "assert", "(" decide    *)
+(* directly; otherwise IDENT "->" then the next token decides:           *)
+(*   f / fx / fx~ -> flow      match -> match_stmt      out / fail -> output *)
+
+meta        = "@intent" , STRING ;
+
+extern_decl = "extern" , ( "fx" | "fx~" ) , IDENT ,
+              "(" , [ params ] , ")" ,
+              [ "->" , type ] ,
+              [ "!" , IDENT , { "|" , IDENT } ] ;
+              (* checked (G003): "fx"  must declare a return type.        *)
+              (* checked (G003): "fx~" must declare neither a return type *)
+              (*                 nor errors.                              *)
+              (* checked (G013): extern names and error names within one  *)
+              (*                 declaration are unique.                  *)
+
+input       = "in" , IDENT , ":" , type , "->" , IDENT ;
+              (* first IDENT  = input name: the value, used in expressions *)
+              (* second IDENT = input node: the graph handle, used as a   *)
+              (*                flow source; not usable in expressions    *)
+              (* checked (G003): input types are scalar (no records).     *)
+
+flow        = source , "->" , op , "->" , target , [ err_edge ] ;
+source      = IDENT
+            | "(" , IDENT , "," , IDENT , { "," , IDENT } , [ "," ] , ")" ;   (* join: 2+ members *)
+op          = "f" , "(" , expr , ")"
+            | "fx" , IDENT , "(" , [ args ] , ")"
+            | "fx~" , IDENT , "(" , [ args ] , ")" ;
+target      = IDENT , [ ":" , type ]
+            | "sink" , IDENT ;
+err_edge    = "|" , "err" , "->" , IDENT ;
+              (* checked (G005): present iff op is "fx" with declared errors *)
+              (* checked (G010): "fx~" target must be "sink"; "sink" only *)
+              (*                 after "fx~".                             *)
+
+match_stmt  = IDENT , "->" , "match" , expr , "{" , arm , { "," , arm } , [ "," ] , "}" ;
+arm         = ( literal | "_" ) , "=>" , IDENT ;
+              (* checked (G004): exhaustive.                               *)
+              (* checked (G014): no duplicate literal, nothing after "_".  *)
+
+output      = IDENT , "->" , ( "out" , IDENT , ":" , type
+                             | "fail" , [ IDENT ] ) ;
+
+assertion   = "assert" , ( "total"
+                         | "indep" , "(" , IDENT , "," , "out" , ")" ) ;
+
+
+(* --------------------------------------------------------------------- *)
+(*  T. TYPES                                                              *)
+(* --------------------------------------------------------------------- *)
+
+type        = "u64" | "i64" | "dec" | "bool" | "str"
+            | "{" , field_ty , { "," , field_ty } , [ "," ] , "}" ;
+field_ty    = IDENT , ":" , type ;
+              (* u64 i64 dec bool str are matched as IDENT text in type   *)
+              (* position, so they stay usable as field names.            *)
+              (* checked (G013): field names unique within a record.      *)
+
+params      = IDENT , ":" , type , { "," , IDENT , ":" , type } , [ "," ] ;
+args        = IDENT , ":" , expr , { "," , IDENT , ":" , expr } , [ "," ] ;
+              (* checked (G003): args name exactly the declared params,   *)
+              (*                 any order, each once, matching types.    *)
+
+
+(* --------------------------------------------------------------------- *)
+(*  E. EXPRESSIONS  (lowest to highest precedence)                        *)
+(* --------------------------------------------------------------------- *)
+
+expr        = or_expr ;
+or_expr     = and_expr , { "||" , and_expr } ;                 (* left-assoc *)
+and_expr    = cmp_expr , { "&&" , cmp_expr } ;                 (* left-assoc *)
+cmp_expr    = sum , [ ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) , sum ] ;  (* non-assoc *)
+sum         = prod , { ( "+" | "-" ) , prod } ;                (* left-assoc *)
+prod        = unary , { ( "*" | "/" ) , unary } ;              (* left-assoc *)
+unary       = [ "!" | "-" ] , postfix ;                        (* at most one prefix *)
+postfix     = atom , { "." , IDENT } ;
+atom        = literal | IDENT | "(" , expr , ")" ;
+literal     = INT | DECIMAL | STRING | "true" | "false" ;
+              (* checked (G012): the right operand of "/" must be a bare  *)
+              (*                 non-zero INT or DECIMAL literal.          *)

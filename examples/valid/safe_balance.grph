@@ -1,0 +1,18 @@
+#!graphene 0.1
+@intent "Read a balance, treat a failed lookup as zero, fail when below the minimum"
+
+extern fx DbFetch(table: str, key: u64) -> {role: str, bal: dec} ! NotFound | DbDown
+
+in usr_id: u64 -> A
+
+A -> fx DbFetch(table: "usr", key: usr_id) -> B | err -> E
+B -> f(B.bal) -> BAL
+E -> f(0.00) -> BAL    // recovery: ok/err of one effect are exclusive (D-008)
+
+BAL -> f(BAL >= 50.00) -> ENOUGH
+ENOUGH -> match ENOUGH { true => YES, false => NO }
+YES -> f(BAL) -> R
+R -> out balance: dec
+NO -> fail LowBalance
+
+assert total

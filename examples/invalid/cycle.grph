@@ -1,0 +1,9 @@
+#!graphene 0.1
+@intent "B and C feed each other"
+
+in x: u64 -> A
+
+A -> f(x + 1) -> B
+B -> f(B + 1) -> C
+C -> f(C * 2) -> B
+C -> out y: u64

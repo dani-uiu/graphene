@@ -1,0 +1,8 @@
+#!graphene 0.1
+@intent "Divides by a value that could be zero"
+
+in a: dec -> A
+in b: dec -> B
+
+(A, B) -> f(a / b) -> Q
+Q -> out q: dec

@@ -1,0 +1,12 @@
+{
+  "effects": {
+    "DbFetch": {
+      "cases": [
+        { "args": { "table": "usr", "key": 1 }, "ok": { "role": "prem",  "bal": "100.00" } },
+        { "args": { "table": "usr", "key": 2 }, "ok": { "role": "basic", "bal": "100.00" } },
+        { "args": { "table": "usr", "key": 3 }, "ok": { "role": "basic", "bal": "20.00" } }
+      ],
+      "fallback": { "err": "NotFound" }
+    }
+  }
+}

@@ -1,0 +1,40 @@
+[
+  {
+    "name": "premium user gets 20% off",
+    "inputs": { "usr_id": 1 },
+    "mock": "fixtures/users.json",
+    "expect": {
+      "result": { "ok": { "final_price": "80.00" } },
+      "effects": [
+        { "kind": "fx",  "effect": "DbFetch",  "args": { "table": "usr", "key": 1 },
+          "result": { "ok": { "role": "prem", "bal": "100.00" } } },
+        { "kind": "fx~", "effect": "LogAsync", "args": { "event": "chk", "role": "prem" } }
+      ]
+    }
+  },
+  {
+    "name": "basic user pays full price",
+    "inputs": { "usr_id": 2 },
+    "mock": "fixtures/users.json",
+    "expect": {
+      "result": { "ok": { "final_price": "100.00" } },
+      "effects": [
+        { "kind": "fx",  "effect": "DbFetch",  "args": { "table": "usr", "key": 2 },
+          "result": { "ok": { "role": "basic", "bal": "100.00" } } },
+        { "kind": "fx~", "effect": "LogAsync", "args": { "event": "chk", "role": "basic" } }
+      ]
+    }
+  },
+  {
+    "name": "unknown user fails with NotFound; B is never reached, so no LogAsync",
+    "inputs": { "usr_id": 999 },
+    "mock": "fixtures/users.json",
+    "expect": {
+      "result": { "err": "NotFound" },
+      "effects": [
+        { "kind": "fx", "effect": "DbFetch", "args": { "table": "usr", "key": 999 },
+          "result": { "err": "NotFound" } }
+      ]
+    }
+  }
+]

@@ -1,0 +1,11 @@
+#!graphene 0.1
+@intent "C1's branch uses a value computed only on C2's branch"
+
+in amount: dec -> A
+
+A -> f(amount > 100.00) -> BIG
+BIG -> match BIG { true => C1, false => C2 }
+C2 -> f(amount * 0.95) -> D2
+C1 -> f(D2 * 0.90) -> D
+D2 -> f(D2) -> D
+D -> out price: dec

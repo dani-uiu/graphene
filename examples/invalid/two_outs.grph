@@ -1,0 +1,9 @@
+#!graphene 0.1
+@intent "Two out statements"
+
+in x: u64 -> A
+
+A -> f(x + 1) -> B
+A -> f(x * 2) -> C
+B -> out b: u64
+C -> out c: u64

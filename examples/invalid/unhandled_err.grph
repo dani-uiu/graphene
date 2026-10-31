@@ -1,0 +1,12 @@
+#!graphene 0.1
+@intent "DbFetch can fail but the flow has no error edge"
+
+extern fx DbFetch(table: str, key: u64) -> {role: str, bal: dec} ! NotFound | DbDown
+
+in usr_id: u64 -> A
+
+A -> fx DbFetch(table: "usr", key: usr_id) -> B
+B -> f(B.bal) -> D
+D -> out bal: dec
+
+assert total

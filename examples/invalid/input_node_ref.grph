@@ -1,0 +1,7 @@
+#!graphene 0.1
+@intent "Uses the input node A instead of the input name x (D-003)"
+
+in x: u64 -> A
+
+A -> f(A + 1) -> B
+B -> out z: u64

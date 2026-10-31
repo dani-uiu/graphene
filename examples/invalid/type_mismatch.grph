@@ -1,0 +1,7 @@
+#!graphene 0.1
+@intent "Multiplies a u64 by a dec without a conversion"
+
+in qty: u64 -> A
+
+A -> f(qty * 0.50) -> B
+B -> out half: dec

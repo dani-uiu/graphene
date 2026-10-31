@@ -1,0 +1,11 @@
+#!graphene 0.1
+@intent "A join mixes a match arm with an unconditional node"
+
+in amount: dec -> A
+
+A -> f(amount > 100.00) -> BIG
+BIG -> match BIG { true => C1, false => C2 }
+A -> f(amount * 0.16) -> TAX
+(C1, TAX) -> f(amount * 0.90 + TAX) -> TOTAL
+C2 -> f(amount) -> TOTAL
+TOTAL -> out total: dec

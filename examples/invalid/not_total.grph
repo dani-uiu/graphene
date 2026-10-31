@@ -1,0 +1,14 @@
+#!graphene 0.1
+@intent "Non-positive amounts are audited but never produce a result"
+
+extern fx~ Audit(note: str)
+
+in amount: dec -> A
+
+A -> f(amount > 0.00) -> POS
+POS -> match POS { true => YES, false => NO }
+YES -> f(amount) -> R
+R -> out amount_out: dec
+NO -> fx~ Audit(note: "non-positive") -> sink S1
+
+assert total

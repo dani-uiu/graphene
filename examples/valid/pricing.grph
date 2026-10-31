@@ -1,0 +1,21 @@
+#!graphene 0.1
+@intent "Fetch user, apply premium discount, log check asynchronously"
+
+extern fx  DbFetch(table: str, key: u64) -> {role: str, bal: dec} ! NotFound | DbDown
+extern fx~ LogAsync(event: str, role: str)
+
+in usr_id: u64 -> A
+
+A  -> fx DbFetch(table: "usr", key: usr_id) -> B: {role: str, bal: dec} | err -> E1
+E1 -> fail
+
+B  -> match B.role { "prem" => C1, _ => C2 }
+B  -> fx~ LogAsync(event: "chk", role: B.role) -> sink S1
+
+C1 -> f(B.bal * 0.80) -> D
+C2 -> f(B.bal * 1.00) -> D
+
+D  -> out final_price: dec
+
+assert total
+assert indep(S1, out)

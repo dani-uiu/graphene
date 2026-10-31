@@ -1,0 +1,38 @@
+[
+  {
+    "name": "balance above minimum",
+    "inputs": { "usr_id": 1 },
+    "mock": "fixtures/users.json",
+    "expect": {
+      "result": { "ok": { "balance": "100.00" } },
+      "effects": [
+        { "kind": "fx", "effect": "DbFetch", "args": { "table": "usr", "key": 1 },
+          "result": { "ok": { "role": "prem", "bal": "100.00" } } }
+      ]
+    }
+  },
+  {
+    "name": "balance below minimum",
+    "inputs": { "usr_id": 3 },
+    "mock": "fixtures/users.json",
+    "expect": {
+      "result": { "err": "LowBalance" },
+      "effects": [
+        { "kind": "fx", "effect": "DbFetch", "args": { "table": "usr", "key": 3 },
+          "result": { "ok": { "role": "basic", "bal": "20.00" } } }
+      ]
+    }
+  },
+  {
+    "name": "missing user recovers to 0.00, then fails the minimum",
+    "inputs": { "usr_id": 999 },
+    "mock": "fixtures/users.json",
+    "expect": {
+      "result": { "err": "LowBalance" },
+      "effects": [
+        { "kind": "fx", "effect": "DbFetch", "args": { "table": "usr", "key": 999 },
+          "result": { "err": "NotFound" } }
+      ]
+    }
+  }
+]

@@ -1,0 +1,9 @@
+#!graphene 0.1
+@intent "D is written by two independent branches"
+
+in a: dec -> A
+in b: dec -> B
+
+A -> f(a * 2.00) -> D
+B -> f(b * 3.00) -> D
+D -> out d: dec
