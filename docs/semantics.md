@@ -1,6 +1,6 @@
-# Graphene v0.1 — Semantics
+# Graphene v0.2 — Semantics
 
-This document is normative. Where it is more precise than `graphene_prompt.md`, it wins; every such refinement is also listed in `decisions.md` with its rationale.
+This document is normative. Sections 1–5 describe v0.1; section 6 lists what changes under a `#!graphene 0.2` header. A `0.1` file is checked and run exactly as sections 1–5 say. Where it is more precise than `graphene_prompt.md`, it wins; every such refinement is also listed in `decisions.md` with its rationale.
 
 Syntax lives in `grammar.ebnf`. This file covers names, the graph, types, static checks, and execution.
 
@@ -306,3 +306,45 @@ pub trait EffectHost: Sync {
 ```
 
 `MockHost` loads a JSON fixture, described in `plan.md` §5. Its responses must be a pure function of `(effect, args)`. That is what makes the determinism guarantee hold.
+
+## 6. Version 0.2
+
+v0.2 is a strict superset of v0.1: changing a valid `0.1` file's header to `0.2` never changes what it means. Under a `0.1` header, every construct below is **P006** ("requires `#!graphene 0.2`"). Decisions D-029 to D-036 give the rationale.
+
+### 6.1 Inputs are in scope everywhere (D-029)
+
+- An expression may reference an **input name** from any op. Input names are exempt from the dominance rule (G009). Value nodes are not.
+- `in name: t` without `-> Node` declares a **parameter**. It gets an input vertex (so it is bound and typed like any input) but no name usable as a flow source. A parameter that no expression references is **G008** ("input `x` is never used").
+- **Order.** In the canonical order, the root and every input vertex come before every other vertex (ties among inputs by position). The parallel executor settles all inputs before it schedules anything else. A reference to an input can therefore never run ahead of its value.
+
+### 6.2 Record literals (D-030)
+
+- `{f1: e1, ..., fn: en}` has type `{f1: t1, ..., fn: tn}`. Duplicate fields are **G013**. Records are still not comparable and not valid scrutinees.
+- **Literal typing.** When the expected type of the whole literal is a record, each field's expression gets the matching field type as its hint. The expected type comes from a target annotation `-> T: {...}`, or from an enclosing record literal. Otherwise integer literals default to `u64` as before.
+- At runtime the literal builds a `Value::Record`. Output rescaling of `dec` fields (§5.5) applies at any depth.
+
+### 6.3 Error edges per variant (D-031, D-032)
+
+- A sync flow may carry several error edges, in order: `| err V -> X` (named) and at most one catch-all `| err -> X`, which must come last.
+- For an effect declaring `V1 | … | Vn`, each variant is **covered** by its named edge if there is one, otherwise by the catch-all.
+  - An uncovered variant is **G005**. The message lists the uncovered variants.
+  - A named variant that the effect does not declare is **G002**.
+  - A variant named twice, a catch-all that covers nothing, or a catch-all that is not last is **G014**.
+- **Guards.** A sync effect with declared errors is a decision with one outcome per edge: outcome 0 is `ok`, and outcome *k* is the *k*-th error edge in source order. A v0.1 flow with one catch-all therefore has arity 2, exactly as before.
+- **Runtime.** An `Err(V)` reply activates the edge that covers `V`. The error node holds `V`, so a bare `fail` from it returns `Err(V)`. Two error edges of one effect may target the same node, which is a merge their exclusive outcomes satisfy.
+
+### 6.4 Numeric conversions (D-033)
+
+`u64(e)`, `i64(e)` and `dec(e)` convert between the numeric types. The operand is typed without a hint, so an integer literal in it is `u64`. Converting a non-numeric value is **G003**. Same-type conversion is a no-op.
+
+| From → To | Result | Fault |
+|---|---|---|
+| `u64` → `i64` | same value | R001 above `i64::MAX` |
+| `i64` → `u64` | same value | R001 if negative |
+| `u64`/`i64` → `dec` | exact | — |
+| `dec` → `u64`/`i64` | truncated toward zero | R001 if out of range |
+
+### 6.5 Tooling (D-034, D-035)
+
+- **`graphene test [paths]`** runs every `X.cases.json` that sits next to an `X.grph` (searching the given paths, default `.`). A case passes when the JSON `graphene run` would print equals `expect`. That includes fault JSON, so expected faults can be tested. Mock paths are relative to the `.cases.json` file. `--parallel` also runs each case in parallel and requires the same JSON.
+- **`graphene check --json`** prints the diagnostics as a JSON array (code, message, file, span with byte offsets plus 1-based line and column, labels, notes, help). A valid program prints `[]`.

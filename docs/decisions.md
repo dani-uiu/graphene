@@ -156,3 +156,34 @@ Effects are mocked, and `std::thread::scope` is enough for the parallel executor
 
 ## D-028 — Token counts: ASCII is cheaper · Recorded
 With `--features tokens` (tiktoken `o200k_base`), `pricing.grph` costs 202 tokens in ASCII and 228 in Unicode. This supports design principle 1, that ASCII is canonical. The count is approximate and is not Claude's tokenizer.
+
+---
+
+# v0.2
+
+## D-029 — Inputs in scope everywhere; optional input nodes · Approved
+**Problem.** Under the dominance rule, a value from an input could not be read on any conditional branch, because no input node dominates a branch that starts elsewhere. Writing `checkout.grph` forced all data through one fetched record.
+**Choice.** Input names are exempt from G009, and `in x: t` may omit its node. Inputs are bound before the run and never inactive, so the exemption is sound. Root and inputs are placed first in the canonical order, and the parallel executor settles them before scheduling anything else, so a reference can never run before its value.
+**Rejected for now.** Generalizing G009 to "any value guaranteed to have run". It is more powerful, but its diagnostics are harder to explain.
+
+## D-030 — Record literals; annotations guide literal typing · Approved
+`{f: e, ...}` builds a record. An expected record type (from a target annotation or an enclosing literal) passes each field's type down as the literal hint. This is the first place an annotation guides inference instead of only being checked.
+
+## D-031 — Error edges per variant · Approved
+`| err V -> X` routes one variant, and `| err -> X` routes the rest. Coverage is G005, unknown variants are G002, and redundancy is G014, mirroring match exhaustiveness and redundancy.
+
+## D-032 — Error outcomes are per edge, not per variant · Approved
+An effect's decision has one outcome per *edge* (ok plus each error edge), not one per declared variant. A v0.1 single `| err ->` keeps arity 2, so every v0.1 guard, diagnostic and counterexample is unchanged.
+
+## D-033 — Numeric conversions · Approved
+`u64()`, `i64()` and `dec()` are explicit and checked. `dec` → integer truncates toward zero, matching integer division. Out-of-range is R001. The names stay ordinary identifiers, because `IDENT "("` cannot start any other expression. Implicit conversions are still not allowed (D-014 stands).
+
+## D-034 — `graphene test`; mock paths relative to the cases file · Approved
+`expect` is exactly the JSON `graphene run` prints, faults included. Mock paths in `.cases.json` are resolved relative to that file, so cases work from any working directory. The existing case files move from `fixtures/…` to `../../fixtures/…`. This changes path resolution only. No expected result changes.
+
+## D-035 — `graphene check --json` · Approved
+Diagnostics are printed as data for tools and LLM fix loops. Spans give byte offsets plus 1-based line and column, with the column counted in characters. Exit codes are unchanged.
+
+## D-036 — Versioned headers; P006 · Approved
+`#!graphene 0.1` and `#!graphene 0.2` are both accepted. A `0.1` file is checked and run exactly as in v0.1. Using a v0.2 construct in it is P006, whose help line suggests changing the header. `fmt` keeps the version as written. `pricing.grph` (verbatim from the brief) and v0.1 `checkout.grph` stay on `0.1` as regression examples.
+

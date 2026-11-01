@@ -1,5 +1,5 @@
 (* ===================================================================== *)
-(*  Graphene v0.1 — grammar                                               *)
+(*  Graphene v0.2 — grammar                                               *)
 (*                                                                        *)
 (*  Notation: ISO 14977-style EBNF.                                       *)
 (*    { x }  zero or more     [ x ]  optional     ( a | b )  choice       *)
@@ -29,7 +29,8 @@ COMMENT     = "//" , { any character except NL } ;
 (*     not appear anywhere else (P005).                                   *)
 
 HEADER      = "#!graphene" , " " , VERSION ;
-VERSION     = DIGITS , "." , DIGITS ;           (* only "0.1" accepted: P003 *)
+VERSION     = DIGITS , "." , DIGITS ;           (* "0.1" or "0.2"; anything else is P003 *)
+(* Under a "0.1" header, every construct marked "v0.2" below is P006.   *)
 
 (* L3. Atoms.                                                             *)
 
@@ -89,13 +90,15 @@ extern_decl = "extern" , ( "fx" | "fx~" ) , IDENT ,
               (* checked (G013): extern names and error names within one  *)
               (*                 declaration are unique.                  *)
 
-input       = "in" , IDENT , ":" , type , "->" , IDENT ;
+input       = "in" , IDENT , ":" , type , [ "->" , IDENT ] ;   (* v0.2: node optional *)
               (* first IDENT  = input name: the value, used in expressions *)
               (* second IDENT = input node: the graph handle, used as a   *)
-              (*                flow source; not usable in expressions    *)
+              (*                flow source; not usable in expressions.   *)
+              (*                v0.2: may be omitted when the input is    *)
+              (*                only used in expressions (G008 if unused) *)
               (* checked (G003): input types are scalar (no records).     *)
 
-flow        = source , "->" , op , "->" , target , [ err_edge ] ;
+flow        = source , "->" , op , "->" , target , { err_edge } ;   (* v0.2: several *)
 source      = IDENT
             | "(" , IDENT , "," , IDENT , { "," , IDENT } , [ "," ] , ")" ;   (* join: 2+ members *)
 op          = "f" , "(" , expr , ")"
@@ -103,8 +106,11 @@ op          = "f" , "(" , expr , ")"
             | "fx~" , IDENT , "(" , [ args ] , ")" ;
 target      = IDENT , [ ":" , type ]
             | "sink" , IDENT ;
-err_edge    = "|" , "err" , "->" , IDENT ;
-              (* checked (G005): present iff op is "fx" with declared errors *)
+err_edge    = "|" , "err" , [ IDENT ] , "->" , IDENT ;   (* v0.2: variant name *)
+              (* checked (G005): present iff op is "fx" with declared errors, *)
+              (*                 and every declared variant is covered      *)
+              (* checked (G002): a named variant is declared by the effect   *)
+              (* checked (G014): no variant twice; catch-all last and useful  *)
               (* checked (G010): "fx~" target must be "sink"; "sink" only *)
               (*                 after "fx~".                             *)
 
@@ -149,7 +155,15 @@ sum         = prod , { ( "+" | "-" ) , prod } ;                (* left-assoc *)
 prod        = unary , { ( "*" | "/" ) , unary } ;              (* left-assoc *)
 unary       = [ "!" | "-" ] , postfix ;                        (* at most one prefix *)
 postfix     = atom , { "." , IDENT } ;
-atom        = literal | IDENT | "(" , expr , ")" ;
+atom        = literal | IDENT | "(" , expr , ")"
+            | record_lit                                     (* v0.2 *)
+            | conversion ;                                   (* v0.2 *)
+record_lit  = "{" , field_init , { "," , field_init } , [ "," ] , "}" ;
+field_init  = IDENT , ":" , expr ;
+              (* checked (G013): field names unique within the literal.   *)
+conversion  = ( "u64" | "i64" | "dec" ) , "(" , expr , ")" ;
+              (* the type names stay ordinary identifiers: IDENT "(" never *)
+              (* starts anything else, so there is no ambiguity.            *)
 literal     = INT | DECIMAL | STRING | "true" | "false" ;
               (* checked (G012): the right operand of "/" must be a bare  *)
               (*                 non-zero INT or DECIMAL literal.          *)

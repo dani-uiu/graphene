@@ -7,7 +7,25 @@ Graphene is a deterministic dataflow language meant to be written by LLMs and ch
 - background effects such as logging can never influence the output (`assert indep`);
 - parallel execution gives exactly the same result and effect log as sequential execution.
 
-This is the v0.1 reference implementation, written in Rust.
+This is the v0.2 reference implementation, written in Rust. It accepts `#!graphene 0.1` and `#!graphene 0.2` files; a 0.1 file means exactly what it meant in v0.1.
+
+## What's new in v0.2
+
+```
+in sku: str -> K
+in qty: u64                       // a parameter: readable in any expression
+...
+STOCKED -> fx DbFetch(table: "usr", key: usr_id) -> USR | err NotFound -> GUEST | err DbDown -> DOWN
+SHIP -> f({subtotal: ITEM.price * dec(qty) * RATE, shipping: SHIP}) -> BILL
+```
+
+- **Inputs usable everywhere**, and `in x: t` without a node.
+- **Record literals** `{name: expr, ...}`.
+- **Error edges per variant**: `| err NotFound -> X | err -> Y`. The checker makes sure every error is handled exactly once.
+- **Conversions** `u64()`, `i64()` and `dec()`. These are explicit and checked; out-of-range is R001.
+- **`graphene test`** runs every `.cases.json`. **`graphene check --json`** prints diagnostics as data.
+
+See `examples/valid/checkout_v2.grph` for all of them together, and `docs/v0.2.md` for the design.
 
 ```
 #!graphene 0.1
@@ -42,6 +60,11 @@ cargo build --release
 
 # Check a program (exit 0 = valid, 1 = diagnostics)
 graphene check examples/valid/pricing.grph
+graphene check --json examples/invalid/unhandled_err.grph   # diagnostics as JSON
+
+# Run every X.cases.json next to an X.grph (exit 1 if any case fails)
+graphene test
+graphene test --parallel examples/valid/checkout_v2.grph
 
 # Run it against mocked effects (exit 2 = runtime fault)
 graphene run examples/valid/pricing.grph --arg usr_id=1 --mock fixtures/users.json
@@ -85,20 +108,21 @@ Every diagnostic has a stable code, points at the exact source span, and include
 | P003 | lex | Missing or unsupported `#!graphene` header |
 | P004 | lex | Numeric literal out of range |
 | P005 | lex | Invalid character (including `#` outside the header) |
+| P006 | parse | A v0.2 construct under a `#!graphene 0.1` header |
 | G001 | structure | Cycle detected |
-| G002 | names | Undefined name, or an input node used in an expression |
+| G002 | names | Undefined name, an input node used in an expression, or an unknown error variant |
 | G003 | types | Type mismatch: expressions, effect signatures and arguments, merge writers, `out` |
 | G004 | types | Non-exhaustive `match` |
-| G005 | types | `fx` with declared errors has no `\| err ->` edge, or an error edge can never fire |
+| G005 | types | An `fx` error variant has no error edge, or an error edge can never fire |
 | G006 | flow | Merge writers are not mutually exclusive |
 | G007 | flow | Join members can be inactive independently |
-| G008 | flow | Dead end: a value never reaches `out`, `fail`, or a sink |
-| G009 | flow | Reference violates the dominance rule |
+| G008 | flow | Dead end: a value never reaches `out`, `fail`, or a sink; or an unused input |
+| G009 | flow | Reference violates the dominance rule (input names are exempt in 0.2) |
 | G010 | structure | `fx~` target is not a sink, or a sink is referenced or has outgoing edges |
 | G011 | structure | Zero or multiple `out` statements |
 | G012 | types | Division by a non-literal or zero divisor |
-| G013 | names | Duplicate definition |
-| G014 | types | Redundant match arm |
+| G013 | names | Duplicate definition, including a repeated record field |
+| G014 | types | Redundant match arm or error edge |
 | G020 | assert | `assert total` fails; the diagnostic includes a counterexample |
 | G021 | assert | `assert indep` fails; the diagnostic includes the offending path |
 | R001 | runtime | Arithmetic overflow or underflow |
@@ -117,7 +141,8 @@ src/
   check/    stages 2–6: names, structure, types, guards, scope, merge/join, asserts
   runtime/  values, effect host and mock, step function, seq and par executors
   dot.rs    Graphviz export        tokens.rs  token counts        main.rs  CLI
-docs/       plan, grammar (EBNF), semantics, decision log
+  cases.rs  .cases.json loading, running, and diffing (graphene test)
+docs/       plan, grammar (EBNF), semantics, decision log, v0.2 design, usage guide, IDE plan
 examples/   valid/*.grph with *.cases.json; invalid/*.grph with *.expected
 ```
 
