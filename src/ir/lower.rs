@@ -80,6 +80,7 @@ pub fn lower(program: &Program, src: &str) -> (Graph, Vec<Diag>) {
         inputs: l.inputs,
         asserts: l.asserts,
         intent: l.intent,
+        version: program.version,
         order: Vec::new(),
         pos: Vec::new(),
     };
@@ -143,8 +144,8 @@ impl Lower<'_> {
                     Target::Node { name, .. } => self.define_node(name),
                     Target::Sink(name) => self.define_sink(name),
                 }
-                if let Some(e) = &f.err {
-                    self.define_node(e);
+                for e in &f.errs {
+                    self.define_node(&e.target);
                 }
             }
             Stmt::Match(m) => {
@@ -206,28 +207,27 @@ impl Lower<'_> {
         );
     }
 
+    /// An input always gets a vertex; a v0.2 parameter (no node) is named
+    /// after the input and cannot be used as a flow source.
     fn define_input(&mut self, i: &Input) {
         let ty = self.ty(&i.ty);
         let kind = VKind::Input {
             input: i.name.name.clone(),
             ty,
             ty_span: i.ty.pos.0,
+            has_node: i.node.is_some(),
         };
-        let v = self.add_vertex(kind, &i.node.name, i.node.span(), i.pos.0.start);
+        let handle = i.node.as_ref().unwrap_or(&i.name);
+        let v = self.add_vertex(kind, &handle.name, handle.span(), i.pos.0.start);
         let ok_name = self.claim(&i.name, Def::InputName(v), "an input name");
-        let ok_node = self.claim(&i.node, Def::InputNode(v), "an input node");
+        let ok_node = match &i.node {
+            Some(n) => self.claim(n, Def::InputNode(v), "an input node"),
+            None => true,
+        };
         if ok_name && ok_node {
             self.inputs.push(v);
-            let span = i.node.span();
-            self.g.add_edge(
-                self.root,
-                v,
-                Edge {
-                    kind: EKind::Flow,
-                    span,
-                    ann: None,
-                },
-            );
+            let edge = Edge::new(EKind::Flow, handle.span());
+            self.g.add_edge(self.root, v, edge);
         }
     }
 
@@ -319,14 +319,17 @@ impl Lower<'_> {
         match self.names.get(&id.name).map(|(d, _)| *d) {
             Some(Def::InputNode(v) | Def::Node(v) | Def::Sink(v)) => Some(v),
             Some(Def::InputName(v)) => {
-                let node = self.g[v].name.clone();
-                self.undefined(
-                    id,
-                    format!(
-                        "`{}` is an input name; flows start from its node `{node}`",
+                let help = match &self.g[v].kind {
+                    VKind::Input { has_node: true, .. } => format!(
+                        "`{}` is an input name; flows start from its node `{}`",
+                        id.name, self.g[v].name
+                    ),
+                    _ => format!(
+                        "`{0}` is a parameter with no node; give it one to start a flow: `in {0}: <type> -> Node`",
                         id.name
                     ),
-                );
+                };
+                self.undefined(id, help);
                 None
             }
             Some(Def::Extern(_)) => {
@@ -371,15 +374,7 @@ impl Lower<'_> {
         }
         let v = self.add_vertex(kind, name, span, span.start);
         for (s, sspan) in &srcs {
-            self.g.add_edge(
-                *s,
-                v,
-                Edge {
-                    kind: EKind::Flow,
-                    span: *sspan,
-                    ann: None,
-                },
-            );
+            self.g.add_edge(*s, v, Edge::new(EKind::Flow, *sspan));
         }
         self.g[v].srcs = srcs.into_iter().map(|(s, _)| s).collect();
         Some(v)
@@ -420,26 +415,63 @@ impl Lower<'_> {
             _ => None,
         };
         let kind = if is_sync { EKind::Ok } else { EKind::Flow };
-        self.edge_to(
-            op,
-            tid,
-            Edge {
-                kind,
-                span: tid.span(),
-                ann,
-            },
-        );
-        if let Some(e) = &f.err {
-            self.edge_to(
-                op,
-                e,
-                Edge {
-                    kind: EKind::Err,
-                    span: e.span(),
-                    ann: None,
-                },
-            );
+        let mut edge = Edge::new(kind, tid.span());
+        edge.ann = ann;
+        self.edge_to(op, tid, edge);
+        self.err_edges(op, f);
+    }
+
+    /// Add `| err [V] -> X` edges (D-031). A named edge covers its
+    /// variant; the catch-all covers every declared variant not named by
+    /// a sibling. Unknown variants are G002.
+    fn err_edges(&mut self, op: VId, f: &Flow) {
+        let declared: Vec<String> = match &self.g[op].kind {
+            VKind::Sync { effect, .. } => self.externs[*effect].errors.clone(),
+            _ => Vec::new(),
+        };
+        let named: Vec<&str> = f
+            .errs
+            .iter()
+            .filter_map(|e| e.variant.as_ref().map(|v| v.name.as_str()))
+            .collect();
+        for (i, e) in f.errs.iter().enumerate() {
+            let covers = match &e.variant {
+                Some(v) if declared.contains(&v.name) => vec![v.name.clone()],
+                Some(v) => {
+                    self.unknown_variant(op, v, &declared);
+                    continue;
+                }
+                None => declared
+                    .iter()
+                    .filter(|d| !named.contains(&d.as_str()))
+                    .cloned()
+                    .collect(),
+            };
+            let mut edge = Edge::new(EKind::Err(i), e.target.span());
+            edge.covers = covers;
+            edge.variant = e.variant.as_ref().map(|v| v.name.clone());
+            self.edge_to(op, &e.target, edge);
         }
+    }
+
+    fn unknown_variant(&mut self, op: VId, v: &Ident, declared: &[String]) {
+        let list = if declared.is_empty() {
+            "it declares no errors".to_string()
+        } else {
+            format!("it declares {}", declared.join(" | "))
+        };
+        let op_name = self.g[op].name.clone();
+        self.diags.push(
+            Diag::new(
+                Code::G002,
+                v.span(),
+                format!("`{op_name}` has no error `{}`", v.name),
+            )
+            .label("unknown error variant")
+            .help(format!(
+                "{list}; name one of those, or use a catch-all `| err -> Node`"
+            )),
+        );
     }
 
     fn edge_to(&mut self, op: VId, target: &Ident, edge: Edge) {
@@ -493,11 +525,7 @@ impl Lower<'_> {
             return;
         };
         for (i, arm) in m.arms.iter().enumerate() {
-            let edge = Edge {
-                kind: EKind::Arm(i),
-                span: arm.target.span(),
-                ann: None,
-            };
+            let edge = Edge::new(EKind::Arm(i), arm.target.span());
             self.edge_to(op, &arm.target, edge);
         }
     }
@@ -512,11 +540,37 @@ impl Lower<'_> {
                 let (l, r) = (self.expr(l), self.expr(r));
                 IKind::Binary(*op, Box::new(l?), Box::new(r?))
             }
+            ExprKind::Record(fields) => self.record_lit(fields)?,
+            ExprKind::Convert(to, x) => {
+                let to = match to {
+                    NumTy::U64 => Type::U64,
+                    NumTy::I64 => Type::I64,
+                    NumTy::Dec => Type::Dec,
+                };
+                IKind::Convert(to, Box::new(self.expr(x)?))
+            }
         };
         Some(IExpr {
             kind,
             span: e.span(),
         })
+    }
+
+    /// Lower a record literal, reporting duplicate fields (G013).
+    fn record_lit(&mut self, fields: &[(Ident, Expr)]) -> Option<IKind> {
+        let mut out: Vec<(String, IExpr)> = Vec::new();
+        let mut ok = true;
+        for (name, e) in fields {
+            if out.iter().any(|(n, _)| *n == name.name) {
+                self.dup_member(name, "field");
+                ok = false;
+            }
+            match self.expr(e) {
+                Some(x) => out.push((name.name.clone(), x)),
+                None => ok = false,
+            }
+        }
+        ok.then_some(IKind::Record(out))
     }
 
     /// Resolve a name used inside an expression (D-003).

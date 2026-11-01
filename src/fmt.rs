@@ -74,7 +74,10 @@ impl Writer {
         match s {
             Stmt::Intent(text, _) => format!("@intent {}", quote(text)),
             Stmt::Extern(e) => self.extern_decl(e),
-            Stmt::Input(i) => format!("in {}: {} {a} {}", i.name.name, self.ty(&i.ty), i.node.name),
+            Stmt::Input(i) => match &i.node {
+                Some(n) => format!("in {}: {} {a} {}", i.name.name, self.ty(&i.ty), n.name),
+                None => format!("in {}: {}", i.name.name, self.ty(&i.ty)),
+            },
             Stmt::Flow(f) => self.flow(f),
             Stmt::Match(m) => self.match_stmt(m),
             Stmt::Out(o) => format!(
@@ -126,8 +129,11 @@ impl Writer {
             Target::Node { name, ty: None } => name.name.clone(),
         };
         let mut s = format!("{source} {a} {} {a} {target}", self.op(&f.op));
-        if let Some(e) = &f.err {
-            s.push_str(&format!(" | err {a} {}", e.name));
+        for e in &f.errs {
+            match &e.variant {
+                Some(v) => s.push_str(&format!(" | err {} {a} {}", v.name, e.target.name)),
+                None => s.push_str(&format!(" | err {a} {}", e.target.name)),
+            }
         }
         s
     }
@@ -224,6 +230,14 @@ impl Writer {
                 };
                 format!("{} {sym} {}", self.wrap(l, lp), self.wrap(r, rp))
             }
+            ExprKind::Record(fields) => {
+                let parts: Vec<String> = fields
+                    .iter()
+                    .map(|(n, e)| format!("{}: {}", n.name, self.expr(e)))
+                    .collect();
+                format!("{{{}}}", parts.join(", "))
+            }
+            ExprKind::Convert(to, inner) => format!("{}({})", to.name(), self.expr(inner)),
         }
     }
 
@@ -245,7 +259,7 @@ fn prec(e: &Expr) -> u8 {
         ExprKind::Binary(op, ..) => op.prec(),
         ExprKind::Unary(..) => UNARY,
         ExprKind::Field(..) => POSTFIX,
-        ExprKind::Lit(_) | ExprKind::Name(_) => ATOM,
+        ExprKind::Lit(_) | ExprKind::Name(_) | ExprKind::Record(_) | ExprKind::Convert(..) => ATOM,
     }
 }
 

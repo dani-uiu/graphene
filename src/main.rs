@@ -1,4 +1,4 @@
-//! `graphene` command-line interface: check | run | fmt | graph | tokens.
+//! `graphene` command-line interface: check | test | run | fmt | graph | tokens.
 //!
 //! Depends on: the `graphene` library (`parse`, `check`, `fmt`, `runtime`,
 //! `dot`, `tokens`), `clap`.
@@ -35,7 +35,20 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Check a program and print diagnostics.
-    Check { file: PathBuf },
+    Check {
+        file: PathBuf,
+        /// Print diagnostics as a JSON array on stdout.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Run every `X.cases.json` next to an `X.grph` and report pass/fail.
+    Test {
+        /// Programs or folders to search (default: current folder).
+        paths: Vec<PathBuf>,
+        /// Also run each case in parallel; both runs must match.
+        #[arg(long)]
+        parallel: bool,
+    },
     /// Run a program and print the result and effect log as JSON.
     Run {
         file: PathBuf,
@@ -74,7 +87,9 @@ fn parse_kv(s: &str) -> Result<(String, String), String> {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Check { file } => cmd_check(&file),
+        Cmd::Check { file, json: false } => cmd_check(&file),
+        Cmd::Check { file, json: true } => cmd_check_json(&file),
+        Cmd::Test { paths, parallel } => cmd_test(&paths, parallel),
         Cmd::Run {
             file,
             args,
@@ -126,6 +141,104 @@ fn cmd_check(path: &Path) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(code) => code,
+    }
+}
+
+fn cmd_check_json(path: &Path) -> ExitCode {
+    let src = match read(path) {
+        Ok(s) => s,
+        Err(code) => return code,
+    };
+    let name = path.display().to_string();
+    let diags = graphene::check(&src).err().unwrap_or_default();
+    let list: Vec<serde_json::Value> = diags.iter().map(|d| d.to_json(&name, &src)).collect();
+    println!("{}", pretty(&serde_json::Value::Array(list)));
+    if diags.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    }
+}
+
+fn cmd_test(paths: &[PathBuf], parallel: bool) -> ExitCode {
+    let roots = if paths.is_empty() {
+        vec![PathBuf::from(".")]
+    } else {
+        paths.to_vec()
+    };
+    let programs = graphene::cases::discover(&roots);
+    if programs.is_empty() {
+        eprintln!("error: no `X.cases.json` next to an `X.grph` was found");
+        return ExitCode::from(1);
+    }
+    let (mut passed, mut failed) = (0, 0);
+    for program in &programs {
+        let (p, f) = test_program(program, parallel);
+        passed += p;
+        failed += f;
+    }
+    println!("\n{passed} passed, {failed} failed");
+    if failed == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    }
+}
+
+/// Run one program's cases; returns `(passed, failed)`.
+fn test_program(path: &Path, parallel: bool) -> (usize, usize) {
+    let name = path.display().to_string();
+    let cases = match graphene::cases::load(&graphene::cases::cases_path(path)) {
+        Ok(c) => c,
+        Err(e) => {
+            println!("FAIL {name}: {e}");
+            return (0, 1);
+        }
+    };
+    let checked = match load(path) {
+        Ok((_, c)) => c,
+        Err(_) => {
+            println!("FAIL {name}: the program does not check");
+            return (0, cases.len().max(1));
+        }
+    };
+    let mut tally = (0, 0);
+    for case in &cases {
+        match case_outcome(&checked, case, parallel) {
+            None => {
+                println!("PASS {name}: {}", case.name);
+                tally.0 += 1;
+            }
+            Some(why) => {
+                println!("FAIL {name}: {}\n     {why}", case.name);
+                tally.1 += 1;
+            }
+        }
+    }
+    tally
+}
+
+/// `None` if the case passes, otherwise the reason it failed.
+fn case_outcome(
+    checked: &graphene::Checked,
+    case: &graphene::cases::Case,
+    parallel: bool,
+) -> Option<String> {
+    let seq = match graphene::cases::run_case(checked, case, false) {
+        Ok(j) => j,
+        Err(e) => return Some(e),
+    };
+    if let Some(d) = graphene::cases::first_diff(&case.expect, &seq) {
+        return Some(d);
+    }
+    if !parallel {
+        return None;
+    }
+    match graphene::cases::run_case(checked, case, true) {
+        Ok(par) => {
+            graphene::cases::first_diff(&seq, &par).map(|d| format!("parallel run differs: {d}"))
+        }
+        Err(e) => Some(e),
     }
 }
 

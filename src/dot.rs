@@ -88,6 +88,11 @@ fn label(c: &Checked, v: VId, deps: &[Deps]) -> String {
     let g = &c.graph;
     let vx = g.v(v);
     let title = match &vx.kind {
+        VKind::Input {
+            input,
+            has_node: false,
+            ..
+        } => format!("in {input}"),
         VKind::Input { input, .. } => format!("{} ({input})", vx.name),
         VKind::Out { name, .. } => format!("out {name}"),
         VKind::Fail { name: Some(n) } => format!("fail {n}"),
@@ -124,7 +129,10 @@ pub fn to_dot(c: &Checked) -> String {
             let tag = match e.kind {
                 EKind::Flow => String::new(),
                 EKind::Ok => " [label=\"ok\"]".into(),
-                EKind::Err => " [label=\"err\" color=red]".into(),
+                EKind::Err(_) => match &e.variant {
+                    Some(v) => format!(" [label=\"err {}\" color=red]", esc(v)),
+                    None => " [label=\"err\" color=red]".into(),
+                },
                 EKind::Arm(i) => {
                     let text = match &g.v(v).kind {
                         VKind::Match { arms, .. } => {

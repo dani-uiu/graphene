@@ -1,0 +1,27 @@
+{
+  "effects": {
+    "Catalog": {
+      "cases": [
+        { "args": { "sku": "apple" },   "ok": { "price": "3.50",   "stock": 100, "kg": "1.00" } },
+        { "args": { "sku": "saffron" }, "ok": { "price": "120.00", "stock": 5,   "kg": "0.50" } },
+        { "args": { "sku": "truffle" }, "ok": { "price": "900.00", "stock": 3,   "kg": "0.25" } }
+      ],
+      "fallback": { "err": "UnknownSku" }
+    },
+    "DbFetch": {
+      "cases": [
+        { "args": { "table": "usr", "key": 1 }, "ok": { "role": "prem",  "bal": "100.00" } },
+        { "args": { "table": "usr", "key": 2 }, "ok": { "role": "basic", "bal": "100.00" } },
+        { "args": { "table": "usr", "key": 4 }, "ok": { "role": "staff", "bal": "500.00" } },
+        { "args": { "table": "usr", "key": 5 }, "err": "DbDown" }
+      ],
+      "fallback": { "err": "NotFound" }
+    },
+    "ShipQuote": {
+      "cases": [
+        { "args": { "zone": "north", "kg": "10.00" }, "ok": "12.00" }
+      ],
+      "fallback": { "err": "NoRoute" }
+    }
+  }
+}

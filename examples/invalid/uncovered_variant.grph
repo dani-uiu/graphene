@@ -1,0 +1,10 @@
+#!graphene 0.2
+@intent "DbDown has no error edge"
+
+extern fx DbFetch(table: str, key: u64) -> {role: str, bal: dec} ! NotFound | DbDown
+
+in id: u64 -> A
+A -> fx DbFetch(table: "usr", key: id) -> B | err NotFound -> E
+E -> fail
+B -> f(B.bal) -> D
+D -> out bal: dec

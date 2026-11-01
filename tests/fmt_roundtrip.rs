@@ -35,6 +35,12 @@ fn assert_roundtrip(prog: &Program) {
 #[test]
 fn examples_roundtrip() {
     for (name, path) in common::all_examples() {
+        // Examples that are meant to fail parsing (a `P` code in their
+        // `.expected`) have no AST to round-trip.
+        let expected = path.with_extension("expected");
+        if expected.exists() && common::read(&expected).starts_with('P') {
+            continue;
+        }
         let (prog, diags) = parse(&common::read(&path));
         assert!(diags.is_empty(), "{name}: {diags:#?}");
         assert_roundtrip(&prog);
@@ -100,11 +106,18 @@ fn expr() -> impl Strategy<Value = Expr> {
                 let op = if not { UnOp::Not } else { UnOp::Neg };
                 ex(ExprKind::Unary(op, Box::new(e)))
             }),
-            (bin_op(), inner.clone(), inner).prop_map(|(op, l, r)| ex(ExprKind::Binary(
+            (bin_op(), inner.clone(), inner.clone()).prop_map(|(op, l, r)| ex(ExprKind::Binary(
                 op,
                 Box::new(l),
                 Box::new(r)
             ))),
+            prop::collection::vec((ident(), inner.clone()), 1..3)
+                .prop_map(|fs| ex(ExprKind::Record(fs))),
+            (
+                prop::sample::select(vec![NumTy::U64, NumTy::I64, NumTy::Dec]),
+                inner
+            )
+                .prop_map(|(t, e)| ex(ExprKind::Convert(t, Box::new(e)))),
         ]
     })
 }
@@ -157,12 +170,17 @@ fn flow() -> impl Strategy<Value = Stmt> {
         (ident(), prop::option::of(ty())).prop_map(|(name, ty)| Target::Node { name, ty }),
         ident().prop_map(Target::Sink),
     ];
-    (sources, op(), target, prop::option::of(ident())).prop_map(|(sources, op, target, err)| {
+    let errs = prop::collection::vec(
+        (prop::option::of(ident()), ident())
+            .prop_map(|(variant, target)| ErrEdge { variant, target }),
+        0..3,
+    );
+    (sources, op(), target, errs).prop_map(|(sources, op, target, errs)| {
         Stmt::Flow(Flow {
             sources,
             op,
             target,
-            err,
+            errs,
             pos: Pos::default(),
         })
     })
@@ -200,12 +218,14 @@ fn stmt() -> impl Strategy<Value = Stmt> {
                         .collect(),
                 })
             ),
-        (ident(), ty(), ident()).prop_map(move |(name, ty, node)| Stmt::Input(Input {
-            name,
-            ty,
-            node,
-            pos: p()
-        })),
+        (ident(), ty(), prop::option::of(ident())).prop_map(move |(name, ty, node)| Stmt::Input(
+            Input {
+                name,
+                ty,
+                node,
+                pos: p()
+            }
+        )),
         flow(),
         (ident(), expr(), prop::collection::vec(arm(), 1..4)).prop_map(
             move |(source, scrutinee, arms)| {
@@ -236,8 +256,9 @@ fn stmt() -> impl Strategy<Value = Stmt> {
 fn program() -> impl Strategy<Value = Program> {
     let line = (prop::option::of(stmt()), prop::option::of("[ -~]{0,10}"))
         .prop_map(|(stmt, comment)| Line { stmt, comment });
+    // v0.2 is a superset of v0.1, so 0.2 programs cover every construct.
     prop::collection::vec(line, 0..12).prop_map(|lines| Program {
-        version: (0, 1),
+        version: (0, 2),
         lines,
     })
 }

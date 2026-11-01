@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G008
+
+  × input `rate` is never used
+   ╭─[unused_param.grph:5:4]
+ 4 │ in a: dec -> A
+ 5 │ in rate: dec
+   ·    ──┬─
+   ·      ╰── unused input
+ 6 │ A -> f(a * 2.00) -> R
+   ╰────
+  help: read it in an expression, or remove the `in` line

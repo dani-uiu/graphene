@@ -12,31 +12,20 @@ use graphene::ir::graph::Type;
 use graphene::runtime::effects::{EffectHost, HostError, MockHost, Reply};
 use graphene::runtime::value::{Record, Value};
 use graphene::runtime::{bind_inputs, run, RawInputs};
-use serde_json::Value as Json;
 
 const RUNS: usize = 200;
-
-fn load_cases(path: &std::path::Path) -> Vec<(Json, Option<String>)> {
-    let file = path.with_extension("cases.json");
-    let all: Json = serde_json::from_str(&common::read(&file)).expect("cases JSON");
-    all.as_array()
-        .expect("array")
-        .iter()
-        .map(|c| (c["inputs"].clone(), c["mock"].as_str().map(String::from)))
-        .collect()
-}
 
 #[test]
 fn parallel_matches_sequential_200_times() {
     for (name, path) in common::examples("valid") {
         let checked = graphene::check(&common::read(&path)).expect("checks");
-        for (inputs, mock) in load_cases(&path) {
-            let host = match &mock {
-                Some(p) => MockHost::from_file(&common::root().join(p)).expect("mock"),
+        let cases = graphene::cases::load(&graphene::cases::cases_path(&path)).expect("cases");
+        for case in cases {
+            let host = match &case.mock {
+                Some(p) => MockHost::from_file(p).expect("mock"),
                 None => MockHost::empty(),
             };
-            let obj = inputs.as_object().cloned().unwrap_or_default();
-            let inputs = bind_inputs(&checked, RawInputs::Json(&obj)).expect("bind");
+            let inputs = bind_inputs(&checked, RawInputs::Json(&case.inputs)).expect("bind");
             let reference = run(&checked, &inputs, &host, false);
             for i in 0..RUNS {
                 let got = run(&checked, &inputs, &host, true);
@@ -108,4 +97,25 @@ fn independent_effects_run_concurrently() {
         2,
         "the two effects never overlapped"
     );
+}
+
+#[test]
+fn inputs_are_settled_before_anything_reads_them() {
+    // D-029: `b` is declared after the flow that reads it, has no node,
+    // and is read off its own branch; both executors must see its value.
+    let src = "#!graphene 0.2\nin a: u64 -> A\nA -> f(a + b) -> S\nS -> out s: u64\nin b: u64\n";
+    let checked = graphene::check(src).expect("checks");
+    let obj = serde_json::json!({ "a": 1, "b": 2 });
+    let inputs =
+        bind_inputs(&checked, RawInputs::Json(obj.as_object().expect("obj"))).expect("bind");
+    let host = MockHost::empty();
+    let reference = run(&checked, &inputs, &host, false).expect("runs");
+    assert_eq!(reference.to_json()["result"]["ok"]["s"], 3);
+    for i in 0..RUNS {
+        assert_eq!(
+            run(&checked, &inputs, &host, true).as_ref(),
+            Ok(&reference),
+            "run {i} diverged"
+        );
+    }
 }

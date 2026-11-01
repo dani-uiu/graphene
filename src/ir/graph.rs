@@ -9,7 +9,9 @@
 //!   `IExpr::Ref` and are *not* edges (D-011);
 //! - every input node has an edge from `root`;
 //! - `key` gives each vertex its defining position; `order` (filled after
-//!   the cycle check passes) is Kahn's sort with ties broken by `key`.
+//!   the cycle check passes) is Kahn's sort with ties broken by `key`,
+//!   except that the root and every input come first (D-029), so a
+//!   reference to an input never runs ahead of its value.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap};
@@ -79,6 +81,10 @@ pub enum IKind {
     Field(Box<IExpr>, String),
     Unary(UnOp, Box<IExpr>),
     Binary(BinOp, Box<IExpr>, Box<IExpr>),
+    /// Record literal, fields in source order (names are unique).
+    Record(Vec<(String, IExpr)>),
+    /// Numeric conversion to `u64`, `i64`, or `dec`.
+    Convert(Type, Box<IExpr>),
 }
 
 impl IExpr {
@@ -87,10 +93,15 @@ impl IExpr {
         match &self.kind {
             IKind::Lit(_) => {}
             IKind::Ref(v, name) => out.push((*v, self.span, name.clone())),
-            IKind::Field(b, _) | IKind::Unary(_, b) => b.refs(out),
+            IKind::Field(b, _) | IKind::Unary(_, b) | IKind::Convert(_, b) => b.refs(out),
             IKind::Binary(_, l, r) => {
                 l.refs(out);
                 r.refs(out);
+            }
+            IKind::Record(fields) => {
+                for (_, e) in fields {
+                    e.refs(out);
+                }
             }
         }
     }
@@ -119,6 +130,8 @@ pub enum VKind {
         input: String,
         ty: Type,
         ty_span: Span,
+        /// False for a v0.2 parameter (`in x: t`), which has no flow node.
+        has_node: bool,
     },
     Node,
     Sink,
@@ -187,7 +200,8 @@ pub struct Vertex {
 pub enum EKind {
     Flow,
     Ok,
-    Err,
+    /// The `i`-th error edge of a sync effect (decision outcome `i + 1`).
+    Err(usize),
     Arm(usize),
 }
 
@@ -199,6 +213,26 @@ pub struct Edge {
     pub span: Span,
     /// Optional `: type` annotation on a flow target.
     pub ann: Option<(Type, Span)>,
+    /// For error edges: the declared variants this edge receives.
+    pub covers: Vec<String>,
+    /// For error edges: the variant as written (`None` = catch-all).
+    pub variant: Option<String>,
+}
+
+impl Edge {
+    pub fn new(kind: EKind, span: Span) -> Edge {
+        Edge {
+            kind,
+            span,
+            ann: None,
+            covers: Vec::new(),
+            variant: None,
+        }
+    }
+
+    pub fn is_err(&self) -> bool {
+        matches!(self.kind, EKind::Err(_))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,6 +259,8 @@ pub struct Graph {
     pub inputs: Vec<VId>,
     pub asserts: Vec<Assertion>,
     pub intent: Option<String>,
+    /// Language version from the header.
+    pub version: (u32, u32),
     /// Canonical order; empty until `compute_order` runs.
     pub order: Vec<VId>,
     /// Position of each vertex in `order`, indexed by `VId::index()`.
@@ -264,7 +300,13 @@ impl Graph {
         self.g[op].srcs.first().copied().unwrap_or(self.root)
     }
 
-    /// Kahn's algorithm with ties broken by defining position.
+    /// Ordering key: root and inputs first, then defining position.
+    fn rank(&self, id: NodeIndex) -> (bool, usize) {
+        let first = matches!(self.g[id].kind, VKind::Root | VKind::Input { .. });
+        (!first, self.g[id].key)
+    }
+
+    /// Kahn's algorithm with ties broken by `rank`.
     /// Precondition: the graph is acyclic (stage 3 passed).
     pub fn compute_order(&mut self) {
         let n = self.g.node_count();
@@ -277,7 +319,7 @@ impl Graph {
             .collect();
         let mut heap = BinaryHeap::new();
         for (i, _) in indeg.iter().enumerate().filter(|(_, d)| **d == 0) {
-            heap.push(Reverse((self.g[NodeIndex::new(i)].key, i)));
+            heap.push(Reverse((self.rank(NodeIndex::new(i)), i)));
         }
         let mut order = Vec::with_capacity(n);
         while let Some(Reverse((_, i))) = heap.pop() {
@@ -287,7 +329,7 @@ impl Graph {
                 let t = e.target().index();
                 indeg[t] -= 1;
                 if indeg[t] == 0 {
-                    heap.push(Reverse((self.g[e.target()].key, t)));
+                    heap.push(Reverse((self.rank(e.target()), t)));
                 }
             }
         }

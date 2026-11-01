@@ -62,6 +62,37 @@ pub fn eval(e: &IExpr, env: &Env, hint: Option<&Type>) -> Result<Value, Fault> {
         },
         IKind::Unary(op, x) => unary(*op, eval(x, env, hint)?, e.span),
         IKind::Binary(op, l, r) => binary(*op, l, r, env, hint, e.span),
+        IKind::Record(fields) => {
+            let mut out = super::value::Record::new();
+            for (name, x) in fields {
+                let fh = match hint {
+                    Some(Type::Record(h)) => h.get(name),
+                    _ => None,
+                };
+                out.insert(name.clone(), eval(x, env, fh)?);
+            }
+            Ok(Value::Record(out))
+        }
+        IKind::Convert(to, x) => convert(to, eval(x, env, None)?, e.span),
+    }
+}
+
+/// Numeric conversion (D-033): exact or truncating toward zero; anything
+/// out of range is R001.
+fn convert(to: &Type, v: Value, span: Span) -> Result<Value, Fault> {
+    use rust_decimal::prelude::ToPrimitive;
+    let range = || Fault::new(Code::R001, span, format!("value out of range for `{to}`"));
+    match (to, v) {
+        (Type::U64, Value::U64(n)) => Ok(Value::U64(n)),
+        (Type::U64, Value::I64(n)) => u64::try_from(n).map(Value::U64).map_err(|_| range()),
+        (Type::U64, Value::Dec(d)) => d.trunc().to_u64().map(Value::U64).ok_or_else(range),
+        (Type::I64, Value::U64(n)) => i64::try_from(n).map(Value::I64).map_err(|_| range()),
+        (Type::I64, Value::I64(n)) => Ok(Value::I64(n)),
+        (Type::I64, Value::Dec(d)) => d.trunc().to_i64().map(Value::I64).ok_or_else(range),
+        (Type::Dec, Value::U64(n)) => Ok(Value::Dec(n.into())),
+        (Type::Dec, Value::I64(n)) => Ok(Value::Dec(n.into())),
+        (Type::Dec, Value::Dec(d)) => Ok(Value::Dec(d)),
+        _ => Err(internal(span, "bad conversion operand")),
     }
 }
 

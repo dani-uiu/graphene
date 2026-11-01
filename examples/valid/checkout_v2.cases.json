@@ -1,0 +1,373 @@
+[
+  {
+    "name": "premium member, quoted shipping: 3.50*10*0.80 + 12.00",
+    "inputs": {
+      "sku": "apple",
+      "usr_id": 1,
+      "qty": 10,
+      "zone": "north"
+    },
+    "mock": "../../fixtures/checkout_v2.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "bill": {
+            "shipping": "12.00",
+            "subtotal": "28.00",
+            "total": "40.00"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "apple"
+          },
+          "result": {
+            "ok": {
+              "kg": "1.00",
+              "price": "3.50",
+              "stock": 100
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "DbFetch",
+          "args": {
+            "key": 1,
+            "table": "usr"
+          },
+          "result": {
+            "ok": {
+              "bal": "100.00",
+              "role": "prem"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "LogAsync",
+          "args": {
+            "event": "checkout",
+            "role": "prem"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "ShipQuote",
+          "args": {
+            "kg": "10.00",
+            "zone": "north"
+          },
+          "result": {
+            "ok": "12.00"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "staff member, no route: 120*2*0.70 + (25.00 + 1.00*5.00)",
+    "inputs": {
+      "sku": "saffron",
+      "usr_id": 4,
+      "qty": 2,
+      "zone": "south"
+    },
+    "mock": "../../fixtures/checkout_v2.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "bill": {
+            "shipping": "30.00",
+            "subtotal": "168.00",
+            "total": "198.00"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "saffron"
+          },
+          "result": {
+            "ok": {
+              "kg": "0.50",
+              "price": "120.00",
+              "stock": 5
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "DbFetch",
+          "args": {
+            "key": 4,
+            "table": "usr"
+          },
+          "result": {
+            "ok": {
+              "bal": "500.00",
+              "role": "staff"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "LogAsync",
+          "args": {
+            "event": "checkout",
+            "role": "staff"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "ShipQuote",
+          "args": {
+            "kg": "1.00",
+            "zone": "south"
+          },
+          "result": {
+            "err": "NoRoute"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown customer pays as a guest (err NotFound edge)",
+    "inputs": {
+      "sku": "apple",
+      "usr_id": 999,
+      "qty": 1,
+      "zone": "east"
+    },
+    "mock": "../../fixtures/checkout_v2.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "bill": {
+            "shipping": "30.00",
+            "subtotal": "3.50",
+            "total": "33.50"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "apple"
+          },
+          "result": {
+            "ok": {
+              "kg": "1.00",
+              "price": "3.50",
+              "stock": 100
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "DbFetch",
+          "args": {
+            "key": 999,
+            "table": "usr"
+          },
+          "result": {
+            "err": "NotFound"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "ShipQuote",
+          "args": {
+            "kg": "1.00",
+            "zone": "east"
+          },
+          "result": {
+            "err": "NoRoute"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "database outage fails with DbDown (err DbDown edge)",
+    "inputs": {
+      "sku": "apple",
+      "usr_id": 5,
+      "qty": 1,
+      "zone": "north"
+    },
+    "mock": "../../fixtures/checkout_v2.json",
+    "expect": {
+      "result": {
+        "err": "DbDown"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "apple"
+          },
+          "result": {
+            "ok": {
+              "kg": "1.00",
+              "price": "3.50",
+              "stock": 100
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "DbFetch",
+          "args": {
+            "key": 5,
+            "table": "usr"
+          },
+          "result": {
+            "err": "DbDown"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "not enough stock: audit logged, customer never fetched",
+    "inputs": {
+      "sku": "saffron",
+      "usr_id": 1,
+      "qty": 9,
+      "zone": "north"
+    },
+    "mock": "../../fixtures/checkout_v2.json",
+    "expect": {
+      "result": {
+        "err": "OutOfStock"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "saffron"
+          },
+          "result": {
+            "ok": {
+              "kg": "0.50",
+              "price": "120.00",
+              "stock": 5
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "short",
+            "sku": "saffron"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "total 1827.50 is over 1000.00, so the order is held",
+    "inputs": {
+      "sku": "truffle",
+      "usr_id": 2,
+      "qty": 2,
+      "zone": "north"
+    },
+    "mock": "../../fixtures/checkout_v2.json",
+    "expect": {
+      "result": {
+        "err": "NeedsApproval"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "truffle"
+          },
+          "result": {
+            "ok": {
+              "kg": "0.25",
+              "price": "900.00",
+              "stock": 3
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "DbFetch",
+          "args": {
+            "key": 2,
+            "table": "usr"
+          },
+          "result": {
+            "ok": {
+              "bal": "100.00",
+              "role": "basic"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "LogAsync",
+          "args": {
+            "event": "checkout",
+            "role": "basic"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "ShipQuote",
+          "args": {
+            "kg": "0.50",
+            "zone": "north"
+          },
+          "result": {
+            "err": "NoRoute"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown product propagates UnknownSku",
+    "inputs": {
+      "sku": "kiwi",
+      "usr_id": 1,
+      "qty": 1,
+      "zone": "north"
+    },
+    "mock": "../../fixtures/checkout_v2.json",
+    "expect": {
+      "result": {
+        "err": "UnknownSku"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "kiwi"
+          },
+          "result": {
+            "err": "UnknownSku"
+          }
+        }
+      ]
+    }
+  }
+]

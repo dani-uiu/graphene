@@ -1,0 +1,6 @@
+#!graphene 0.1
+@intent "A record literal needs the 0.2 header"
+
+in a: dec -> A
+A -> f({total: a}) -> R
+R -> out r: {total: dec}

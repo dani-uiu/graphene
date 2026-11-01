@@ -124,3 +124,65 @@ fn unreadable_file_is_an_error_not_a_panic() {
     assert_eq!(o.status.code(), Some(1));
     assert!(stderr(&o).contains("cannot read"));
 }
+
+#[test]
+fn test_command_runs_every_cases_file() {
+    let o = graphene(&["test", "--parallel"]);
+    assert_eq!(o.status.code(), Some(0), "{}", stdout(&o));
+    let out = stdout(&o);
+    assert!(out.contains("PASS") && !out.contains("FAIL"), "{out}");
+    assert!(out.contains(" passed, 0 failed"), "{out}");
+    let one = graphene(&["test", "examples/valid/conversions.grph"]);
+    assert!(
+        stdout(&one).contains("3 passed, 0 failed"),
+        "{}",
+        stdout(&one)
+    );
+}
+
+#[test]
+fn test_command_reports_a_failing_case() {
+    let dir = std::env::temp_dir().join(format!("graphene-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let prog = dir.join("double.grph");
+    std::fs::write(
+        &prog,
+        "#!graphene 0.2\nin x: u64 -> A\nA -> f(x * 2) -> B\nB -> out y: u64\n",
+    )
+    .expect("write");
+    let cases = r#"[{"name": "wrong on purpose", "inputs": {"x": 2}, "mock": null,
+        "expect": {"result": {"ok": {"y": 5}}, "effects": []}}]"#;
+    std::fs::write(dir.join("double.cases.json"), cases).expect("write");
+    let o = graphene(&["test", &dir.display().to_string()]);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(o.status.code(), Some(1));
+    let out = stdout(&o);
+    assert!(
+        out.contains("FAIL") && out.contains("$.result.ok.y: expected 5, got 4"),
+        "{out}"
+    );
+}
+
+#[test]
+fn check_json_lists_diagnostics() {
+    let o = graphene(&["check", "--json", "examples/invalid/unhandled_err.grph"]);
+    assert_eq!(o.status.code(), Some(1));
+    let j: serde_json::Value = serde_json::from_str(&stdout(&o)).expect("json");
+    assert_eq!(j[0]["code"], "G005");
+    assert_eq!(j[0]["span"]["line"], 8);
+    assert_eq!(j[0]["span"]["col"], 1);
+    assert!(j[0]["help"].as_str().is_some_and(|h| !h.is_empty()));
+    assert_eq!(j[0]["labels"][0]["text"], "may raise NotFound | DbDown");
+    let ok = graphene(&["check", "--json", "examples/valid/pricing.grph"]);
+    assert_eq!(ok.status.code(), Some(0));
+    assert_eq!(stdout(&ok).trim(), "[]");
+}
+
+#[test]
+fn graph_labels_v02_error_edges_and_parameters() {
+    let o = graphene(&["graph", "examples/valid/checkout_v2.grph"]);
+    assert_eq!(o.status.code(), Some(0));
+    let dot = stdout(&o);
+    assert!(dot.contains("label=\"err NotFound\""), "{dot}");
+    assert!(dot.contains("in usr_id"), "{dot}");
+}

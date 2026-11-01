@@ -1,0 +1,44 @@
+#!graphene 0.2
+@intent "Check out an order: verify stock, apply a member discount, quote shipping, hold large orders"
+
+extern fx Catalog(sku: str) -> {price: dec, stock: u64, kg: dec} ! UnknownSku
+extern fx DbFetch(table: str, key: u64) -> {role: str, bal: dec} ! NotFound | DbDown
+extern fx ShipQuote(zone: str, kg: dec) -> dec ! NoRoute
+extern fx~ LogAsync(event: str, role: str)
+extern fx~ Audit(event: str, sku: str)
+
+in sku: str -> K
+in usr_id: u64
+in qty: u64
+in zone: str
+
+// 1. Product and stock. Inputs like `qty` can be read anywhere.
+K -> fx Catalog(sku: sku) -> ITEM | err -> NO_ITEM
+NO_ITEM -> fail
+ITEM -> match ITEM.stock >= qty { true => STOCKED, false => SHORT }
+SHORT -> fx~ Audit(event: "short", sku: sku) -> sink AUDIT
+SHORT -> fail OutOfStock
+
+// 2. Member discount. Unknown customers pay as guests; an outage fails.
+STOCKED -> fx DbFetch(table: "usr", key: usr_id) -> USR | err NotFound -> GUEST | err DbDown -> DOWN
+DOWN -> fail
+USR -> match USR.role { "prem" => PREM, "staff" => STAFF, _ => BASIC }
+USR -> fx~ LogAsync(event: "checkout", role: USR.role) -> sink LOG
+PREM -> f(0.80) -> RATE
+STAFF -> f(0.70) -> RATE
+BASIC -> f(1.00) -> RATE
+GUEST -> f(1.00) -> RATE
+
+// 3. Shipping. No route falls back to a flat fee by weight.
+RATE -> fx ShipQuote(zone: zone, kg: ITEM.kg * dec(qty)) -> SHIP | err -> NO_ROUTE
+NO_ROUTE -> f(25.00 + ITEM.kg * dec(qty) * 5.00) -> SHIP
+
+// 4. The bill, as one record.
+SHIP -> f({subtotal: ITEM.price * dec(qty) * RATE, shipping: SHIP, total: ITEM.price * dec(qty) * RATE + SHIP}) -> BILL
+BILL -> match BILL.total > 1000.00 { true => BIG, false => SMALL }
+BIG -> fail NeedsApproval
+SMALL -> out bill: {subtotal: dec, shipping: dec, total: dec}
+
+assert total
+assert indep(LOG, out)
+assert indep(AUDIT, out)

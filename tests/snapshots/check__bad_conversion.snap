@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G003
+
+  × cannot convert `bool` to `dec`
+   ╭─[bad_conversion.grph:5:12]
+ 4 │ in flag: bool -> A
+ 5 │ A -> f(dec(flag)) -> R
+   ·            ──┬─
+   ·              ╰── not a number
+ 6 │ R -> out r: dec
+   ╰────
+  help: `u64()`, `i64()`, and `dec()` convert between number types only

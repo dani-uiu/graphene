@@ -1,0 +1,9 @@
+#!graphene 0.1
+@intent "Under 0.1, an input cannot be read on another input's branch"
+
+in a: dec -> A
+in b: dec -> B
+A -> f(a + b) -> S
+B -> f(b) -> T
+(S, T) -> f(S + T) -> R
+R -> out r: dec

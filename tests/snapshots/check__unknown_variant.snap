@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G002
+
+  × `fx DbFetch` has no error `NotFund`
+   ╭─[unknown_variant.grph:7:51]
+ 6 │ in id: u64 -> A
+ 7 │ A -> fx DbFetch(table: "usr", key: id) -> B | err NotFund -> E | err -> F
+   ·                                                   ───┬───
+   ·                                                      ╰── unknown error variant
+ 8 │ E -> fail
+   ╰────
+  help: it declares NotFound | DbDown; name one of those, or use a catch-all `| err -> Node`

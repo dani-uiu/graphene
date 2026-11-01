@@ -4,51 +4,44 @@
 
 mod common;
 
+use graphene::cases::{self, cases_path, run_case};
 use graphene::diag::Code;
 use graphene::runtime::effects::MockHost;
 use graphene::runtime::{bind_inputs, run, RawInputs};
 use serde_json::Value as Json;
-
-/// One case from a `.cases.json` file.
-pub struct Case {
-    pub name: String,
-    pub inputs: serde_json::Map<String, Json>,
-    pub host: MockHost,
-    pub expect: Json,
-}
-
-pub fn cases(path: &std::path::Path) -> Vec<Case> {
-    let file = path.with_extension("cases.json");
-    let all: Json = serde_json::from_str(&common::read(&file)).expect("valid cases JSON");
-    all.as_array()
-        .expect("cases file is an array")
-        .iter()
-        .map(|c| Case {
-            name: c["name"].as_str().unwrap_or("?").to_string(),
-            inputs: c["inputs"].as_object().cloned().unwrap_or_default(),
-            host: match c["mock"].as_str() {
-                Some(p) => MockHost::from_file(&common::root().join(p)).expect("mock loads"),
-                None => MockHost::empty(),
-            },
-            expect: c["expect"].clone(),
-        })
-        .collect()
-}
 
 #[test]
 fn valid_examples_produce_expected_results_and_logs() {
     let mut total = 0;
     for (name, path) in common::examples("valid") {
         let checked = graphene::check(&common::read(&path)).expect("valid example checks");
-        for case in cases(&path) {
-            let inputs = bind_inputs(&checked, RawInputs::Json(&case.inputs)).expect("inputs bind");
-            let out = run(&checked, &inputs, &case.host, false)
-                .unwrap_or_else(|e| panic!("{name} / {}: fault {:?}", case.name, e.fault));
-            assert_eq!(out.to_json(), case.expect, "{name} / {}", case.name);
+        for case in cases::load(&cases_path(&path)).expect("cases load") {
+            let got = run_case(&checked, &case, false)
+                .unwrap_or_else(|e| panic!("{name} / {}: {e}", case.name));
+            assert_eq!(got, case.expect, "{name} / {}", case.name);
             total += 1;
         }
     }
-    assert!(total >= 7, "expected at least 7 cases, ran {total}");
+    assert!(total >= 24, "expected at least 24 cases, ran {total}");
+}
+
+#[test]
+fn v01_examples_behave_the_same_under_a_02_header() {
+    // D-036: v0.2 is a strict superset of v0.1.
+    for (name, path) in common::examples("valid") {
+        let src = common::read(&path);
+        if !src.starts_with("#!graphene 0.1") {
+            continue;
+        }
+        let upgraded = src.replacen("#!graphene 0.1", "#!graphene 0.2", 1);
+        let old = graphene::check(&src).expect("0.1 checks");
+        let new = graphene::check(&upgraded).expect("0.2 checks");
+        for case in cases::load(&cases_path(&path)).expect("cases load") {
+            let a = run_case(&old, &case, false).expect("0.1 runs");
+            let b = run_case(&new, &case, false).expect("0.2 runs");
+            assert_eq!(a, b, "{name} / {}", case.name);
+        }
+    }
 }
 
 fn fault_of(src: &str, inputs: Json, mock: Option<&str>) -> Code {

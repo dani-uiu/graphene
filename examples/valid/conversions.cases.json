@@ -1,0 +1,59 @@
+[
+  {
+    "name": "every conversion in range; dec truncates toward zero",
+    "inputs": {
+      "n": 7,
+      "x": 5,
+      "d": "12.99"
+    },
+    "mock": null,
+    "expect": {
+      "result": {
+        "ok": {
+          "converted": {
+            "d_i64": 12,
+            "d_u64": 12,
+            "n_dec": "7.00",
+            "n_i64": 7,
+            "same": "12.99",
+            "x_dec": "5.00",
+            "x_u64": 5
+          }
+        }
+      },
+      "effects": []
+    }
+  },
+  {
+    "name": "negative i64 to u64 is R001",
+    "inputs": {
+      "n": 7,
+      "x": -1,
+      "d": "1.00"
+    },
+    "mock": null,
+    "expect": {
+      "fault": {
+        "code": "R001",
+        "message": "value out of range for `u64`"
+      },
+      "effects": []
+    }
+  },
+  {
+    "name": "u64 above i64::MAX to i64 is R001",
+    "inputs": {
+      "n": 18446744073709551615,
+      "x": 0,
+      "d": "0.50"
+    },
+    "mock": null,
+    "expect": {
+      "fault": {
+        "code": "R001",
+        "message": "value out of range for `i64`"
+      },
+      "effects": []
+    }
+  }
+]

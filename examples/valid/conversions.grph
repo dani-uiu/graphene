@@ -1,0 +1,11 @@
+#!graphene 0.2
+@intent "Convert between u64, i64, and dec, including truncation"
+
+in n: u64 -> N
+in x: i64
+in d: dec
+
+N -> f({n_dec: dec(n), n_i64: i64(n), x_dec: dec(x), x_u64: u64(x), d_i64: i64(d), d_u64: u64(d), same: dec(d)}) -> R
+R -> out converted: {n_dec: dec, n_i64: i64, x_dec: dec, x_u64: u64, d_i64: i64, d_u64: u64, same: dec}
+
+assert total

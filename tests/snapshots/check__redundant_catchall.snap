@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G014
+
+  × this catch-all error edge can never fire
+   ╭─[redundant_catchall.grph:7:92]
+ 6 │ in id: u64 -> A
+ 7 │ A -> fx DbFetch(table: "usr", key: id) -> B | err NotFound -> E | err DbDown -> E | err -> F
+   ·                                                                                            ┬
+   ·                                                                                            ╰── every error already has its own edge
+ 8 │ E -> fail
+   ╰────
+  help: remove `| err -> ...`

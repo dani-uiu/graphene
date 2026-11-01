@@ -122,7 +122,9 @@ fn receive<'s>(ctx: &Ctx, v: VId, get: &dyn Fn(VId) -> &'s State) -> State {
         let val = match (get(op), e.kind) {
             (State::Done(Done::Ok(x)), EKind::Flow | EKind::Ok) => x.clone(),
             (State::Done(Done::Emitted), EKind::Flow) => Value::Unit,
-            (State::Done(Done::Err(var)), EKind::Err) => Value::Err(var.clone()),
+            (State::Done(Done::Err(var)), EKind::Err(_)) if e.covers.contains(var) => {
+                Value::Err(var.clone())
+            }
             (State::Done(Done::Arm(i, x)), EKind::Arm(j)) if *i == j => x.clone(),
             _ => continue,
         };

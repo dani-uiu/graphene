@@ -1,0 +1,7 @@
+#!graphene 0.2
+@intent "A parameter that nothing reads"
+
+in a: dec -> A
+in rate: dec
+A -> f(a * 2.00) -> R
+R -> out r: dec

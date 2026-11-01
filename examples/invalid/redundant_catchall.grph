@@ -1,0 +1,11 @@
+#!graphene 0.2
+@intent "Every variant already has its own edge, so the catch-all never fires"
+
+extern fx DbFetch(table: str, key: u64) -> {role: str, bal: dec} ! NotFound | DbDown
+
+in id: u64 -> A
+A -> fx DbFetch(table: "usr", key: id) -> B | err NotFound -> E | err DbDown -> E | err -> F
+E -> fail
+F -> fail
+B -> f(B.bal) -> D
+D -> out bal: dec

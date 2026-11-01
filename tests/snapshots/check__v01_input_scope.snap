@@ -1,0 +1,18 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G009
+
+  × `b` is not available here
+   ╭─[v01_input_scope.grph:6:12]
+ 4 │ in a: dec -> A
+ 5 │ in b: dec -> B
+   ·              ┬
+   ·              ╰── `b` is defined here
+ 6 │ A -> f(a + b) -> S
+   ·            ┬
+   ·            ╰── not computed on every path to this statement
+ 7 │ B -> f(b) -> T
+   ╰────
+  help: `b` is an input: under `#!graphene 0.2` inputs can be read anywhere, so change the header

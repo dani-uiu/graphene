@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+P006
+
+  × a record literal requires `#!graphene 0.2`
+   ╭─[v01_feature.grph:5:8]
+ 4 │ in a: dec -> A
+ 5 │ A -> f({total: a}) -> R
+   ·        ─────┬────
+   ·             ╰── v0.2 feature
+ 6 │ R -> out r: {total: dec}
+   ╰────
+  help: change the header to `#!graphene 0.2`; v0.2 accepts every v0.1 program

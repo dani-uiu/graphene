@@ -6,8 +6,9 @@
 //!
 //! Invariants:
 //! - each vertex fires exactly once, after all of its flow predecessors;
-//!   references need no extra ordering because they are dominators, hence
-//!   flow ancestors (D-011);
+//!   references need no extra ordering: a referenced value node is a
+//!   dominator, hence a flow ancestor (D-011), and every input is settled
+//!   before the workers start (D-029);
 //! - results live in slots indexed by vertex, and the log is read out in
 //!   canonical order, so thread timing can never reorder anything;
 //! - on faults, vertices positioned after the lowest fault seen so far are
@@ -22,7 +23,7 @@ use petgraph::Direction;
 
 use super::step::{fire, Ctx, Fired, State};
 use super::{finish, Fault, RunError, RunOutput};
-use crate::ir::graph::VId;
+use crate::ir::graph::{VId, VKind};
 
 static INACTIVE: State = State::Inactive;
 
@@ -59,6 +60,7 @@ pub fn run(ctx: &Ctx) -> Result<RunOutput, RunError> {
         queue: Mutex::new((ready, n)),
         wake: Condvar::new(),
     };
+    settle_inputs(&shared);
     let workers = std::thread::available_parallelism()
         .map_or(4, |p| p.get())
         .clamp(2, 16);
@@ -72,22 +74,47 @@ pub fn run(ctx: &Ctx) -> Result<RunOutput, RunError> {
 
 fn worker(sh: &Shared) {
     while let Some(v) = next(sh) {
-        let g = &sh.ctx.checked.graph;
-        let p = g.pos[v.index()];
-        if p <= sh.fault_pos.load(Ordering::SeqCst) {
-            let get = |u: VId| match sh.slots[u.index()].get() {
-                Some(Ok((state, _))) => state,
-                _ => &INACTIVE,
-            };
-            let result = fire(sh.ctx, v, &get);
-            let failed = result.is_err();
-            // Each vertex is dequeued exactly once, so the slot is empty.
-            let _ = sh.slots[v.index()].set(result);
-            if failed {
-                sh.fault_pos.fetch_min(p, Ordering::SeqCst);
-            }
+        run_one(sh, v);
+    }
+}
+
+/// Fire `v` (unless it lies past a known fault) and release successors.
+fn run_one(sh: &Shared, v: VId) {
+    let g = &sh.ctx.checked.graph;
+    let p = g.pos[v.index()];
+    if p <= sh.fault_pos.load(Ordering::SeqCst) {
+        let get = |u: VId| match sh.slots[u.index()].get() {
+            Some(Ok((state, _))) => state,
+            _ => &INACTIVE,
+        };
+        let result = fire(sh.ctx, v, &get);
+        let failed = result.is_err();
+        // Each vertex is dequeued exactly once, so the slot is empty.
+        let _ = sh.slots[v.index()].set(result);
+        if failed {
+            sh.fault_pos.fetch_min(p, Ordering::SeqCst);
         }
-        release(sh, v);
+    }
+    release(sh, v);
+}
+
+/// Run the root and every input on this thread before any worker starts,
+/// so expressions may read inputs from anywhere (D-029). Other vertices
+/// made ready meanwhile stay queued, in order, for the workers.
+fn settle_inputs(sh: &Shared) {
+    let g = &sh.ctx.checked.graph;
+    let mut deferred = VecDeque::new();
+    loop {
+        let popped = sh.queue.lock().ok().and_then(|mut q| q.0.pop_front());
+        let Some(v) = popped else { break };
+        if matches!(g.v(v).kind, VKind::Root | VKind::Input { .. }) {
+            run_one(sh, v);
+        } else {
+            deferred.push_back(v);
+        }
+    }
+    if let Ok(mut q) = sh.queue.lock() {
+        q.0.extend(deferred);
     }
 }
 

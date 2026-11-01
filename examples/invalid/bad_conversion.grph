@@ -1,0 +1,6 @@
+#!graphene 0.2
+@intent "Only numbers can be converted"
+
+in flag: bool -> A
+A -> f(dec(flag)) -> R
+R -> out r: dec

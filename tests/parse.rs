@@ -11,6 +11,17 @@ fn every_example_parses_without_diagnostics() {
     for (name, path) in common::all_examples() {
         let src = common::read(&path);
         let (prog, diags) = parse(&src);
+        // Examples meant to fail parsing must fail with exactly their code.
+        let expected = path.with_extension("expected");
+        if expected.exists() && common::read(&expected).starts_with('P') {
+            let want = common::read(&expected).trim().to_string();
+            let got: Vec<String> = diags
+                .iter()
+                .map(|d| format!("{}:{}", d.code, d.line(&src)))
+                .collect();
+            assert_eq!(got, vec![want], "{name}");
+            continue;
+        }
         assert!(
             diags.is_empty(),
             "{name}: unexpected diagnostics {diags:#?}"
@@ -25,7 +36,7 @@ fn every_example_parses_without_diagnostics() {
 /// (source, expected code, expected line)
 const SYNTAX_ERRORS: &[(&str, Code, usize)] = &[
     ("in x: u64 -> A\n", Code::P003, 1),
-    ("#!graphene 0.2\nin x: u64 -> A\n", Code::P003, 1),
+    ("#!graphene 0.3\nin x: u64 -> A\n", Code::P003, 1),
     ("#!graphene 0.1\n@intent \"open\n", Code::P002, 2),
     ("#!graphene 0.1\n@intent \"bad \n escape\"\n", Code::P002, 2),
     (
@@ -90,4 +101,34 @@ fn crlf_and_bom_are_accepted() {
     let src = "\u{feff}#!graphene 0.1\r\nin x: u64 -> A\r\nA -> out y: u64\r\n";
     let (_, diags) = parse(src);
     assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn v02_syntax_errors_are_p001() {
+    let cases = [
+        "#!graphene 0.2\nin x: u64 -> A\nA -> f(foo(x)) -> B\n",
+        "#!graphene 0.2\nin x: u64 -> A\nA -> f({}) -> B\n",
+        "#!graphene 0.2\nin x: u64 -> A\nA -> f({a x}) -> B\n",
+    ];
+    for src in cases {
+        let (_, diags) = graphene::parse(src);
+        let codes: Vec<Code> = diags.iter().map(|d| d.code).collect();
+        assert_eq!(codes, vec![Code::P001], "{src}");
+        assert_eq!(diags[0].line(src), 3, "{src}");
+    }
+}
+
+#[test]
+fn v02_constructs_under_01_are_p006() {
+    let cases = [
+        "#!graphene 0.1\nin x: u64\n",
+        "#!graphene 0.1\nin x: u64 -> A\nA -> f(dec(x)) -> B\n",
+        "#!graphene 0.1\nin x: u64 -> A\nA -> fx G(k: x) -> B | err Gone -> E\n",
+        "#!graphene 0.1\nin x: u64 -> A\nA -> fx G(k: x) -> B | err -> E | err -> F\n",
+    ];
+    for src in cases {
+        let (_, diags) = graphene::parse(src);
+        let codes: Vec<Code> = diags.iter().map(|d| d.code).collect();
+        assert_eq!(codes, vec![Code::P006], "{src}");
+    }
 }

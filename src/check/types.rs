@@ -92,7 +92,9 @@ impl Checker<'_> {
     fn vertex(&mut self, v: VId) -> R<()> {
         let vx = self.g.v(v);
         match &vx.kind {
-            VKind::Input { ty, ty_span, input } => {
+            VKind::Input {
+                ty, ty_span, input, ..
+            } => {
                 if !ty.is_scalar() {
                     return Err(g003(
                         *ty_span,
@@ -203,37 +205,38 @@ impl Checker<'_> {
         let ret = decl.ret.clone().ok_or(Stop::Silent)?;
         let ename = decl.name.clone();
         self.write_targets(v, ret)?;
-        if let Some((e, t)) = self
-            .g
-            .outs(v)
-            .into_iter()
-            .find(|(e, _)| e.kind == EKind::Err)
-        {
+        for (e, t) in self.g.outs(v).into_iter().filter(|(e, _)| e.is_err()) {
             let span = e.span;
-            self.write(t, Type::Err(ename), span)?;
+            self.write(t, Type::Err(ename.clone()), span)?;
         }
         Ok(())
     }
 
+    /// G003 when an effect is called with the other keyword (`fx` vs `fx~`).
+    fn effect_kind(&self, v: VId, decl: &ExternDecl, is_async: bool) -> R<()> {
+        if decl.is_async == is_async {
+            return Ok(());
+        }
+        let (kw, other) = if decl.is_async {
+            ("fx~", "fx")
+        } else {
+            ("fx", "fx~")
+        };
+        Err(g003(
+            self.g.v(v).span,
+            format!(
+                "`{}` is declared `{kw}` but called with `{other}`",
+                decl.name
+            ),
+            "wrong effect kind",
+            format!("call it as `{kw} {}(...)`", decl.name),
+        )
+        .into())
+    }
+
     fn call_args(&mut self, v: VId, effect: usize, args: &[IArg], is_async: bool) -> R<()> {
         let decl = &self.g.externs[effect];
-        if decl.is_async != is_async {
-            let (kw, other) = if decl.is_async {
-                ("fx~", "fx")
-            } else {
-                ("fx", "fx~")
-            };
-            return Err(g003(
-                self.g.v(v).span,
-                format!(
-                    "`{}` is declared `{kw}` but called with `{other}`",
-                    decl.name
-                ),
-                "wrong effect kind",
-                format!("call it as `{kw} {}(...)`", decl.name),
-            )
-            .into());
-        }
+        self.effect_kind(v, decl, is_async)?;
         let params: BTreeMap<&str, &Type> = decl
             .params
             .iter()
@@ -421,6 +424,30 @@ impl Checker<'_> {
             },
             IKind::Unary(op, x) => self.unary(*op, x, hint, e.span),
             IKind::Binary(op, l, r) => self.binary(*op, l, r, hint, e.span),
+            IKind::Record(fields) => {
+                let mut out = BTreeMap::new();
+                for (name, x) in fields {
+                    let fh = match hint {
+                        Some(Type::Record(h)) => h.get(name),
+                        _ => None,
+                    };
+                    out.insert(name.clone(), self.infer(x, fh)?);
+                }
+                Ok(Type::Record(out))
+            }
+            IKind::Convert(to, x) => {
+                let t = self.infer(x, None)?;
+                if !t.is_numeric() {
+                    return Err(g003(
+                        x.span,
+                        format!("cannot convert `{t}` to `{to}`"),
+                        "not a number",
+                        "`u64()`, `i64()`, and `dec()` convert between number types only",
+                    )
+                    .into());
+                }
+                Ok(to.clone())
+            }
         }
     }
 

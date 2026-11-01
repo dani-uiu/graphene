@@ -79,7 +79,8 @@ pub struct Extern {
 pub struct Input {
     pub name: Ident,
     pub ty: Ty,
-    pub node: Ident,
+    /// The flow handle; `None` for a v0.2 parameter (`in x: t`).
+    pub node: Option<Ident>,
     pub pos: Pos,
 }
 
@@ -89,8 +90,16 @@ pub struct Flow {
     pub sources: Vec<Ident>,
     pub op: Op,
     pub target: Target,
-    pub err: Option<Ident>,
+    /// `| err [Variant] -> Node` edges, in source order.
+    pub errs: Vec<ErrEdge>,
     pub pos: Pos,
+}
+
+/// One `| err [Variant] -> Node` edge. `variant: None` is the catch-all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ErrEdge {
+    pub variant: Option<Ident>,
+    pub target: Ident,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -212,6 +221,37 @@ pub enum ExprKind {
     Field(Box<Expr>, Ident),
     Unary(UnOp, Box<Expr>),
     Binary(BinOp, Box<Expr>, Box<Expr>),
+    /// v0.2 record literal `{f: e, ...}`, fields in source order.
+    Record(Vec<(Ident, Expr)>),
+    /// v0.2 numeric conversion `u64(e)`, `i64(e)`, `dec(e)`.
+    Convert(NumTy, Box<Expr>),
+}
+
+/// Target type of a numeric conversion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NumTy {
+    U64,
+    I64,
+    Dec,
+}
+
+impl NumTy {
+    pub fn from_name(name: &str) -> Option<NumTy> {
+        match name {
+            "u64" => Some(NumTy::U64),
+            "i64" => Some(NumTy::I64),
+            "dec" => Some(NumTy::Dec),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            NumTy::U64 => "u64",
+            NumTy::I64 => "i64",
+            NumTy::Dec => "dec",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

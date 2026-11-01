@@ -1,4 +1,5 @@
-//! G008: every value vertex reaches an `out`, a `fail`, or a sink.
+//! G008: every value vertex reaches an `out`, a `fail`, or a sink, and
+//! every v0.2 parameter (an input without a node) is referenced.
 //!
 //! Depends on: `ir::graph`, `diag`.
 //!
@@ -36,8 +37,28 @@ pub fn check(graph: &Graph, diags: &mut Vec<Diag>) {
             }
         }
     }
+    let used = referenced(graph);
     for &v in &graph.order {
         let vx = graph.v(v);
+        if let VKind::Input {
+            input,
+            has_node: false,
+            ..
+        } = &vx.kind
+        {
+            if !used[v.index()] {
+                diags.push(
+                    Diag::new(
+                        Code::G008,
+                        vx.span,
+                        format!("input `{input}` is never used"),
+                    )
+                    .label("unused input")
+                    .help("read it in an expression, or remove the `in` line"),
+                );
+            }
+            continue;
+        }
         if matches!(vx.kind, VKind::Input { .. } | VKind::Node) && !live[v.index()] {
             diags.push(
                 Diag::new(Code::G008, vx.span, format!("`{}` never reaches an `out`, `fail`, or sink", vx.name))
@@ -46,4 +67,19 @@ pub fn check(graph: &Graph, diags: &mut Vec<Diag>) {
             );
         }
     }
+}
+
+/// Which vertices some expression references.
+fn referenced(graph: &Graph) -> Vec<bool> {
+    let mut used = vec![false; graph.g.node_count()];
+    for v in graph.g.node_indices() {
+        for e in graph.v(v).kind.exprs() {
+            let mut refs = Vec::new();
+            e.refs(&mut refs);
+            for (r, _, _) in refs {
+                used[r.index()] = true;
+            }
+        }
+    }
+    used
 }

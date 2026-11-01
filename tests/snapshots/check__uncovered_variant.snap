@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G005
+
+  × `fx DbFetch` does not handle DbDown
+   ╭─[uncovered_variant.grph:7:1]
+ 6 │ in id: u64 -> A
+ 7 │ A -> fx DbFetch(table: "usr", key: id) -> B | err NotFound -> E
+   · ───────────────────────────────┬───────────────────────────────
+   ·                                ╰── no error edge for DbDown
+ 8 │ E -> fail
+   ╰────
+  help: add `| err DbDown -> Node` for each missing error, or a catch-all `| err -> Node`

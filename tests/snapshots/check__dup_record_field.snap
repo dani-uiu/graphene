@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G013
+
+  × duplicate field `total`
+   ╭─[dup_record_field.grph:5:19]
+ 4 │ in a: dec -> A
+ 5 │ A -> f({total: a, total: a * 2.00}) -> R
+   ·                   ──┬──
+   ·                     ╰── field listed twice
+ 6 │ R -> out r: {total: dec}
+   ╰────
+  help: each field may appear only once; remove the duplicate

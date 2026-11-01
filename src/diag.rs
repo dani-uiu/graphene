@@ -41,6 +41,7 @@ pub enum Code {
     P003,
     P004,
     P005,
+    P006,
     G001,
     G002,
     G003,
@@ -201,4 +202,43 @@ pub fn render(diag: &Diag, name: &str, src: &str, color: bool) -> String {
     // Writing into a String cannot fail.
     let _ = handler.render_report(&mut out, &ws);
     out
+}
+
+/// 1-based `(line, column)` with the column counted in characters.
+fn line_char_col(src: &str, offset: usize) -> (usize, usize) {
+    let (line, byte_col) = line_col(src, offset);
+    let start = offset.min(src.len()) + 1 - byte_col;
+    let chars = src
+        .get(start..offset.min(src.len()))
+        .map_or(byte_col - 1, |s| s.chars().count());
+    (line, chars + 1)
+}
+
+fn span_json(src: &str, s: Span) -> serde_json::Value {
+    let (line, col) = line_char_col(src, s.start);
+    let (end_line, end_col) = line_char_col(src, s.end);
+    serde_json::json!({
+        "start": s.start, "end": s.end,
+        "line": line, "col": col, "end_line": end_line, "end_col": end_col,
+    })
+}
+
+impl Diag {
+    /// Machine-readable form for `graphene check --json` (D-035). The
+    /// primary label comes first in `labels`, followed by the notes.
+    pub fn to_json(&self, file: &str, src: &str) -> serde_json::Value {
+        let mut labels =
+            vec![serde_json::json!({ "span": span_json(src, self.span), "text": self.label })];
+        for (s, text) in &self.notes {
+            labels.push(serde_json::json!({ "span": span_json(src, *s), "text": text }));
+        }
+        serde_json::json!({
+            "code": self.code.to_string(),
+            "message": self.message,
+            "file": file,
+            "span": span_json(src, self.span),
+            "labels": labels,
+            "help": self.help,
+        })
+    }
 }

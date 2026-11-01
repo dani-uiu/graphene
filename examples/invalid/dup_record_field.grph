@@ -1,0 +1,6 @@
+#!graphene 0.2
+@intent "A record literal lists the same field twice"
+
+in a: dec -> A
+A -> f({total: a, total: a * 2.00}) -> R
+R -> out r: {total: dec}

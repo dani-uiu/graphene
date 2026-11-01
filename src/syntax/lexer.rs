@@ -16,17 +16,21 @@ use rust_decimal::Decimal;
 use super::token::{Raw, Tok, Token};
 use crate::diag::{Code, Diag, Span};
 
-/// Only version accepted by this implementation.
-pub const VERSION: (u32, u32) = (0, 1);
+/// Versions accepted by this implementation (D-036).
+pub const VERSIONS: [(u32, u32); 2] = [(0, 1), (0, 2)];
+
+/// The newest version; used when the header is missing or unsupported.
+pub const LATEST: (u32, u32) = (0, 2);
 
 pub struct Lexed {
     pub tokens: Vec<Token>,
     pub diags: Vec<Diag>,
+    pub version: (u32, u32),
 }
 
 pub fn lex(src: &str) -> Lexed {
     let mut diags = Vec::new();
-    let body_start = header(src, &mut diags);
+    let (body_start, version) = header(src, &mut diags);
     let mut tokens = Vec::new();
     let mut lexer = Raw::lexer(&src[body_start..]);
     while let Some(raw) = lexer.next() {
@@ -43,11 +47,16 @@ pub fn lex(src: &str) -> Lexed {
         tok: Tok::Eof,
         span: end,
     });
-    Lexed { tokens, diags }
+    Lexed {
+        tokens,
+        diags,
+        version,
+    }
 }
 
-/// Checks the header line and returns the byte offset where the body begins.
-fn header(src: &str, diags: &mut Vec<Diag>) -> usize {
+/// Checks the header line. Returns the byte offset where the body begins
+/// and the declared version.
+fn header(src: &str, diags: &mut Vec<Diag>) -> (usize, (u32, u32)) {
     let start = if src.starts_with('\u{feff}') { 3 } else { 0 };
     let line_end = src[start..].find('\n').map_or(src.len(), |i| start + i);
     let line = src[start..line_end].trim_end_matches('\r');
@@ -60,22 +69,23 @@ fn header(src: &str, diags: &mut Vec<Diag>) -> usize {
                 "missing `#!graphene` header",
             )
             .label("expected the header here")
-            .help("the first line of every file must be `#!graphene 0.1`"),
+            .help("the first line of every file must be `#!graphene 0.2`"),
         );
-        return start;
+        return (start, LATEST);
     };
-    if parse_version(version.trim()) != Some(VERSION) {
+    let parsed = parse_version(version.trim()).filter(|v| VERSIONS.contains(v));
+    if parsed.is_none() {
         diags.push(
             Diag::new(
                 Code::P003,
                 span,
                 format!("unsupported version `{}`", version.trim()),
             )
-            .label("this compiler implements Graphene 0.1")
-            .help("change the header to `#!graphene 0.1`"),
+            .label("this compiler implements Graphene 0.1 and 0.2")
+            .help("change the header to `#!graphene 0.2`"),
         );
     }
-    (line_end + 1).min(src.len())
+    ((line_end + 1).min(src.len()), parsed.unwrap_or(LATEST))
 }
 
 fn parse_version(v: &str) -> Option<(u32, u32)> {

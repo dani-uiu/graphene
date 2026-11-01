@@ -6,7 +6,8 @@
 //!
 //! Invariants:
 //! - atoms come only from decisions: match ops (one outcome per arm) and
-//!   sync effects that declare errors (outcome 0 = ok, 1 = err);
+//!   sync effects that declare errors (outcome 0 = ok, outcome k = the
+//!   k-th error edge, D-032);
 //! - a decision's atoms are only ever conjoined onto that decision's own
 //!   guard, so guards follow the decision tree and normalization (sibling
 //!   merge + absorption) is canonical: equal conditions give equal sets;
@@ -149,7 +150,7 @@ impl Guards {
             EKind::Flow => g.clone(),
             EKind::Ok if self.arity.contains_key(&op) => g.and_atom(op, 0),
             EKind::Ok => g.clone(),
-            EKind::Err => g.and_atom(op, 1),
+            EKind::Err(i) => g.and_atom(op, i + 1),
             EKind::Arm(i) => g.and_atom(op, i),
         }
     }
@@ -164,7 +165,8 @@ pub fn decisions(graph: &Graph) -> BTreeMap<VId, usize> {
                 out.insert(v, arms.len());
             }
             VKind::Sync { effect, .. } if !graph.externs[*effect].errors.is_empty() => {
-                out.insert(v, 2);
+                let errs = graph.outs(v).iter().filter(|(e, _)| e.is_err()).count();
+                out.insert(v, 1 + errs);
             }
             _ => {}
         }
@@ -217,7 +219,16 @@ pub fn describe_atom(graph: &Graph, d: VId, o: usize) -> String {
             format!("the match on line {} takes `{pat}`", vx.line)
         }
         VKind::Sync { effect, .. } => {
-            let outcome = if o == 0 { "succeeds" } else { "fails" };
+            let errs: Vec<_> = graph
+                .outs(d)
+                .into_iter()
+                .filter(|(e, _)| e.is_err())
+                .collect();
+            let outcome = match errs.get(o.wrapping_sub(1)) {
+                _ if o == 0 => "succeeds".to_string(),
+                Some((e, _)) if errs.len() > 1 => format!("fails with {}", e.covers.join(" | ")),
+                _ => "fails".to_string(),
+            };
             format!(
                 "`{}` on line {} {outcome}",
                 graph.externs[*effect].name, vx.line

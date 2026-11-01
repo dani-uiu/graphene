@@ -11,7 +11,7 @@
 //!   header, so the formatter can preserve comments and blank lines.
 
 use super::ast::*;
-use super::lexer::{lex, VERSION};
+use super::lexer::lex;
 use super::token::{Tok, Token};
 use crate::diag::{Code, Diag, Span};
 
@@ -23,7 +23,7 @@ const HELP_FLOW: &str =
 const HELP_MATCH: &str = "a match looks like `X -> match expr { \"a\" => A, _ => B }`";
 const HELP_EXTERN: &str =
     "an extern looks like `extern fx Name(p: type) -> type ! ErrA | ErrB` or `extern fx~ Name(p: type)`";
-const HELP_INPUT: &str = "an input looks like `in name: type -> Node`";
+const HELP_INPUT: &str = "an input looks like `in name: type -> Node`, or `in name: type` (0.2)";
 const HELP_OUT: &str = "results look like `X -> out name: type`, `X -> fail`, or `X -> fail Name`";
 const HELP_ASSERT: &str = "assertions are `assert total` or `assert indep(Sink, out)`";
 const HELP_STMT: &str =
@@ -47,11 +47,14 @@ pub fn parse(src: &str) -> (Program, Vec<Diag>) {
     ) {
         lines.pop();
     }
-    crate::diag::sort(&mut diags);
     let program = Program {
-        version: VERSION,
+        version: lexed.version,
         lines,
     };
+    if program.version < (0, 2) {
+        super::features::gate(&program, &mut diags);
+    }
+    crate::diag::sort(&mut diags);
     (program, diags)
 }
 
@@ -294,8 +297,11 @@ impl<'t> P<'t> {
         let name = self.ident("an input name")?;
         self.expect(Tok::Colon, "`:`")?;
         let ty = self.ty()?;
-        self.expect(Tok::Arrow, "`->`")?;
-        let node = self.ident("a node name")?;
+        let node = if self.eat(&Tok::Arrow) {
+            Some(self.ident("a node name")?)
+        } else {
+            None
+        };
         Ok(Stmt::Input(Input {
             name,
             ty,
@@ -331,18 +337,22 @@ impl<'t> P<'t> {
         let op = self.op()?;
         self.expect(Tok::Arrow, "`->` before the target")?;
         let target = self.target()?;
-        let err = if self.eat(&Tok::Pipe) {
+        let mut errs = Vec::new();
+        while self.eat(&Tok::Pipe) {
             self.expect(Tok::Err, "`err`")?;
+            let variant = match self.peek() {
+                Tok::Ident(_) => Some(self.ident("an error variant")?),
+                _ => None,
+            };
             self.expect(Tok::Arrow, "`->`")?;
-            Some(self.ident("an error node name")?)
-        } else {
-            None
-        };
+            let target = self.ident("an error node name")?;
+            errs.push(ErrEdge { variant, target });
+        }
         Ok(Stmt::Flow(Flow {
             sources,
             op,
             target,
-            err,
+            errs,
             pos: self.since(start),
         }))
     }
@@ -633,6 +643,7 @@ impl P<'_> {
             });
         }
         match tok {
+            Tok::Ident(_) if matches!(self.peek_at(1), Tok::LParen) => self.conversion(),
             Tok::Ident(_) => {
                 let id = self.ident("a name")?;
                 Ok(Expr {
@@ -640,6 +651,7 @@ impl P<'_> {
                     kind: ExprKind::Name(id),
                 })
             }
+            Tok::LBrace => self.record_lit(),
             Tok::LParen => {
                 self.bump();
                 let e = self.expr()?;
@@ -648,6 +660,48 @@ impl P<'_> {
             }
             _ => Err(self.error("an expression")),
         }
+    }
+}
+
+impl P<'_> {
+    /// `u64(e)`, `i64(e)`, or `dec(e)`; the caller saw `IDENT (`.
+    fn conversion(&mut self) -> PResult<Expr> {
+        let id = self.ident("a conversion")?;
+        let Some(to) = NumTy::from_name(&id.name) else {
+            return Err(Diag::new(
+                Code::P001,
+                id.span(),
+                format!("`{}` is not a function", id.name),
+            )
+            .label("unknown function")
+            .help("the only calls in expressions are the conversions `u64(x)`, `i64(x)`, and `dec(x)`; effects are called with `fx`"));
+        };
+        self.bump(); // `(`
+        let inner = self.expr()?;
+        self.expect(Tok::RParen, "`)`")?;
+        Ok(Expr {
+            kind: ExprKind::Convert(to, Box::new(inner)),
+            pos: self.since(id.span()),
+        })
+    }
+
+    /// `{name: expr, ...}`; the caller saw `{`.
+    fn record_lit(&mut self) -> PResult<Expr> {
+        let start = self.bump().span;
+        let fields = self.list(Tok::RBrace, "a record", |p| {
+            let name = p.ident("a field name")?;
+            p.expect(Tok::Colon, "`:` after the field name")?;
+            Ok((name, p.expr()?))
+        })?;
+        if fields.is_empty() {
+            return Err(Diag::new(Code::P001, self.since(start).0, "empty record")
+                .label("records need at least one field")
+                .help("write a record as `{name: expr, ...}`"));
+        }
+        Ok(Expr {
+            kind: ExprKind::Record(fields),
+            pos: self.since(start),
+        })
     }
 }
 
