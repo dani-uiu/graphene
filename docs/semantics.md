@@ -1,6 +1,6 @@
-# Graphene v0.2 — Semantics
+# Graphene v0.3 — Semantics
 
-This document is normative. Sections 1–5 describe v0.1; section 6 lists what changes under a `#!graphene 0.2` header. A `0.1` file is checked and run exactly as sections 1–5 say. Where it is more precise than `graphene_prompt.md`, it wins; every such refinement is also listed in `decisions.md` with its rationale.
+This document is normative. Sections 1–5 describe v0.1; section 6 lists what changes under a `#!graphene 0.2` header, and section 7 what changes under `#!graphene 0.3`. A `0.1` file is checked and run exactly as sections 1–5 say. Where it is more precise than `graphene_prompt.md`, it wins; every such refinement is also listed in `decisions.md` with its rationale.
 
 Syntax lives in `grammar.ebnf`. This file covers names, the graph, types, static checks, and execution.
 
@@ -348,3 +348,138 @@ v0.2 is a strict superset of v0.1: changing a valid `0.1` file's header to `0.2`
 
 - **`graphene test [paths]`** runs every `X.cases.json` that sits next to an `X.grph` (searching the given paths, default `.`). A case passes when the JSON `graphene run` would print equals `expect`. That includes fault JSON, so expected faults can be tested. Mock paths are relative to the `.cases.json` file. `--parallel` also runs each case in parallel and requires the same JSON.
 - **`graphene check --json`** prints the diagnostics as a JSON array (code, message, file, span with byte offsets plus 1-based line and column, labels, notes, help). A valid program prints `[]`.
+
+## 7. Version 0.3
+
+v0.3 is a strict superset of v0.2. Under an older header, every construct below is **P006**, with the message "requires `#!graphene 0.3`". The words `graph`, `call`, `map`, `filter`, `each` and `const` are reserved only under a `0.3` header. Rationale: `docs/v0.3.md`, decisions D-043 to D-054.
+
+### 7.1 Statements over several lines (D-050)
+
+A newline inside an open `(`, `{` or `[` does not end the statement. A statement's line is the line it starts on, and its span covers every line it occupies. Comments may follow any of its lines. The formatter wraps statements longer than 100 columns at the outermost record or argument list, with one item per line and a trailing comma.
+
+### 7.2 Constants (D-051)
+
+`const NAME: T = e` declares a top-level constant.
+- **Value:** `e` must be a literal, or a record or list of literals, with type `T` (G003).
+- **Names:** constants share the program's namespace (G013 on clashes). A constant is referenced like a value, from any expression, including subgraph bodies.
+- **No vertex:** constants are inlined during lowering. They add no vertices, edges or dependencies.
+- **Unused:** a constant that is never referenced is G008.
+
+### 7.3 Subgraphs (D-043)
+
+`graph Name(p1: T1 [-> N1], ...) -> R ! E1 | ... | En { body }` declares a subgraph.
+
+**Body**
+- Parameters behave like `in` declarations inside the body: the name is usable anywhere, and an optional node can start flows.
+- The body may contain any statement except `extern`, `const`, `graph` and `in`. It must contain exactly one bare `out` (G011), whose source must have type `R` (G017).
+- **Raised errors:** a body's raised errors are the names of its `fail Name` statements, plus, for each bare `fail` fed by an error node, the variants that error node covers. Every raised error must be declared after `!` (G017).
+
+**Checks**
+- **Checked on its own:** each body is lowered and checked as its own graph, with every stage in §4 applied.
+- **Always total:** totality (§4.8) is always checked for a body, as if it contained `assert total`.
+- **No recursion:** the call graph over `call`, `map` and `filter` must be acyclic (G015). It is reported at the call that closes the cycle.
+
+### 7.4 Calls, maps, filters (D-043, D-044, D-045)
+
+`X -> call G(args) -> T | err ...`, `X -> map G(args) -> T | err ...`, `X -> filter G(args) -> T | err ...`
+
+**Arguments** follow the `fx` rules: they name exactly the parameters, each once, with matching types (G003).
+
+**`each` (G016)**
+- `map` and `filter` must have exactly one argument written `p: each e`, where `e : [T]` and parameter `p : T`.
+- `call` has none.
+- Every other argument is passed unchanged to every element.
+
+**Result types**
+- `call` gives `R`.
+- `map` gives `[R]`, in input order.
+- `filter` requires `R = bool` (G003), and gives `[T]`: the elements, in order, for which the body returned `true`.
+
+**Error edges** follow §6.3, against the subgraph's declared errors (G002, G005, G014). A subgraph with no declared errors takes no error edge.
+
+**Execution**
+- **Bodies are nested runs:** each element's run starts with that element's parameters bound and settled before anything else (§6.1).
+- **Every element runs (D-045).** If any element fails, the op takes the error edge for the error of the **lowest-index** failing element. Otherwise it delivers its result.
+- **Faults:** a fault inside a body is a fault of the whole run. The fault reported is the first by `(op position, element index, inner position)`.
+
+**Effect log**
+- Entries produced inside a body carry `"at": [[name, index], ...]`, the path from the top-level op down. The index is `null` for `call`.
+- Entries are ordered by `(op position, element index, inner position)`, recursively. The order never depends on timing.
+- In parallel mode, elements may run concurrently, and the result equals the sequential run exactly, as in §5.8.
+
+**Guards:** a call, map or filter with error edges is a decision with outcome `ok` plus one outcome per error edge, exactly like a sync effect (§6.3).
+
+### 7.5 `each` on effects (D-049)
+
+An `fx` or `fx~` call may mark at most one argument `each` (G016).
+- **`fx`:** the effect is called once per element, every element runs, and the lowest-index error wins. The result is `[R]`.
+- **`fx~`:** the effect is emitted once per element, and still flows into a sink.
+- **Log order:** entries are ordered by `(op position, element index)`, with `"at": [[effect, index]]`.
+
+### 7.6 Lists (D-044)
+
+`[T]` is a list of `T`. List equality is structural and order-sensitive, and lists are not scalars: they can't be compared with `==` or used as a match scrutinee (G003).
+
+| Expression | Typing | Value |
+|---|---|---|
+| `[e1, ..., en]` | every `ei : T` gives `[T]`. `[]` takes its type from the expected type, otherwise G003. | the elements, in order |
+| `xs.f` | `xs : [{f: T, ...}]` gives `[T]` | the `f` field of each element |
+| `len(xs)` | `u64` | number of elements |
+| `sum(xs)` | `[N]` with `N` numeric gives `N` | the sum. An empty list gives zero. Overflow is R001. |
+| `min(xs)`, `max(xs)` | `[N]` or `[str]` gives the element type | the smallest or largest element. An empty list is **R006**. |
+| `all(xs)`, `any(xs)` | `[bool]` gives `bool` | `all([]) = true`, `any([]) = false` |
+| `contains(xs, v)` | `[T]`, `v : T` (scalar `T`) gives `bool` | membership |
+
+- **Inputs** may have list types, with records allowed as elements. They are bound from JSON. On the command line, the argument text is parsed as JSON.
+- **Output:** `dec` values inside lists are rescaled as in §5.5.
+
+### 7.7 Rounding, output scale, strings (D-052)
+
+- **`round(x, n)`, `floor(x, n)`, `ceil(x, n)`:** `x : dec`, and `n` an integer literal from 0 to 28 (G003 otherwise). `round` rounds half away from zero, `floor` toward −∞, `ceil` toward +∞. The result is `dec`.
+- **`dec(N)`** in a type is `dec` for every check. When the value leaves the program through `out`, it is rescaled to `N` places instead of 2. `N` is from 0 to 28.
+- **`a + b`** with both `str` concatenates.
+
+### 7.8 Joins and references by implication (D-046, D-047)
+
+**Implication.** For guards `g1`, `g2`, `g1 ⇒ g2` holds when every minterm of `g1` is a superset of some minterm of `g2`. This is sound for guards built as in §4.1.
+
+**Joins.** A join is accepted when some member's guard `g*` implies every other member's guard. The join's guard is `g*`. Otherwise it is G007, now reported only for guards that can't be ordered this way.
+
+**References.** An expression in op `o` may reference value node `X` when either:
+- the §4.2 rule holds; or
+- `X` is a flow ancestor of `o` and `g(o) ⇒ g(X)`.
+
+Otherwise it is G009, and the help line says which condition fails.
+
+### 7.9 Effect hosts (D-048)
+
+Hosts are chosen outside the program (CLI `--host config.json`, or the IDE). The configuration maps each effect to one of:
+- an **HTTP** endpoint, which receives the request as a POST body;
+- a **command**, which receives one JSON line on stdin and answers with one JSON line on stdout;
+- a **mock fixture**.
+
+**Protocol:** the request is `{"effect": E, "args": {...}}`. The answer is `{"ok": v}` or `{"err": "Variant"}`, checked exactly as mock answers are (R004).
+
+**Failures:** a timeout, transport error, non-zero exit or malformed answer is **R007**.
+
+**Recording:** `--record file.json` writes every sync answer of the run as a mock fixture, keyed by arguments. Replaying it with `--mock file.json` reproduces the run's JSON exactly.
+
+**Async emits are buffered.** Every `fx~` emit is delivered to the host after the run completes, in log order, and only for log entries positioned before a fault. A parallel run therefore never delivers an emit that the sequential run would not.
+
+### 7.10 Messages and coverage (D-052, D-053)
+
+**Hints:** when a name, field, parameter, error variant or effect is unknown and a defined candidate of the right kind is within edit distance 2, the diagnostic adds "did you mean `X`?".
+
+**Fault values:**
+- R001 messages show the operands, or the value being converted;
+- R003 and R004 messages show the effect, its arguments, and the answer received.
+
+**`graphene explain CODE`** prints each code's meaning, a minimal example, and the fix.
+
+**Coverage.** A program's coverage items are:
+- its terminals (each `out` and `fail` statement);
+- its decision outcomes (each match arm, and each `ok` and error edge of effects and calls);
+- its effects.
+
+A case covers the items that are active in its sequential run. `graphene test --coverage` reports, per program, the covered and total counts and the items no case covers.
+

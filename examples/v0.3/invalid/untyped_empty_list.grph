@@ -1,0 +1,6 @@
+#!graphene 0.3
+@intent "An empty list literal needs an expected type"
+
+in x: u64 -> A
+A -> f(len([])) -> N
+N -> out n: u64

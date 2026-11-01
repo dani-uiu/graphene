@@ -1,0 +1,20 @@
+#!graphene 0.3
+@intent "Split a bill: named constants, explicit rounding, a 4-place output, and a message"
+
+const SERVICE: dec = 0.125
+const VAT: dec = 0.21
+
+in amount: dec -> A
+in guest: str
+
+A -> f({
+  service: round(amount * SERVICE, 2),
+  vat_exact: amount * VAT,
+  vat_down: floor(amount * VAT, 1),
+  vat_up: ceil(amount * VAT, 1),
+  total: round(amount * (1.00 + SERVICE + VAT), 2),
+  note: "thanks, " + guest,
+}) -> BILL
+BILL -> out bill: {service: dec, vat_exact: dec(4), vat_down: dec(1), vat_up: dec(1), total: dec, note: str}
+
+assert total

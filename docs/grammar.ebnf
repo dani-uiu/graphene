@@ -1,5 +1,5 @@
 (* ===================================================================== *)
-(*  Graphene v0.2 — grammar                                               *)
+(*  Graphene v0.3 — grammar                                               *)
 (*                                                                        *)
 (*  Notation: ISO 14977-style EBNF.                                       *)
 (*    { x }  zero or more     [ x ]  optional     ( a | b )  choice       *)
@@ -23,14 +23,17 @@
 (*     are both accepted as NL.                                           *)
 
 NL          = [ "\r" ] , "\n" ;
+              (* v0.3: a NL inside an open "(", "{" or "[" does not end the *)
+              (*       statement, so one statement may span several lines. *)
 COMMENT     = "//" , { any character except NL } ;
 
 (* L2. Header. Only valid as the very first line of the file. "#" may    *)
 (*     not appear anywhere else (P005).                                   *)
 
 HEADER      = "#!graphene" , " " , VERSION ;
-VERSION     = DIGITS , "." , DIGITS ;           (* "0.1" or "0.2"; anything else is P003 *)
-(* Under a "0.1" header, every construct marked "v0.2" below is P006.   *)
+VERSION     = DIGITS , "." , DIGITS ;           (* "0.1", "0.2" or "0.3"; else P003 *)
+(* Under a "0.1" header, every construct marked "v0.2" or "v0.3" below is *)
+(* P006; under "0.2", every construct marked "v0.3" is P006.             *)
 
 (* L3. Atoms.                                                             *)
 
@@ -55,6 +58,9 @@ DIGITS      = DIGIT , { DIGIT } ;
 (*       𝑓 (U+1D453) f         ?           match    × (U+00D7)  *         *)
 (*       ⫫ (U+2AEB)  indep                                                *)
 (*                                                                        *)
+(*     v0.3 adds reserved words, only under a "0.3" header (so older     *)
+(*     files may keep them as names): graph call map filter each const  *)
+(*                                                                        *)
 (*     Maximal munch: "fx~" before "fx", "->" before "-", "||" before    *)
 (*     "|", "==" "!=" "<=" ">=" "=>" before their one-char prefixes.      *)
 
@@ -68,11 +74,30 @@ line        = [ stmt ] , [ COMMENT ] , NL ;
 
 stmt        = meta
             | extern_decl
+            | const_decl                                       (* v0.3 *)
+            | graph_decl                                       (* v0.3 *)
             | input
             | assertion
             | flow
             | match_stmt
             | output ;
+
+const_decl  = "const" , IDENT , ":" , type , "=" , expr ;      (* v0.3 *)
+              (* checked: expr is a literal, or a record/list of literals *)
+              (* checked (G003): value matches the type; (G013) unique;   *)
+              (*                 (G008) referenced somewhere.             *)
+
+graph_decl  = "graph" , IDENT , "(" , [ gparams ] , ")" , "->" , type ,
+              [ "!" , IDENT , { "|" , IDENT } ] , "{" , NL ,
+              { line } , "}" ;                                 (* v0.3 *)
+gparams     = gparam , { "," , gparam } , [ "," ] ;
+gparam      = IDENT , ":" , type , [ "->" , IDENT ] ;          (* like `in` *)
+              (* The body is ordinary statements (no extern, const, graph  *)
+              (* or `in`); it ends in exactly one bare `out`.              *)
+              (* checked (G020): the body is always total.                 *)
+              (* checked (G017): `out` has the declared type; every raised *)
+              (*                 error is declared after "!".              *)
+              (* checked (G015): no cycle in the call graph.               *)
 
 (* Dispatch is LL(2)/LL(3): "@", "extern", "in", "assert", "(" decide    *)
 (* directly; otherwise IDENT "->" then the next token decides:           *)
@@ -103,7 +128,14 @@ source      = IDENT
             | "(" , IDENT , "," , IDENT , { "," , IDENT } , [ "," ] , ")" ;   (* join: 2+ members *)
 op          = "f" , "(" , expr , ")"
             | "fx" , IDENT , "(" , [ args ] , ")"
-            | "fx~" , IDENT , "(" , [ args ] , ")" ;
+            | "fx~" , IDENT , "(" , [ args ] , ")"
+            | "call" , IDENT , "(" , [ args ] , ")"            (* v0.3 *)
+            | "map" , IDENT , "(" , [ args ] , ")"             (* v0.3 *)
+            | "filter" , IDENT , "(" , [ args ] , ")" ;        (* v0.3 *)
+              (* checked (G016): map/filter have exactly one `each`       *)
+              (*                 argument; fx/fx~ at most one; call none; *)
+              (*                 an `each` argument is a list [T] where   *)
+              (*                 the parameter is T.                      *)
 target      = IDENT , [ ":" , type ]
             | "sink" , IDENT ;
 err_edge    = "|" , "err" , [ IDENT ] , "->" , IDENT ;   (* v0.2: variant name *)
@@ -120,6 +152,7 @@ arm         = ( literal | "_" ) , "=>" , IDENT ;
               (* checked (G014): no duplicate literal, nothing after "_".  *)
 
 output      = IDENT , "->" , ( "out" , IDENT , ":" , type
+                             | "out"                           (* v0.3, subgraph bodies only *)
                              | "fail" , [ IDENT ] ) ;
 
 assertion   = "assert" , ( "total"
@@ -131,6 +164,8 @@ assertion   = "assert" , ( "total"
 (* --------------------------------------------------------------------- *)
 
 type        = "u64" | "i64" | "dec" | "bool" | "str"
+            | "dec" , "(" , INT , ")"                          (* v0.3: output scale 0..28 *)
+            | "[" , type , "]"                                 (* v0.3: list *)
             | "{" , field_ty , { "," , field_ty } , [ "," ] , "}" ;
 field_ty    = IDENT , ":" , type ;
               (* u64 i64 dec bool str are matched as IDENT text in type   *)
@@ -138,7 +173,8 @@ field_ty    = IDENT , ":" , type ;
               (* checked (G013): field names unique within a record.      *)
 
 params      = IDENT , ":" , type , { "," , IDENT , ":" , type } , [ "," ] ;
-args        = IDENT , ":" , expr , { "," , IDENT , ":" , expr } , [ "," ] ;
+args        = arg , { "," , arg } , [ "," ] ;
+arg         = IDENT , ":" , [ "each" ] , expr ;                (* v0.3: each *)
               (* checked (G003): args name exactly the declared params,   *)
               (*                 any order, each once, matching types.    *)
 
@@ -157,7 +193,16 @@ unary       = [ "!" | "-" ] , postfix ;                        (* at most one pr
 postfix     = atom , { "." , IDENT } ;
 atom        = literal | IDENT | "(" , expr , ")"
             | record_lit                                     (* v0.2 *)
-            | conversion ;                                   (* v0.2 *)
+            | conversion                                     (* v0.2 *)
+            | list_lit                                       (* v0.3 *)
+            | builtin ;                                      (* v0.3 *)
+list_lit    = "[" , [ expr , { "," , expr } , [ "," ] ] , "]" ;
+              (* checked (G003): one element type; `[]` needs an expected  *)
+              (*                 type from an annotation or parameter.     *)
+builtin     = ( "len" | "sum" | "min" | "max" | "all" | "any" | "contains"
+              | "round" | "floor" | "ceil" ) , "(" , expr , { "," , expr } , ")" ;
+              (* names stay identifiers: IDENT "(" only ever means a call. *)
+              (* round/floor/ceil take an INT literal scale as 2nd arg.    *)
 record_lit  = "{" , field_init , { "," , field_init } , [ "," ] , "}" ;
 field_init  = IDENT , ":" , expr ;
               (* checked (G013): field names unique within the literal.   *)

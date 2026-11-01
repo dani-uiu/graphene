@@ -1,0 +1,14 @@
+#!graphene 0.3
+@intent "A subgraph raises an error it does not declare"
+
+graph Check(x: u64 -> X) -> u64 ! TooBig {
+  X -> match x > 100 { true => BIG, false => SMALL }
+  BIG -> fail TooLarge
+  SMALL -> f(x) -> R
+  R -> out
+}
+
+in x: u64 -> A
+A -> call Check(x: x) -> R | err -> E
+E -> fail
+R -> out r: u64

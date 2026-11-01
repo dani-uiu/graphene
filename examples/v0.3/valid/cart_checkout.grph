@@ -1,0 +1,94 @@
+#!graphene 0.3
+@intent "Multi-item checkout: price and reserve every line in parallel, release partial holds if any line is short, charge once, release everything if payment fails"
+
+const TAX: dec = 0.20
+const HEAVY_KG: dec = 20.00
+const HEAVY_FEE: dec = 9.50
+
+extern fx Catalog(sku: str) -> {price: dec, kg: dec} ! UnknownSku
+extern fx Reserve(sku: str, qty: u64) -> str ! OutOfStock
+extern fx Charge(buyer: u64, amount: dec) -> str ! Declined | GatewayDown
+extern fx~ Release(reservation: str)
+extern fx~ Notify(buyer: u64, message: str)
+
+// One cart line -> its price and weight. Fails if the product is unknown.
+graph PriceLine(line: {sku: str, qty: u64} -> L) -> {sku: str, qty: u64, amount: dec, kg: dec} ! UnknownSku {
+  L -> fx Catalog(sku: line.sku) -> ITEM | err -> MISSING
+  MISSING -> fail
+  ITEM -> f({
+    sku: line.sku,
+    qty: line.qty,
+    amount: ITEM.price * dec(line.qty),
+    kg: ITEM.kg * dec(line.qty),
+  }) -> PRICED
+  PRICED -> out
+}
+
+// Try to hold stock for one line. Never fails: reports whether it worked,
+// so the caller can release the holds that did succeed.
+graph TryReserve(line: {sku: str, qty: u64, amount: dec, kg: dec} -> L) -> {sku: str, held: bool, reservation: str} {
+  L -> fx Reserve(sku: line.sku, qty: line.qty) -> RES | err -> NONE
+  RES -> f({sku: line.sku, held: true, reservation: RES}) -> TRY
+  NONE -> f({sku: line.sku, held: false, reservation: ""}) -> TRY
+  TRY -> out
+}
+
+graph IsHeld(try: {sku: str, held: bool, reservation: str} -> T) -> bool {
+  T -> f(try.held) -> YES
+  YES -> out
+}
+
+graph IsHeavy(line: {sku: str, qty: u64, amount: dec, kg: dec} -> L) -> bool {
+  L -> f(line.kg > HEAVY_KG) -> YES
+  YES -> out
+}
+
+in buyer: u64
+in cart: [{sku: str, qty: u64}] -> CART
+
+// 1. Price every line in parallel.
+CART -> map PriceLine(line: each cart) -> LINES | err -> BAD_LINE
+BAD_LINE -> fail
+
+// 2. Hold stock for every line; if any line is short, release the others.
+LINES -> map TryReserve(line: each LINES) -> TRIES
+TRIES -> match all(TRIES.held) { true => ALL_HELD, false => SOME_SHORT }
+SOME_SHORT -> filter IsHeld(try: each TRIES) -> PARTIAL
+PARTIAL -> fx~ Release(reservation: each PARTIAL.reservation) -> sink UNDO_PARTIAL
+SOME_SHORT -> fx~ Notify(buyer: buyer, message: "an item in your cart is out of stock") -> sink TOLD_SHORT
+SOME_SHORT -> fail OutOfStock
+
+// 3. Total: tax on the goods, plus a fee per heavy line.
+ALL_HELD -> filter IsHeavy(line: each LINES) -> HEAVY
+HEAVY -> f(round(sum(LINES.amount) * (1.00 + TAX) + HEAVY_FEE * dec(len(HEAVY)), 2)) -> TOTAL
+
+// 4. Charge once; on any payment error, release every hold.
+TOTAL -> fx Charge(buyer: buyer, amount: TOTAL) -> TX | err Declined -> DECLINED | err -> PAY_DOWN
+DECLINED -> fx~ Release(reservation: each TRIES.reservation) -> sink UNDO_DECLINED
+DECLINED -> fail CardDeclined
+PAY_DOWN -> fx~ Release(reservation: each TRIES.reservation) -> sink UNDO_DOWN
+PAY_DOWN -> fail PaymentUnavailable
+
+// 5. Receipt.
+TX -> fx~ Notify(buyer: buyer, message: "order " + TX + " confirmed") -> sink THANKS
+TX -> f({
+  lines: LINES,
+  reservations: TRIES.reservation,
+  heavy_lines: len(HEAVY),
+  total: TOTAL,
+  transaction: TX,
+}) -> RECEIPT
+RECEIPT -> out receipt: {
+  lines: [{sku: str, qty: u64, amount: dec, kg: dec}],
+  reservations: [str],
+  heavy_lines: u64,
+  total: dec(2),
+  transaction: str,
+}
+
+assert total
+assert indep(UNDO_PARTIAL, out)
+assert indep(TOLD_SHORT, out)
+assert indep(UNDO_DECLINED, out)
+assert indep(UNDO_DOWN, out)
+assert indep(THANKS, out)

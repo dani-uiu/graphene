@@ -1,0 +1,7 @@
+#!graphene 0.3
+@intent "Two arms of one match are never active together, so they cannot be joined"
+
+in x: u64 -> A
+A -> match x > 10 { true => BIG, false => SMALL }
+(BIG, SMALL) -> f(x) -> R
+R -> out r: u64

@@ -1,0 +1,11 @@
+#!graphene 0.3
+@intent "A subgraph's out does not match its declared result type"
+
+graph Half(x: dec -> X) -> u64 {
+  X -> f(x * 0.50) -> R
+  R -> out
+}
+
+in x: dec -> A
+A -> call Half(x: x) -> R
+R -> out r: u64

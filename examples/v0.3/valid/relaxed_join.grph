@@ -1,0 +1,29 @@
+#!graphene 0.3
+@intent "The v0.2 checkout's parallel lookup, now legal: a branch that can fail joined with one that cannot"
+
+extern fx DbFetch(table: str, key: u64) -> {role: str, bal: dec} ! NotFound | DbDown
+extern fx ShipQuote(zone: str, kg: dec) -> dec ! NoRoute
+
+in usr_id: u64 -> U
+in zone: str
+in kg: dec
+
+// Customer lookup: unknown customers pay full price, an outage fails.
+U -> fx DbFetch(table: "usr", key: usr_id) -> USR | err NotFound -> GUEST | err DbDown -> DOWN
+DOWN -> fail
+USR -> match USR.role { "prem" => PREM, _ => BASIC }
+PREM -> f(0.80) -> RATE
+BASIC -> f(1.00) -> RATE
+GUEST -> f(1.00) -> RATE
+
+// Shipping runs at the same time and always produces a value.
+U -> fx ShipQuote(zone: zone, kg: kg) -> SHIP | err -> NO_ROUTE
+NO_ROUTE -> f(25.00 + kg * 5.00) -> SHIP
+
+// RATE is active only when DbFetch did not hit DbDown; SHIP always is.
+// RATE's condition implies SHIP's, so the join is legal (D-046) and is
+// active exactly when RATE is.
+(RATE, SHIP) -> f({rate: RATE, shipping: SHIP}) -> QUOTE
+QUOTE -> out quote: {rate: dec, shipping: dec}
+
+assert total

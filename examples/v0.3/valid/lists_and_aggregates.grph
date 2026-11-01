@@ -1,0 +1,26 @@
+#!graphene 0.3
+@intent "Summarize exam scores with list aggregates and a filter"
+
+const PASS_MARK: u64 = 60
+
+graph Passed(score: u64 -> S) -> bool {
+  S -> f(score >= PASS_MARK) -> OK
+  OK -> out
+}
+
+in scores: [u64] -> S
+in names: [str]
+
+S -> filter Passed(score: each scores) -> PASSING
+PASSING -> f({
+  count: len(scores),
+  passed: len(PASSING),
+  everyone_passed: len(PASSING) == len(scores),
+  best: max(scores),
+  worst: min(scores),
+  total_points: sum(scores),
+  has_ana: contains(names, "ana"),
+}) -> SUMMARY
+SUMMARY -> out summary: {count: u64, passed: u64, everyone_passed: bool, best: u64, worst: u64, total_points: u64, has_ana: bool}
+
+assert total

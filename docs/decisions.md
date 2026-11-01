@@ -209,3 +209,43 @@ Values painted on nodes are the runtime's exact values (`80.0000`). Only the pro
 ## D-042 — Layout sidecar · Recorded
 Pinned node positions are saved to `<program>.grph.layout.json` as `{"pinned": {"v:B": [x, y]}}`. The file is optional, the CLI ignores it, and deleting it only loses pins. Unpinned nodes are always placed by the force layout.
 
+---
+
+# v0.3
+
+## D-043 — Subgraphs · Approved
+Named, separately checked sub-programs with a typed signature and declared errors, invoked by `call`, `map` and `filter`. Bodies are always checked for totality, and recursion is rejected (G015), so every program terminates and stays statically analysable. Subgraphs are per file. Imports are deferred.
+
+## D-044 — Lists with total operations only · Approved
+`[T]` adds literals, projection and the aggregates `len`, `sum`, `min`, `max`, `all`, `any` and `contains`. There is no indexing. `min` and `max` of an empty list is R006, and every other operation is total. List inputs are allowed, which relaxes D-014 for lists only (decision 3 in `docs/v0.3.md`).
+
+## D-045 — Map failure policy: every element runs, lowest-index error wins · Approved
+This follows D-015 (no early termination). Logs and results are identical between sequential and parallel runs, whatever the element count or timing. Fail-fast was rejected.
+
+## D-046 — Joins by implication · Approved
+A join is legal when its members' guards form an implication chain. It takes the most specific guard, which is one of the existing guards, so the guard invariant (decisions conjoin only onto their own guards) holds. This makes "join a branch that can fail with one that can't" legal.
+
+## D-047 — References to guaranteed values · Approved
+A reference is legal when the value is a flow ancestor and guaranteed to be active whenever the referencing op is (implication). Dominance is a special case. Being an ancestor keeps the ordering safe in both executors without new edges.
+
+## D-048 — Real hosts; async emits buffered · Approved
+HTTP and command hosts are configured outside programs, with `env:` secrets. A host failure is R007. `--record` writes a replayable mock fixture. Async emits are delivered after the run, in log order and only before a fault, which closes the parallel-mode gap noted in D-012. HTTP uses a blocking client, so D-020 (no tokio) stands.
+
+## D-049 — `each` on effects · Approved
+One `each` argument on `fx` or `fx~` maps the effect over a list, with the same failure and ordering rules as `map`. It removes single-effect boilerplate subgraphs.
+
+## D-050 — Statements over several lines · Approved
+A newline inside open brackets continues the statement, and the formatter wraps at 100 columns. Existing files are unchanged unless reformatted. Under older headers, multi-line statements are P006.
+
+## D-051 — Constants · Approved
+Typed top-level literals, inlined at lowering: no vertices, no dependencies. Unused constants are G008, like unused inputs.
+
+## D-052 — Rounding, output scale, string concatenation, better messages · Approved
+`round`, `floor` and `ceil` take a literal scale. `dec(N)` sets the output scale. `str + str` concatenates. Diagnostics suggest near-miss names, faults show values, and `graphene explain` documents each code.
+
+## D-053 — Outcome coverage · Approved
+Coverage items are terminals, decision outcomes and effects, all of which the checker already enumerates. A case covers what is active in its sequential run.
+
+## D-054 — CI and unsigned release builds · Approved
+GitHub Actions runs every check on Windows and Linux. Tagged commits build optimized IDE installers on CI, which avoids the local Smart App Control block. They are unsigned for now (no certificate budget), so SmartScreen warns on first install. Signing can be added later through a repository secret.
+

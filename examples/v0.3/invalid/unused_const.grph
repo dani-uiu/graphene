@@ -1,0 +1,8 @@
+#!graphene 0.3
+@intent "A constant nothing reads"
+
+const RATE: dec = 0.10
+
+in x: dec -> A
+A -> f(x * 2.00) -> R
+R -> out r: dec

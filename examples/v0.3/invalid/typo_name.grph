@@ -1,0 +1,6 @@
+#!graphene 0.3
+@intent "A misspelled node name gets a suggestion"
+
+in price: dec -> P
+P -> f(price * 0.90) -> DISCOUNTED
+DISCONTED -> out total: dec

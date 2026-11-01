@@ -1,0 +1,24 @@
+#!graphene 0.3
+@intent "Reuse one checked subgraph for two prices"
+
+// A tiered discount. Banned customers fail with a declared error.
+graph Discount(price: dec -> P, tier: str) -> dec ! Banned {
+  P -> match tier { "gold" => GOLD, "banned" => NO, _ => STD }
+  GOLD -> f(round(price * 0.80, 2)) -> R
+  STD -> f(price) -> R
+  NO -> fail Banned
+  R -> out
+}
+
+in a: dec -> A
+in b: dec
+in tier: str
+
+A -> call Discount(price: a, tier: tier) -> DA | err -> BANNED_A
+BANNED_A -> fail
+DA -> call Discount(price: b, tier: tier) -> DB | err -> BANNED_B
+BANNED_B -> fail
+DB -> f({a: DA, b: DB, total: DA + DB}) -> PRICES
+PRICES -> out prices: {a: dec, b: dec, total: dec}
+
+assert total

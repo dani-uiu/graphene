@@ -1,0 +1,75 @@
+# v0.3 examples: hand-computed results
+
+These results were worked out by hand **before** the v0.3 runtime existed. When Phase D generates the `.cases.json` files from real runs, each result must match this table. A mismatch is a bug in the implementation, not a reason to edit this file.
+
+Decimal outputs are rescaled to 2 places unless the `out` type says `dec(N)`.
+
+## `cart_checkout.grph` (mock `fixtures/cart.json`)
+
+**Fixture:**
+- **Catalog:**
+  - `mug`: price 12.00, kg 0.30
+  - `desk`: price 150.00, kg 25.00
+  - `lamp`: price 45.00, kg 2.50
+  - anything else fails with `UnknownSku`
+- **Reserve:**
+  - `(mug, 2)` gives `"r-mug"`
+  - `(desk, 1)` gives `"r-desk"`
+  - `(lamp, 1)` fails with `OutOfStock`
+- **Charge:**
+  - `(7, 218.30)` gives `"tx-1"`
+  - `(7, 0.00)` gives `"tx-0"`
+  - `(8, 28.80)` fails with `Declined`
+  - `(9, 189.50)` fails with `GatewayDown`
+
+| Case | Inputs | Result | Why |
+|---|---|---|---|
+| two lines, one heavy | buyer 7, cart `[{mug,2},{desk,1}]` | ok: total **218.30**, heavy_lines 1, reservations `["r-mug","r-desk"]`, transaction `tx-1` | Goods 24.00 + 150.00 = 174.00. With 20% tax that's 208.80, plus one heavy fee of 9.50 (desk weighs 25.00 kg), giving 218.30. |
+| one line short | buyer 7, cart `[{mug,2},{lamp,1}]` | err **OutOfStock** | `TRIES.held` = [true, false]. `r-mug` is released by `UNDO_PARTIAL`, and the buyer is notified. |
+| card declined | buyer 8, cart `[{mug,2}]` | err **CardDeclined** | Total 24.00 × 1.20 = 28.80 (not heavy). `r-mug` is released. |
+| gateway down | buyer 9, cart `[{desk,1}]` | err **PaymentUnavailable** | Total 150.00 × 1.20 + 9.50 = 189.50. `r-desk` is released. |
+| unknown product | buyer 7, cart `[{kiwi,1}]` | err **UnknownSku** | `PriceLine` fails and the map's catch-all edge propagates it. |
+| empty cart | buyer 7, cart `[]` | ok: total **0.00**, heavy_lines 0, reservations `[]`, transaction `tx-0` | `all([])` is true, so the cart is "all held". The sums of empty lists are 0. |
+
+## `relaxed_join.grph` (mock `fixtures/relaxed_join.json`)
+
+**Fixture:**
+- **DbFetch:**
+  - `(usr, 1)` gives `{role prem, bal 100.00}`
+  - `(usr, 5)` fails with `DbDown`
+  - anything else fails with `NotFound`
+- **ShipQuote:**
+  - `(north, 2.00)` gives 7.50
+  - anything else fails with `NoRoute`
+
+| Case | Inputs | Result |
+|---|---|---|
+| premium, quoted | usr 1, north, 2.00 | ok `{rate: 0.80, shipping: 7.50}` |
+| guest, no route | usr 999, east, 2.00 | ok `{rate: 1.00, shipping: 35.00}` (25.00 + 2.00 × 5.00) |
+| database down | usr 5, north, 2.00 | err **DbDown**. ShipQuote still runs and is logged, because nothing stops early (D-015). |
+
+## `subgraph_basics.grph` (no mock)
+
+| Case | Inputs | Result |
+|---|---|---|
+| gold | a 100.00, b 19.99, tier gold | ok `{a: 80.00, b: 15.99, total: 95.99}`. The 19.99 × 0.80 = 15.992 rounds to 15.99. |
+| silver | a 100.00, b 19.99, tier silver | ok `{a: 100.00, b: 19.99, total: 119.99}` |
+| banned | a 100.00, b 19.99, tier banned | err **Banned** |
+
+## `lists_and_aggregates.grph` (no mock)
+
+| Case | Inputs | Result |
+|---|---|---|
+| class | scores `[72, 55, 90, 60]`, names `["ana","bo"]` | ok `{count 4, passed 3, everyone_passed false, best 90, worst 55, total_points 277, has_ana true}` |
+| no scores | scores `[]`, names `[]` | fault **R006**: `max` of an empty list. The record fields are evaluated in order, and `best` comes first. |
+
+## `constants_and_rounding.grph` (no mock)
+
+| Case | Inputs | Result |
+|---|---|---|
+| bill | amount 33.33, guest "Ana" | ok `{service "4.17", vat_exact "6.9993", vat_down "6.9", vat_up "7.0", total "44.50", note "thanks, Ana"}` |
+
+Working:
+- **service:** 33.33 × 0.125 = 4.16625, which rounds to **4.17**.
+- **VAT:** 33.33 × 0.21 = **6.9993**. Floor to 1 place gives **6.9**, ceiling gives **7.0**.
+- **total:** 33.33 × 1.335 = 44.49555, which rounds half away from zero to **44.50**.

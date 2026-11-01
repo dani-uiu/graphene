@@ -1,0 +1,11 @@
+#!graphene 0.3
+@intent "map needs exactly one each argument"
+
+graph Double(x: u64 -> X) -> u64 {
+  X -> f(x * 2) -> R
+  R -> out
+}
+
+in xs: [u64] -> A
+A -> map Double(x: 3) -> R
+R -> out r: [u64]

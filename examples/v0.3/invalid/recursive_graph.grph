@@ -1,0 +1,11 @@
+#!graphene 0.3
+@intent "A subgraph that calls itself"
+
+graph Countdown(n: u64 -> N) -> u64 {
+  N -> call Countdown(n: n) -> R
+  R -> out
+}
+
+in n: u64 -> A
+A -> call Countdown(n: n) -> R
+R -> out r: u64
