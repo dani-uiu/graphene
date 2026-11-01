@@ -15,6 +15,13 @@ use crate::check::Checked;
 use crate::runtime::effects::LogEntry;
 
 pub fn run(ctx: &Ctx) -> Result<RunOutput, RunError> {
+    run_traced(ctx).0
+}
+
+/// Like `run`, but also returns the settled state of every vertex
+/// (indexed by `VId::index()`) for tools such as the IDE. On a fault,
+/// vertices after the faulting one stay `Inactive`.
+pub fn run_traced(ctx: &Ctx) -> (Result<RunOutput, RunError>, Vec<State>) {
     let c: &Checked = ctx.checked;
     let n = c.graph.g.node_count();
     let mut states = vec![State::Inactive; n];
@@ -29,10 +36,10 @@ pub fn run(ctx: &Ctx) -> Result<RunOutput, RunError> {
                 states[v.index()] = state;
                 logs[v.index()] = log;
             }
-            Err(fault) => return Err(fault_with_log(c, fault, &logs)),
+            Err(fault) => return (Err(fault_with_log(c, fault, &logs)), states),
         }
     }
-    finish(c, &states, &logs)
+    (finish(c, &states, &logs), states)
 }
 
 fn fault_with_log(c: &Checked, fault: Fault, logs: &[Option<LogEntry>]) -> RunError {

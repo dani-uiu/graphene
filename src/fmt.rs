@@ -42,6 +42,27 @@ pub fn format(program: &Program, style: Style) -> String {
     out
 }
 
+/// Format one statement (no comment, no newline), e.g. for editors that
+/// regenerate a single line.
+pub fn format_stmt(stmt: &Stmt, style: Style) -> String {
+    Writer { u: style.unicode }.stmt(stmt)
+}
+
+/// Format one expression with minimal parentheses.
+pub fn format_expr(e: &Expr, style: Style) -> String {
+    Writer { u: style.unicode }.expr(e)
+}
+
+/// Format one flow operation: `f(expr)`, `fx Name(args)`, or `fx~ Name(args)`.
+pub fn format_op(op: &Op, style: Style) -> String {
+    Writer { u: style.unicode }.op(op)
+}
+
+/// Format a type.
+pub fn format_ty(t: &Ty) -> String {
+    Writer { u: false }.ty(t)
+}
+
 struct Writer {
     u: bool,
 }

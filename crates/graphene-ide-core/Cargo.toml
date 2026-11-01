@@ -1,0 +1,14 @@
+[package]
+name = "graphene-ide-core"
+version = "0.1.0"
+edition = "2021"
+description = "Language logic for the Graphene IDE: analysis for the graph view, text-edit commands, quick fixes, traced runs"
+license = "MIT"
+
+[dependencies]
+graphene = { path = "../.." }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+proptest = "1"
