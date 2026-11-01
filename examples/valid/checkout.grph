@@ -1,0 +1,48 @@
+#!graphene 0.1
+@intent "Check out an order: verify stock, price it with a member discount and a shipping quote fetched in parallel, hold large orders"
+
+extern fx OrderFetch(id: u64) -> {usr: u64, sku: str, kg: dec, zone: str} ! NotFound
+extern fx Catalog(sku: str) -> {price: dec, stock_kg: dec} ! UnknownSku
+extern fx DbFetch(table: str, key: u64) -> {role: str, bal: dec} ! NotFound | DbDown
+extern fx ShipQuote(zone: str, kg: dec) -> dec ! NoRoute
+extern fx~ LogAsync(event: str, role: str)
+extern fx~ Audit(event: str, sku: str)
+
+in order_id: u64 -> IN
+
+// 1. Load the order. Every later step can read ORD, because every path goes through it.
+IN -> fx OrderFetch(id: order_id) -> ORD | err -> NO_ORDER
+NO_ORDER -> fail
+
+// 2. Look up the product and check stock.
+ORD -> fx Catalog(sku: ORD.sku) -> ITEM | err -> NO_ITEM
+NO_ITEM -> fail
+
+ITEM -> match ITEM.stock_kg >= ORD.kg { true => STOCKED, false => SHORT }
+SHORT -> fx~ Audit(event: "short", sku: ORD.sku) -> sink AUDIT
+SHORT -> fail OutOfStock
+
+// 3a. Member discount. An unknown customer or a database outage pays as a guest.
+STOCKED -> fx DbFetch(table: "usr", key: ORD.usr) -> USR | err -> GUEST
+USR -> match USR.role { "prem" => PREM, "staff" => STAFF, _ => BASIC }
+USR -> fx~ LogAsync(event: "checkout", role: USR.role) -> sink LOG
+PREM -> f(0.80) -> RATE
+STAFF -> f(0.70) -> RATE
+BASIC -> f(1.00) -> RATE
+GUEST -> f(1.00) -> RATE
+
+// 3b. Shipping, fetched at the same time as 3a. No route falls back to a flat fee.
+STOCKED -> fx ShipQuote(zone: ORD.zone, kg: ORD.kg) -> SHIP | err -> NO_ROUTE
+NO_ROUTE -> f(25.00 + ORD.kg * 5.00) -> SHIP
+
+// 4. Join the two branches into a total.
+(RATE, SHIP) -> f(ITEM.price * ORD.kg * RATE + SHIP) -> TOTAL
+
+// 5. Orders over 1000.00 are held for approval.
+TOTAL -> match TOTAL > 1000.00 { true => BIG, false => SMALL }
+BIG -> fail NeedsApproval
+SMALL -> out charged: dec
+
+assert total
+assert indep(LOG, out)
+assert indep(AUDIT, out)

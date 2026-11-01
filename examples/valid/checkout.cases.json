@@ -1,0 +1,410 @@
+[
+  {
+    "name": "premium member, quoted shipping: 3.50*10*0.80 + 12.00",
+    "inputs": {
+      "order_id": 1
+    },
+    "mock": "fixtures/checkout.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "charged": "40.00"
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 1
+          },
+          "result": {
+            "ok": {
+              "kg": "10.00",
+              "sku": "apple",
+              "usr": 1,
+              "zone": "north"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "apple"
+          },
+          "result": {
+            "ok": {
+              "price": "3.50",
+              "stock_kg": "100.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "DbFetch",
+          "args": {
+            "key": 1,
+            "table": "usr"
+          },
+          "result": {
+            "ok": {
+              "bal": "100.00",
+              "role": "prem"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "LogAsync",
+          "args": {
+            "event": "checkout",
+            "role": "prem"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "ShipQuote",
+          "args": {
+            "kg": "10.00",
+            "zone": "north"
+          },
+          "result": {
+            "ok": "12.00"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "staff member, no shipping route falls back to 25.00 + 2*5.00: 120*2*0.70 + 35.00",
+    "inputs": {
+      "order_id": 2
+    },
+    "mock": "fixtures/checkout.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "charged": "203.00"
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 2
+          },
+          "result": {
+            "ok": {
+              "kg": "2.00",
+              "sku": "saffron",
+              "usr": 4,
+              "zone": "south"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "saffron"
+          },
+          "result": {
+            "ok": {
+              "price": "120.00",
+              "stock_kg": "5.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "DbFetch",
+          "args": {
+            "key": 4,
+            "table": "usr"
+          },
+          "result": {
+            "ok": {
+              "bal": "500.00",
+              "role": "staff"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "LogAsync",
+          "args": {
+            "event": "checkout",
+            "role": "staff"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "ShipQuote",
+          "args": {
+            "kg": "2.00",
+            "zone": "south"
+          },
+          "result": {
+            "err": "NoRoute"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "not enough stock: audit is logged, the customer is never looked up",
+    "inputs": {
+      "order_id": 3
+    },
+    "mock": "fixtures/checkout.json",
+    "expect": {
+      "result": {
+        "err": "OutOfStock"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 3
+          },
+          "result": {
+            "ok": {
+              "kg": "400.00",
+              "sku": "apple",
+              "usr": 999,
+              "zone": "north"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "apple"
+          },
+          "result": {
+            "ok": {
+              "price": "3.50",
+              "stock_kg": "100.00"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "short",
+            "sku": "apple"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "total 1835.00 is over 1000.00, so the order is held",
+    "inputs": {
+      "order_id": 4
+    },
+    "mock": "fixtures/checkout.json",
+    "expect": {
+      "result": {
+        "err": "NeedsApproval"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 4
+          },
+          "result": {
+            "ok": {
+              "kg": "2.00",
+              "sku": "truffle",
+              "usr": 2,
+              "zone": "north"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "truffle"
+          },
+          "result": {
+            "ok": {
+              "price": "900.00",
+              "stock_kg": "3.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "DbFetch",
+          "args": {
+            "key": 2,
+            "table": "usr"
+          },
+          "result": {
+            "ok": {
+              "bal": "100.00",
+              "role": "basic"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "LogAsync",
+          "args": {
+            "event": "checkout",
+            "role": "basic"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "ShipQuote",
+          "args": {
+            "kg": "2.00",
+            "zone": "north"
+          },
+          "result": {
+            "err": "NoRoute"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown product propagates UnknownSku",
+    "inputs": {
+      "order_id": 5
+    },
+    "mock": "fixtures/checkout.json",
+    "expect": {
+      "result": {
+        "err": "UnknownSku"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 5
+          },
+          "result": {
+            "ok": {
+              "kg": "1.00",
+              "sku": "kiwi",
+              "usr": 1,
+              "zone": "north"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "kiwi"
+          },
+          "result": {
+            "err": "UnknownSku"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown customer pays as a guest; no LogAsync because USR never ran",
+    "inputs": {
+      "order_id": 6
+    },
+    "mock": "fixtures/checkout.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "charged": "33.50"
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 6
+          },
+          "result": {
+            "ok": {
+              "kg": "1.00",
+              "sku": "apple",
+              "usr": 999,
+              "zone": "east"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "apple"
+          },
+          "result": {
+            "ok": {
+              "price": "3.50",
+              "stock_kg": "100.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "DbFetch",
+          "args": {
+            "key": 999,
+            "table": "usr"
+          },
+          "result": {
+            "err": "NotFound"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "ShipQuote",
+          "args": {
+            "kg": "1.00",
+            "zone": "east"
+          },
+          "result": {
+            "err": "NoRoute"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "missing order propagates NotFound",
+    "inputs": {
+      "order_id": 999
+    },
+    "mock": "fixtures/checkout.json",
+    "expect": {
+      "result": {
+        "err": "NotFound"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 999
+          },
+          "result": {
+            "err": "NotFound"
+          }
+        }
+      ]
+    }
+  }
+]
