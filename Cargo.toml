@@ -1,0 +1,33 @@
+[package]
+name = "graphene"
+version = "0.1.0"
+edition = "2021"
+description = "Graphene (.grph): a deterministic dataflow language checked before it runs"
+license = "MIT"
+
+[lib]
+name = "graphene"
+path = "src/lib.rs"
+
+[[bin]]
+name = "graphene"
+path = "src/main.rs"
+
+[features]
+default = []
+tokens = ["dep:tiktoken-rs"]
+
+[dependencies]
+logos = "0.14"
+petgraph = "0.6"
+miette = { version = "7", features = ["fancy"] }
+thiserror = "2"
+rust_decimal = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tiktoken-rs = { version = "0.6", optional = true }
+
+[dev-dependencies]
+insta = "1"
+proptest = "1"

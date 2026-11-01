@@ -129,3 +129,14 @@ Effects are mocked, and `std::thread::scope` is enough for the parallel executor
 
 ## D-022 — `?` arms and merge through one match · Proposed
 **Choice.** Two arms of one match may share a target, for example `1 => C, 2 => C, _ => D`. It is treated as an ordinary merge, which the guard algebra accepts.
+
+## D-023 — Windows toolchain: Rust GNU target + WinLibs MinGW-w64 · Recorded
+**Problem.** The machine had no MSVC Build Tools. Rust's GNU target ships a `dlltool` that cannot run without an assembler, so `windows-sys` (a dependency of `miette`) failed to build.
+**Choice.** Use `stable-x86_64-pc-windows-gnu` together with WinLibs MinGW-w64 (`winget install BrechtSanders.WinLibs.POSIX.UCRT`, no admin rights). WinLibs provides `dlltool` and `as` on PATH.
+**Alternative.** Visual Studio Build Tools with the MSVC target. It is several GB and needs admin rights. Either toolchain builds the crate unchanged.
+
+## D-024 — Tests read `examples/` directly · Recorded
+**Choice.** Tests locate examples through `CARGO_MANIFEST_DIR` instead of a `tests/programs/` symlink or copy. Symlinks are unreliable on Windows, and a copy could drift from the originals.
+
+## D-025 — `.gitattributes` forces LF · Recorded
+**Choice.** `* text=auto eol=lf`. This keeps byte spans, line numbers and insta snapshots identical across platforms. The lexer still accepts CRLF.
