@@ -11,10 +11,12 @@
 
 pub mod check;
 pub mod diag;
+pub mod dot;
 pub mod fmt;
 pub mod ir;
 pub mod runtime;
 pub mod syntax;
+pub mod tokens;
 
 pub use check::Checked;
 pub use syntax::parser::parse;

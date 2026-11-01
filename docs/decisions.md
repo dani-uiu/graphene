@@ -140,3 +140,19 @@ Effects are mocked, and `std::thread::scope` is enough for the parallel executor
 
 ## D-025 — `.gitattributes` forces LF · Recorded
 **Choice.** `* text=auto eol=lf`. This keeps byte spans, line numbers and insta snapshots identical across platforms. The lexer still accepts CRLF.
+
+## D-026 — Modules added beyond the brief's layout · Recorded
+**Choice.**
+- `runtime/step.rs` holds the single per-vertex step function that both `seq` and `par` call. Sharing it is what makes their agreement structural rather than coincidental.
+- `dot.rs` and `tokens.rs` keep `main.rs` a thin CLI.
+- `check/guards.rs` holds the guard algebra (D-009).
+
+## D-027 — CLI exit codes and JSON key order · Recorded
+**Choice.**
+- Exit 0 means success, including a program that returns `Err(variant)`.
+- Exit 1 means diagnostics, bad input arguments (R005), or IO errors.
+- Exit 2 means a runtime fault. The fault JSON still goes to stdout, so the effect log prefix is visible.
+- `serde_json`'s `preserve_order` puts `result` before `effects`. JSON equality is order-insensitive, so tests are unaffected.
+
+## D-028 — Token counts: ASCII is cheaper · Recorded
+With `--features tokens` (tiktoken `o200k_base`), `pricing.grph` costs 202 tokens in ASCII and 228 in Unicode. This supports design principle 1, that ASCII is canonical. The count is approximate and is not Claude's tokenizer.
