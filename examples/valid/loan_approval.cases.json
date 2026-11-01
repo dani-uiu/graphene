@@ -1,0 +1,313 @@
+[
+  {
+    "name": "prime applicant: 20000 at 4.5% over 36 months",
+    "inputs": {
+      "applicant": 1,
+      "amount": "20000.00",
+      "months": 36
+    },
+    "mock": "../../fixtures/loans.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "offer": {
+            "apr_pct": "4.50",
+            "interest": "2700.00",
+            "months": 36,
+            "total_cost": "22700.00"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Credit",
+          "args": {
+            "applicant": 1
+          },
+          "result": {
+            "ok": {
+              "open_loans": 1,
+              "score": 760
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Income",
+          "args": {
+            "applicant": 1
+          },
+          "result": {
+            "ok": "5000.00"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "applicant": 1,
+            "event": "approved"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "near-prime applicant gets 8.9%",
+    "inputs": {
+      "applicant": 2,
+      "amount": "10000.00",
+      "months": 24
+    },
+    "mock": "../../fixtures/loans.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "offer": {
+            "apr_pct": "8.90",
+            "interest": "1780.00",
+            "months": 24,
+            "total_cost": "11780.00"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Credit",
+          "args": {
+            "applicant": 2
+          },
+          "result": {
+            "ok": {
+              "open_loans": 0,
+              "score": 650
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Income",
+          "args": {
+            "applicant": 2
+          },
+          "result": {
+            "ok": "3000.00"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "applicant": 2,
+            "event": "approved"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "cost above 40% of income is declined",
+    "inputs": {
+      "applicant": 2,
+      "amount": "50000.00",
+      "months": 12
+    },
+    "mock": "../../fixtures/loans.json",
+    "expect": {
+      "result": {
+        "err": "TooMuchDebt"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Credit",
+          "args": {
+            "applicant": 2
+          },
+          "result": {
+            "ok": {
+              "open_loans": 0,
+              "score": 650
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Income",
+          "args": {
+            "applicant": 2
+          },
+          "result": {
+            "ok": "3000.00"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "applicant": 2,
+            "event": "denied_affordability"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "no credit file: thin profile scores 600, declined",
+    "inputs": {
+      "applicant": 3,
+      "amount": "5000.00",
+      "months": 12
+    },
+    "mock": "../../fixtures/loans.json",
+    "expect": {
+      "result": {
+        "err": "CreditTooLow"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Credit",
+          "args": {
+            "applicant": 3
+          },
+          "result": {
+            "err": "NoFile"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Income",
+          "args": {
+            "applicant": 3
+          },
+          "result": {
+            "ok": "4000.00"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "too many open loans is declined",
+    "inputs": {
+      "applicant": 4,
+      "amount": "5000.00",
+      "months": 12
+    },
+    "mock": "../../fixtures/loans.json",
+    "expect": {
+      "result": {
+        "err": "TooMuchDebt"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Credit",
+          "args": {
+            "applicant": 4
+          },
+          "result": {
+            "ok": {
+              "open_loans": 4,
+              "score": 710
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Income",
+          "args": {
+            "applicant": 4
+          },
+          "result": {
+            "ok": "9000.00"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "applicant": 4,
+            "event": "denied_affordability"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "credit bureau outage propagates BureauDown",
+    "inputs": {
+      "applicant": 5,
+      "amount": "5000.00",
+      "months": 12
+    },
+    "mock": "../../fixtures/loans.json",
+    "expect": {
+      "result": {
+        "err": "BureauDown"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Credit",
+          "args": {
+            "applicant": 5
+          },
+          "result": {
+            "err": "BureauDown"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "unverified income is declined and audited",
+    "inputs": {
+      "applicant": 6,
+      "amount": "5000.00",
+      "months": 12
+    },
+    "mock": "../../fixtures/loans.json",
+    "expect": {
+      "result": {
+        "err": "IncomeUnverified"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Credit",
+          "args": {
+            "applicant": 6
+          },
+          "result": {
+            "ok": {
+              "open_loans": 0,
+              "score": 720
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Income",
+          "args": {
+            "applicant": 6
+          },
+          "result": {
+            "err": "Unverified"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "applicant": 6,
+            "event": "income_unverified"
+          }
+        }
+      ]
+    }
+  }
+]

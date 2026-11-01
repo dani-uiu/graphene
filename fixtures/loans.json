@@ -1,0 +1,87 @@
+{
+  "effects": {
+    "Credit": {
+      "cases": [
+        {
+          "args": {
+            "applicant": 1
+          },
+          "ok": {
+            "score": 760,
+            "open_loans": 1
+          }
+        },
+        {
+          "args": {
+            "applicant": 2
+          },
+          "ok": {
+            "score": 650,
+            "open_loans": 0
+          }
+        },
+        {
+          "args": {
+            "applicant": 3
+          },
+          "err": "NoFile"
+        },
+        {
+          "args": {
+            "applicant": 4
+          },
+          "ok": {
+            "score": 710,
+            "open_loans": 4
+          }
+        },
+        {
+          "args": {
+            "applicant": 5
+          },
+          "err": "BureauDown"
+        },
+        {
+          "args": {
+            "applicant": 6
+          },
+          "ok": {
+            "score": 720,
+            "open_loans": 0
+          }
+        }
+      ]
+    },
+    "Income": {
+      "cases": [
+        {
+          "args": {
+            "applicant": 1
+          },
+          "ok": "5000.00"
+        },
+        {
+          "args": {
+            "applicant": 2
+          },
+          "ok": "3000.00"
+        },
+        {
+          "args": {
+            "applicant": 3
+          },
+          "ok": "4000.00"
+        },
+        {
+          "args": {
+            "applicant": 4
+          },
+          "ok": "9000.00"
+        }
+      ],
+      "fallback": {
+        "err": "Unverified"
+      }
+    }
+  }
+}

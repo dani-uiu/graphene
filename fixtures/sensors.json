@@ -1,0 +1,31 @@
+{
+  "effects": {
+    "Limits": {
+      "cases": [
+        {
+          "args": {
+            "device": "boiler-1"
+          },
+          "ok": {
+            "low": 10,
+            "high": 80,
+            "critical": 95
+          }
+        },
+        {
+          "args": {
+            "device": "freezer-2"
+          },
+          "ok": {
+            "low": -30,
+            "high": -15,
+            "critical": 5
+          }
+        }
+      ],
+      "fallback": {
+        "err": "UnknownDevice"
+      }
+    }
+  }
+}

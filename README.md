@@ -117,6 +117,35 @@ graphene tokens examples/valid/pricing.grph
 
 `dec` values are exact. They are emitted as strings and scaled to 2 decimal places on output.
 
+## Examples
+
+Every program in `examples/valid/` has a `.cases.json` file next to it. `graphene test --parallel` checks each case against the expected output, sequentially and in parallel.
+
+| Program | Shows |
+|---|---|
+| `pricing` | The reference program from the language brief: one effect, a match, an async log (v0.1) |
+| `order_total` | Two independent branches joined into one total |
+| `safe_balance` | Recovering from an error into a merge |
+| `checkout` / `checkout_v2` | The same order pipeline in v0.1 and v0.2 style, side by side |
+| `conversions` | Every numeric conversion, including truncation and out-of-range faults |
+| `loan_approval` | Error routing per variant with a default record, nested decision tiers, an affordability rule with `&&` |
+| `sensor_alerts` | Negative `i64` math, `\|\|` conditions, target annotations that type literals inside records |
+| `subscription_renewal` | Proration with exact decimals, credit-first logic, three payment errors routed separately, `u64()` truncation |
+| **`marketplace_checkout`** | The flagship, below |
+
+**`marketplace_checkout.grph`** is about 100 lines. It has 11 effects, 53 values and 51 operations, and 11 possible outcomes (10 kinds of failure plus the receipt). The checker proves exactly one of them is reached on every run. It covers:
+- loading the order and buyer, with routing per error;
+- a fraud screen;
+- tiered, loyalty, and coupon pricing, where each coupon branch writes the same record;
+- a stock reservation;
+- tax and shipping fetched **in parallel** and then joined, each falling back on its own errors;
+- a wallet limit check;
+- payment with **compensating actions**: every failure after the reservation releases it;
+- a nested record receipt;
+- 9 audit, notify and metric side effects, each proven unable to influence the result.
+
+The checker proves all of this before anything runs.
+
 ## Diagnostic codes
 
 Every diagnostic has a stable code, points at the exact source span, and includes a `help:` line. Checks run in stages: a later stage runs only when the earlier ones were clean, so one mistake gives one diagnostic.

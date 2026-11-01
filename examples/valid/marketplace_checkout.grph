@@ -1,0 +1,109 @@
+#!graphene 0.2
+@intent "Marketplace checkout: screen the buyer, price with tier, loyalty and coupon, reserve stock, fetch tax and shipping in parallel, charge, and release the reservation if payment fails"
+
+// ---------------------------------------------------------------- effects
+extern fx OrderFetch(id: u64) -> {buyer: u64, sku: str, qty: u64, express: bool} ! NotFound
+extern fx Buyer(id: u64) -> {tier: str, risk: u64, wallet: dec, orders: u64} ! NotFound | DbDown
+extern fx Catalog(sku: str) -> {price: dec, kg: dec, category: str} ! UnknownSku
+extern fx Reserve(sku: str, qty: u64) -> str ! OutOfStock | Locked
+extern fx TaxRate(region: str, category: str) -> dec ! NoRule
+extern fx Quote(region: str, kg: dec, express: bool) -> dec ! NoRoute
+extern fx Charge(buyer: u64, amount: dec) -> str ! Declined | Insufficient | GatewayDown
+extern fx~ Release(reservation: str)
+extern fx~ Audit(event: str, order: u64)
+extern fx~ Notify(buyer: u64, message: str)
+extern fx~ Metric(name: str, value: dec)
+
+// ---------------------------------------------------------------- inputs
+in order_id: u64 -> O
+in region: str
+in coupon: str
+
+// ---------------------------------------------------------------- 1. order and buyer
+O -> fx OrderFetch(id: order_id) -> ORD | err -> NO_ORDER
+NO_ORDER -> fail
+ORD -> fx~ Audit(event: "checkout_started", order: order_id) -> sink AUDIT_START
+
+ORD -> fx Buyer(id: ORD.buyer) -> BUY | err NotFound -> NO_BUYER | err DbDown -> BUYER_DB_DOWN
+NO_BUYER -> fail UnknownBuyer
+BUYER_DB_DOWN -> fail
+
+// ---------------------------------------------------------------- 2. fraud screen
+BUY -> match BUY.risk > 80 { true => RISKY, false => TRUSTED }
+RISKY -> fx~ Audit(event: "blocked_high_risk", order: order_id) -> sink AUDIT_RISK
+RISKY -> fail FraudSuspected
+
+TRUSTED -> fx Catalog(sku: ORD.sku) -> ITEM | err -> NO_ITEM
+NO_ITEM -> fail
+
+// ---------------------------------------------------------------- 3. pricing: tier, then loyalty, then coupon
+ITEM -> match BUY.tier { "gold" => GOLD, "silver" => SILVER, _ => STANDARD }
+GOLD -> f(0.85) -> TIER
+SILVER -> f(0.92) -> TIER
+STANDARD -> f(1.00) -> TIER
+
+TIER -> match BUY.orders >= 10 { true => LOYAL, false => NEWER }
+LOYAL -> f(LOYAL - 0.03) -> RATE
+NEWER -> f(NEWER) -> RATE
+
+// Each coupon branch writes the same record, so later steps read one value.
+RATE -> match coupon { "SAVE10" => SAVE10, "FREESHIP" => FREESHIP, _ => NO_COUPON }
+SAVE10 -> f({pct: 0.10, free_ship: false}) -> PROMO
+FREESHIP -> f({pct: 0.00, free_ship: true}) -> PROMO
+NO_COUPON -> f({pct: 0.00, free_ship: false}) -> PROMO
+
+PROMO -> f(ITEM.price * dec(ORD.qty) * RATE * (1.00 - PROMO.pct)) -> SUBTOTAL
+
+// ---------------------------------------------------------------- 4. reserve stock
+SUBTOTAL -> fx Reserve(sku: ORD.sku, qty: ORD.qty) -> RES | err OutOfStock -> SOLD_OUT | err Locked -> LOCKED
+SOLD_OUT -> fx~ Notify(buyer: ORD.buyer, message: "sorry, this item just sold out") -> sink NOTIFY_SOLD_OUT
+SOLD_OUT -> fail OutOfStock
+LOCKED -> fail
+
+// ---------------------------------------------------------------- 5. tax and shipping, fetched in parallel
+// Both branches recover from their errors, so they are always active
+// together and can be joined.
+RES -> fx TaxRate(region: region, category: ITEM.category) -> TAX_RATE | err -> NO_TAX_RULE
+NO_TAX_RULE -> f(0.10) -> TAX_RATE
+
+RES -> fx Quote(region: region, kg: ITEM.kg * dec(ORD.qty), express: ORD.express) -> QUOTE | err -> NO_ROUTE
+NO_ROUTE -> f(15.00 + ITEM.kg * dec(ORD.qty) * 4.00) -> QUOTE
+QUOTE -> match PROMO.free_ship { true => SHIP_FREE, false => SHIP_PAID }
+SHIP_FREE -> f(0.00) -> SHIPPING
+SHIP_PAID -> f(SHIP_PAID) -> SHIPPING
+
+(TAX_RATE, SHIPPING) -> f({subtotal: SUBTOTAL, tax: SUBTOTAL * TAX_RATE, shipping: SHIPPING, total: SUBTOTAL + SUBTOTAL * TAX_RATE + SHIPPING}) -> BILL
+
+// ---------------------------------------------------------------- 6. payment, with compensation
+BILL -> match BILL.total > BUY.wallet { true => OVER_LIMIT, false => PAYABLE }
+OVER_LIMIT -> fx~ Release(reservation: RES) -> sink RELEASE_LIMIT
+OVER_LIMIT -> fail OverSpendingLimit
+
+PAYABLE -> fx Charge(buyer: ORD.buyer, amount: BILL.total) -> TX | err Declined -> DECLINED | err -> PAY_FAILED
+DECLINED -> fx~ Release(reservation: RES) -> sink RELEASE_DECLINED
+DECLINED -> fx~ Notify(buyer: ORD.buyer, message: "your card was declined") -> sink NOTIFY_DECLINED
+DECLINED -> fail CardDeclined
+PAY_FAILED -> fx~ Release(reservation: RES) -> sink RELEASE_FAILED
+PAY_FAILED -> fail
+
+// ---------------------------------------------------------------- 7. success
+TX -> fx~ Notify(buyer: ORD.buyer, message: "order confirmed") -> sink NOTIFY_OK
+TX -> fx~ Metric(name: "revenue", value: BILL.total) -> sink METRIC_REVENUE
+TX -> match ORD.express { true => EXPRESS, false => GROUND }
+EXPRESS -> f(1) -> ETA
+GROUND -> f(5) -> ETA
+ETA -> f({order: order_id, transaction: TX, reservation: RES, tier: BUY.tier, eta_days: ETA, bill: BILL}) -> RECEIPT
+
+RECEIPT -> out receipt: {order: u64, transaction: str, reservation: str, tier: str, eta_days: u64, bill: {subtotal: dec, tax: dec, shipping: dec, total: dec}}
+
+// ---------------------------------------------------------------- guarantees
+assert total
+assert indep(AUDIT_START, out)
+assert indep(AUDIT_RISK, out)
+assert indep(NOTIFY_SOLD_OUT, out)
+assert indep(RELEASE_LIMIT, out)
+assert indep(RELEASE_DECLINED, out)
+assert indep(NOTIFY_DECLINED, out)
+assert indep(RELEASE_FAILED, out)
+assert indep(NOTIFY_OK, out)
+assert indep(METRIC_REVENUE, out)

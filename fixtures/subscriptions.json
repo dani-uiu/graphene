@@ -1,0 +1,88 @@
+{
+  "effects": {
+    "Account": {
+      "cases": [
+        {
+          "args": {
+            "id": 1
+          },
+          "ok": {
+            "credit": "50.00",
+            "days_used": 10
+          }
+        },
+        {
+          "args": {
+            "id": 2
+          },
+          "ok": {
+            "credit": "5.00",
+            "days_used": 0
+          }
+        },
+        {
+          "args": {
+            "id": 3
+          },
+          "ok": {
+            "credit": "0.00",
+            "days_used": 15
+          }
+        },
+        {
+          "args": {
+            "id": 4
+          },
+          "ok": {
+            "credit": "0.00",
+            "days_used": 0
+          }
+        },
+        {
+          "args": {
+            "id": 5
+          },
+          "ok": {
+            "credit": "0.00",
+            "days_used": 0
+          }
+        }
+      ],
+      "fallback": {
+        "err": "Closed"
+      }
+    },
+    "Charge": {
+      "cases": [
+        {
+          "args": {
+            "id": 2,
+            "amount": "94.00"
+          },
+          "ok": "rcpt_2002"
+        },
+        {
+          "args": {
+            "id": 3,
+            "amount": "14.50"
+          },
+          "err": "Declined"
+        },
+        {
+          "args": {
+            "id": 4,
+            "amount": "9.00"
+          },
+          "err": "Expired"
+        },
+        {
+          "args": {
+            "id": 5,
+            "amount": "9.00"
+          },
+          "err": "GatewayDown"
+        }
+      ]
+    }
+  }
+}

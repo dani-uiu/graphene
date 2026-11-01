@@ -1,0 +1,251 @@
+[
+  {
+    "name": "boiler above critical pages",
+    "inputs": {
+      "device": "boiler-1",
+      "temp_c": 99,
+      "humidity": 40
+    },
+    "mock": "../../fixtures/sensors.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "status": {
+            "delta": 4,
+            "level": "critical"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Limits",
+          "args": {
+            "device": "boiler-1"
+          },
+          "result": {
+            "ok": {
+              "critical": 95,
+              "high": 80,
+              "low": 10
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Log",
+          "args": {
+            "device": "boiler-1",
+            "reading": 99
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Page",
+          "args": {
+            "device": "boiler-1",
+            "level": "critical"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "boiler above high is a warning",
+    "inputs": {
+      "device": "boiler-1",
+      "temp_c": 85,
+      "humidity": 40
+    },
+    "mock": "../../fixtures/sensors.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "status": {
+            "delta": 5,
+            "level": "too_hot"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Limits",
+          "args": {
+            "device": "boiler-1"
+          },
+          "result": {
+            "ok": {
+              "critical": 95,
+              "high": 80,
+              "low": 10
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Log",
+          "args": {
+            "device": "boiler-1",
+            "reading": 85
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "freezer below low (negative i64 math)",
+    "inputs": {
+      "device": "freezer-2",
+      "temp_c": -35,
+      "humidity": 40
+    },
+    "mock": "../../fixtures/sensors.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "status": {
+            "delta": -5,
+            "level": "too_cold"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Limits",
+          "args": {
+            "device": "freezer-2"
+          },
+          "result": {
+            "ok": {
+              "critical": 5,
+              "high": -15,
+              "low": -30
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Log",
+          "args": {
+            "device": "freezer-2",
+            "reading": -35
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "freezer in range but humid",
+    "inputs": {
+      "device": "freezer-2",
+      "temp_c": -20,
+      "humidity": 90
+    },
+    "mock": "../../fixtures/sensors.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "status": {
+            "delta": 0,
+            "level": "humid"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Limits",
+          "args": {
+            "device": "freezer-2"
+          },
+          "result": {
+            "ok": {
+              "critical": 5,
+              "high": -15,
+              "low": -30
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Log",
+          "args": {
+            "device": "freezer-2",
+            "reading": -20
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "boiler in range and dry is ok",
+    "inputs": {
+      "device": "boiler-1",
+      "temp_c": 50,
+      "humidity": 40
+    },
+    "mock": "../../fixtures/sensors.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "status": {
+            "delta": 0,
+            "level": "ok"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Limits",
+          "args": {
+            "device": "boiler-1"
+          },
+          "result": {
+            "ok": {
+              "critical": 95,
+              "high": 80,
+              "low": 10
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Log",
+          "args": {
+            "device": "boiler-1",
+            "reading": 50
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown device propagates UnknownDevice",
+    "inputs": {
+      "device": "toaster",
+      "temp_c": 20,
+      "humidity": 40
+    },
+    "mock": "../../fixtures/sensors.json",
+    "expect": {
+      "result": {
+        "err": "UnknownDevice"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Limits",
+          "args": {
+            "device": "toaster"
+          },
+          "result": {
+            "err": "UnknownDevice"
+          }
+        }
+      ]
+    }
+  }
+]

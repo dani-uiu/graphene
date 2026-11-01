@@ -1,0 +1,369 @@
+{
+  "effects": {
+    "OrderFetch": {
+      "cases": [
+        {
+          "args": {
+            "id": 1
+          },
+          "ok": {
+            "buyer": 101,
+            "sku": "headphones",
+            "qty": 2,
+            "express": true
+          }
+        },
+        {
+          "args": {
+            "id": 2
+          },
+          "ok": {
+            "buyer": 102,
+            "sku": "lamp",
+            "qty": 1,
+            "express": false
+          }
+        },
+        {
+          "args": {
+            "id": 3
+          },
+          "ok": {
+            "buyer": 103,
+            "sku": "lamp",
+            "qty": 1,
+            "express": false
+          }
+        },
+        {
+          "args": {
+            "id": 4
+          },
+          "ok": {
+            "buyer": 104,
+            "sku": "console",
+            "qty": 1,
+            "express": false
+          }
+        },
+        {
+          "args": {
+            "id": 5
+          },
+          "ok": {
+            "buyer": 105,
+            "sku": "lamp",
+            "qty": 2,
+            "express": false
+          }
+        },
+        {
+          "args": {
+            "id": 6
+          },
+          "ok": {
+            "buyer": 106,
+            "sku": "headphones",
+            "qty": 1,
+            "express": false
+          }
+        },
+        {
+          "args": {
+            "id": 7
+          },
+          "ok": {
+            "buyer": 107,
+            "sku": "mug",
+            "qty": 5,
+            "express": false
+          }
+        },
+        {
+          "args": {
+            "id": 8
+          },
+          "ok": {
+            "buyer": 108,
+            "sku": "mug",
+            "qty": 1,
+            "express": false
+          }
+        }
+      ],
+      "fallback": {
+        "err": "NotFound"
+      }
+    },
+    "Buyer": {
+      "cases": [
+        {
+          "args": {
+            "id": 101
+          },
+          "ok": {
+            "tier": "gold",
+            "risk": 10,
+            "wallet": "2000.00",
+            "orders": 12
+          }
+        },
+        {
+          "args": {
+            "id": 102
+          },
+          "ok": {
+            "tier": "silver",
+            "risk": 30,
+            "wallet": "500.00",
+            "orders": 3
+          }
+        },
+        {
+          "args": {
+            "id": 103
+          },
+          "ok": {
+            "tier": "standard",
+            "risk": 95,
+            "wallet": "100.00",
+            "orders": 0
+          }
+        },
+        {
+          "args": {
+            "id": 104
+          },
+          "ok": {
+            "tier": "standard",
+            "risk": 5,
+            "wallet": "800.00",
+            "orders": 0
+          }
+        },
+        {
+          "args": {
+            "id": 105
+          },
+          "ok": {
+            "tier": "standard",
+            "risk": 20,
+            "wallet": "1000.00",
+            "orders": 1
+          }
+        },
+        {
+          "args": {
+            "id": 106
+          },
+          "ok": {
+            "tier": "gold",
+            "risk": 1,
+            "wallet": "5000.00",
+            "orders": 2
+          }
+        },
+        {
+          "args": {
+            "id": 107
+          },
+          "ok": {
+            "tier": "standard",
+            "risk": 0,
+            "wallet": "50.00",
+            "orders": 0
+          }
+        },
+        {
+          "args": {
+            "id": 108
+          },
+          "err": "DbDown"
+        }
+      ],
+      "fallback": {
+        "err": "NotFound"
+      }
+    },
+    "Catalog": {
+      "cases": [
+        {
+          "args": {
+            "sku": "headphones"
+          },
+          "ok": {
+            "price": "199.00",
+            "kg": "0.40",
+            "category": "electronics"
+          }
+        },
+        {
+          "args": {
+            "sku": "lamp"
+          },
+          "ok": {
+            "price": "45.00",
+            "kg": "2.50",
+            "category": "home"
+          }
+        },
+        {
+          "args": {
+            "sku": "console"
+          },
+          "ok": {
+            "price": "499.00",
+            "kg": "3.20",
+            "category": "electronics"
+          }
+        },
+        {
+          "args": {
+            "sku": "mug"
+          },
+          "ok": {
+            "price": "12.00",
+            "kg": "0.30",
+            "category": "home"
+          }
+        }
+      ],
+      "fallback": {
+        "err": "UnknownSku"
+      }
+    },
+    "Reserve": {
+      "cases": [
+        {
+          "args": {
+            "sku": "headphones",
+            "qty": 2
+          },
+          "ok": "res_501"
+        },
+        {
+          "args": {
+            "sku": "lamp",
+            "qty": 1
+          },
+          "ok": "res_502"
+        },
+        {
+          "args": {
+            "sku": "console",
+            "qty": 1
+          },
+          "err": "OutOfStock"
+        },
+        {
+          "args": {
+            "sku": "lamp",
+            "qty": 2
+          },
+          "ok": "res_505"
+        },
+        {
+          "args": {
+            "sku": "headphones",
+            "qty": 1
+          },
+          "ok": "res_506"
+        },
+        {
+          "args": {
+            "sku": "mug",
+            "qty": 5
+          },
+          "ok": "res_507"
+        }
+      ],
+      "fallback": {
+        "err": "Locked"
+      }
+    },
+    "TaxRate": {
+      "cases": [
+        {
+          "args": {
+            "region": "EU",
+            "category": "electronics"
+          },
+          "ok": "0.20"
+        },
+        {
+          "args": {
+            "region": "EU",
+            "category": "home"
+          },
+          "ok": "0.21"
+        }
+      ],
+      "fallback": {
+        "err": "NoRule"
+      }
+    },
+    "Quote": {
+      "cases": [
+        {
+          "args": {
+            "region": "EU",
+            "kg": "0.80",
+            "express": true
+          },
+          "ok": "9.50"
+        },
+        {
+          "args": {
+            "region": "EU",
+            "kg": "5.00",
+            "express": false
+          },
+          "ok": "12.00"
+        },
+        {
+          "args": {
+            "region": "EU",
+            "kg": "0.40",
+            "express": false
+          },
+          "ok": "6.00"
+        }
+      ],
+      "fallback": {
+        "err": "NoRoute"
+      }
+    },
+    "Charge": {
+      "cases": [
+        {
+          "args": {
+            "buyer": 101,
+            "amount": "361.9688"
+          },
+          "ok": "tx_9001"
+        },
+        {
+          "args": {
+            "buyer": 102,
+            "amount": "45.54"
+          },
+          "ok": "tx_9002"
+        },
+        {
+          "args": {
+            "buyer": 105,
+            "amount": "120.90"
+          },
+          "err": "Declined"
+        },
+        {
+          "args": {
+            "buyer": 106,
+            "amount": "208.98"
+          },
+          "err": "GatewayDown"
+        }
+      ]
+    }
+  }
+}

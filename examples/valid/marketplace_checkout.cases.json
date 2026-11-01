@@ -1,0 +1,869 @@
+[
+  {
+    "name": "gold, loyal, SAVE10, express: 199*2*0.82*0.90 + 20% tax + 9.50",
+    "inputs": {
+      "order_id": 1,
+      "region": "EU",
+      "coupon": "SAVE10"
+    },
+    "mock": "../../fixtures/marketplace.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "receipt": {
+            "bill": {
+              "shipping": "9.50",
+              "subtotal": "293.72",
+              "tax": "58.74",
+              "total": "361.97"
+            },
+            "eta_days": 1,
+            "order": 1,
+            "reservation": "res_501",
+            "tier": "gold",
+            "transaction": "tx_9001"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 1
+          },
+          "result": {
+            "ok": {
+              "buyer": 101,
+              "express": true,
+              "qty": 2,
+              "sku": "headphones"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "checkout_started",
+            "order": 1
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Buyer",
+          "args": {
+            "id": 101
+          },
+          "result": {
+            "ok": {
+              "orders": 12,
+              "risk": 10,
+              "tier": "gold",
+              "wallet": "2000.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "headphones"
+          },
+          "result": {
+            "ok": {
+              "category": "electronics",
+              "kg": "0.40",
+              "price": "199.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Reserve",
+          "args": {
+            "qty": 2,
+            "sku": "headphones"
+          },
+          "result": {
+            "ok": "res_501"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxRate",
+          "args": {
+            "category": "electronics",
+            "region": "EU"
+          },
+          "result": {
+            "ok": "0.20"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Quote",
+          "args": {
+            "express": true,
+            "kg": "0.80",
+            "region": "EU"
+          },
+          "result": {
+            "ok": "9.50"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Charge",
+          "args": {
+            "amount": "361.96880000",
+            "buyer": 101
+          },
+          "result": {
+            "ok": "tx_9001"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Notify",
+          "args": {
+            "buyer": 101,
+            "message": "order confirmed"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Metric",
+          "args": {
+            "name": "revenue",
+            "value": "361.96880000"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "silver, FREESHIP, no tax rule (10%), no route but shipping is free",
+    "inputs": {
+      "order_id": 2,
+      "region": "US",
+      "coupon": "FREESHIP"
+    },
+    "mock": "../../fixtures/marketplace.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "receipt": {
+            "bill": {
+              "shipping": "0.00",
+              "subtotal": "41.40",
+              "tax": "4.14",
+              "total": "45.54"
+            },
+            "eta_days": 5,
+            "order": 2,
+            "reservation": "res_502",
+            "tier": "silver",
+            "transaction": "tx_9002"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 2
+          },
+          "result": {
+            "ok": {
+              "buyer": 102,
+              "express": false,
+              "qty": 1,
+              "sku": "lamp"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "checkout_started",
+            "order": 2
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Buyer",
+          "args": {
+            "id": 102
+          },
+          "result": {
+            "ok": {
+              "orders": 3,
+              "risk": 30,
+              "tier": "silver",
+              "wallet": "500.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "lamp"
+          },
+          "result": {
+            "ok": {
+              "category": "home",
+              "kg": "2.50",
+              "price": "45.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Reserve",
+          "args": {
+            "qty": 1,
+            "sku": "lamp"
+          },
+          "result": {
+            "ok": "res_502"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxRate",
+          "args": {
+            "category": "home",
+            "region": "US"
+          },
+          "result": {
+            "err": "NoRule"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Quote",
+          "args": {
+            "express": false,
+            "kg": "2.50",
+            "region": "US"
+          },
+          "result": {
+            "err": "NoRoute"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Charge",
+          "args": {
+            "amount": "45.54000000",
+            "buyer": 102
+          },
+          "result": {
+            "ok": "tx_9002"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Notify",
+          "args": {
+            "buyer": 102,
+            "message": "order confirmed"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Metric",
+          "args": {
+            "name": "revenue",
+            "value": "45.54000000"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "high-risk buyer is blocked before pricing",
+    "inputs": {
+      "order_id": 3,
+      "region": "EU",
+      "coupon": ""
+    },
+    "mock": "../../fixtures/marketplace.json",
+    "expect": {
+      "result": {
+        "err": "FraudSuspected"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 3
+          },
+          "result": {
+            "ok": {
+              "buyer": 103,
+              "express": false,
+              "qty": 1,
+              "sku": "lamp"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "checkout_started",
+            "order": 3
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Buyer",
+          "args": {
+            "id": 103
+          },
+          "result": {
+            "ok": {
+              "orders": 0,
+              "risk": 95,
+              "tier": "standard",
+              "wallet": "100.00"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "blocked_high_risk",
+            "order": 3
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "sold out: buyer notified, nothing reserved",
+    "inputs": {
+      "order_id": 4,
+      "region": "EU",
+      "coupon": ""
+    },
+    "mock": "../../fixtures/marketplace.json",
+    "expect": {
+      "result": {
+        "err": "OutOfStock"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 4
+          },
+          "result": {
+            "ok": {
+              "buyer": 104,
+              "express": false,
+              "qty": 1,
+              "sku": "console"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "checkout_started",
+            "order": 4
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Buyer",
+          "args": {
+            "id": 104
+          },
+          "result": {
+            "ok": {
+              "orders": 0,
+              "risk": 5,
+              "tier": "standard",
+              "wallet": "800.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "console"
+          },
+          "result": {
+            "ok": {
+              "category": "electronics",
+              "kg": "3.20",
+              "price": "499.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Reserve",
+          "args": {
+            "qty": 1,
+            "sku": "console"
+          },
+          "result": {
+            "err": "OutOfStock"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Notify",
+          "args": {
+            "buyer": 104,
+            "message": "sorry, this item just sold out"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "card declined: reservation released, buyer notified",
+    "inputs": {
+      "order_id": 5,
+      "region": "EU",
+      "coupon": ""
+    },
+    "mock": "../../fixtures/marketplace.json",
+    "expect": {
+      "result": {
+        "err": "CardDeclined"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 5
+          },
+          "result": {
+            "ok": {
+              "buyer": 105,
+              "express": false,
+              "qty": 2,
+              "sku": "lamp"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "checkout_started",
+            "order": 5
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Buyer",
+          "args": {
+            "id": 105
+          },
+          "result": {
+            "ok": {
+              "orders": 1,
+              "risk": 20,
+              "tier": "standard",
+              "wallet": "1000.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "lamp"
+          },
+          "result": {
+            "ok": {
+              "category": "home",
+              "kg": "2.50",
+              "price": "45.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Reserve",
+          "args": {
+            "qty": 2,
+            "sku": "lamp"
+          },
+          "result": {
+            "ok": "res_505"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxRate",
+          "args": {
+            "category": "home",
+            "region": "EU"
+          },
+          "result": {
+            "ok": "0.21"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Quote",
+          "args": {
+            "express": false,
+            "kg": "5.00",
+            "region": "EU"
+          },
+          "result": {
+            "ok": "12.00"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Charge",
+          "args": {
+            "amount": "120.90000000",
+            "buyer": 105
+          },
+          "result": {
+            "err": "Declined"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Release",
+          "args": {
+            "reservation": "res_505"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Notify",
+          "args": {
+            "buyer": 105,
+            "message": "your card was declined"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "gateway down: reservation released, GatewayDown propagates",
+    "inputs": {
+      "order_id": 6,
+      "region": "EU",
+      "coupon": ""
+    },
+    "mock": "../../fixtures/marketplace.json",
+    "expect": {
+      "result": {
+        "err": "GatewayDown"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 6
+          },
+          "result": {
+            "ok": {
+              "buyer": 106,
+              "express": false,
+              "qty": 1,
+              "sku": "headphones"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "checkout_started",
+            "order": 6
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Buyer",
+          "args": {
+            "id": 106
+          },
+          "result": {
+            "ok": {
+              "orders": 2,
+              "risk": 1,
+              "tier": "gold",
+              "wallet": "5000.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "headphones"
+          },
+          "result": {
+            "ok": {
+              "category": "electronics",
+              "kg": "0.40",
+              "price": "199.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Reserve",
+          "args": {
+            "qty": 1,
+            "sku": "headphones"
+          },
+          "result": {
+            "ok": "res_506"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxRate",
+          "args": {
+            "category": "electronics",
+            "region": "EU"
+          },
+          "result": {
+            "ok": "0.20"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Quote",
+          "args": {
+            "express": false,
+            "kg": "0.40",
+            "region": "EU"
+          },
+          "result": {
+            "ok": "6.00"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Charge",
+          "args": {
+            "amount": "208.98000000",
+            "buyer": 106
+          },
+          "result": {
+            "err": "GatewayDown"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Release",
+          "args": {
+            "reservation": "res_506"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "total above wallet limit: reservation released",
+    "inputs": {
+      "order_id": 7,
+      "region": "EU",
+      "coupon": ""
+    },
+    "mock": "../../fixtures/marketplace.json",
+    "expect": {
+      "result": {
+        "err": "OverSpendingLimit"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 7
+          },
+          "result": {
+            "ok": {
+              "buyer": 107,
+              "express": false,
+              "qty": 5,
+              "sku": "mug"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "checkout_started",
+            "order": 7
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Buyer",
+          "args": {
+            "id": 107
+          },
+          "result": {
+            "ok": {
+              "orders": 0,
+              "risk": 0,
+              "tier": "standard",
+              "wallet": "50.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "mug"
+          },
+          "result": {
+            "ok": {
+              "category": "home",
+              "kg": "0.30",
+              "price": "12.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Reserve",
+          "args": {
+            "qty": 5,
+            "sku": "mug"
+          },
+          "result": {
+            "ok": "res_507"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxRate",
+          "args": {
+            "category": "home",
+            "region": "EU"
+          },
+          "result": {
+            "ok": "0.21"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Quote",
+          "args": {
+            "express": false,
+            "kg": "1.50",
+            "region": "EU"
+          },
+          "result": {
+            "err": "NoRoute"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Release",
+          "args": {
+            "reservation": "res_507"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "buyer database outage propagates DbDown",
+    "inputs": {
+      "order_id": 8,
+      "region": "EU",
+      "coupon": ""
+    },
+    "mock": "../../fixtures/marketplace.json",
+    "expect": {
+      "result": {
+        "err": "DbDown"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 8
+          },
+          "result": {
+            "ok": {
+              "buyer": 108,
+              "express": false,
+              "qty": 1,
+              "sku": "mug"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "checkout_started",
+            "order": 8
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Buyer",
+          "args": {
+            "id": 108
+          },
+          "result": {
+            "err": "DbDown"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown order propagates NotFound",
+    "inputs": {
+      "order_id": 999,
+      "region": "EU",
+      "coupon": ""
+    },
+    "mock": "../../fixtures/marketplace.json",
+    "expect": {
+      "result": {
+        "err": "NotFound"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 999
+          },
+          "result": {
+            "err": "NotFound"
+          }
+        }
+      ]
+    }
+  }
+]

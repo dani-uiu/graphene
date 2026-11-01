@@ -1,0 +1,42 @@
+#!graphene 0.2
+@intent "Decide a loan: credit and income checks, a risk-based rate, and an affordability test"
+
+extern fx Credit(applicant: u64) -> {score: u64, open_loans: u64} ! NoFile | BureauDown
+extern fx Income(applicant: u64) -> dec ! Unverified
+extern fx~ Audit(event: str, applicant: u64)
+
+in applicant: u64 -> A
+in amount: dec
+in months: u64
+
+// A missing credit file gets a thin default profile; a bureau outage fails.
+A -> fx Credit(applicant: applicant) -> CR | err NoFile -> THIN | err BureauDown -> DOWN
+CR -> f(CR) -> PROFILE
+THIN -> f({score: 600, open_loans: 0}) -> PROFILE
+DOWN -> fail
+
+PROFILE -> fx Income(applicant: applicant) -> INC | err -> NO_INCOME
+NO_INCOME -> fx~ Audit(event: "income_unverified", applicant: applicant) -> sink A_INCOME
+NO_INCOME -> fail IncomeUnverified
+
+// Rate tiers by score; below 620 is declined.
+INC -> match PROFILE.score >= 700 { true => PRIME, false => SUBPRIME }
+PRIME -> f(0.045) -> APR
+SUBPRIME -> match PROFILE.score >= 620 { true => NEAR, false => LOW_SCORE }
+NEAR -> f(0.089) -> APR
+LOW_SCORE -> fail CreditTooLow
+
+// Simple interest. Affordable when the total fits in 40% of income over the term.
+APR -> f(amount * (1.00 + APR * dec(months) / 12.00)) -> COST
+COST -> match COST <= INC * dec(months) * 0.40 && PROFILE.open_loans < 3 { true => APPROVE, false => TOO_MUCH }
+TOO_MUCH -> fx~ Audit(event: "denied_affordability", applicant: applicant) -> sink A_DENY
+TOO_MUCH -> fail TooMuchDebt
+
+APPROVE -> f({apr_pct: APR * 100.00, total_cost: COST, interest: COST - amount, months: months}) -> OFFER
+OFFER -> fx~ Audit(event: "approved", applicant: applicant) -> sink A_OK
+OFFER -> out offer: {apr_pct: dec, total_cost: dec, interest: dec, months: u64}
+
+assert total
+assert indep(A_INCOME, out)
+assert indep(A_DENY, out)
+assert indep(A_OK, out)

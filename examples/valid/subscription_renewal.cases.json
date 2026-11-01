@@ -1,0 +1,257 @@
+[
+  {
+    "name": "credit covers a prorated pro plan",
+    "inputs": {
+      "id": 1,
+      "plan": "pro"
+    },
+    "mock": "../../fixtures/subscriptions.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "renewal": {
+            "charged": "0.00",
+            "credit_left": "30.67",
+            "points": 0,
+            "receipt": "credit"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Account",
+          "args": {
+            "id": 1
+          },
+          "result": {
+            "ok": {
+              "credit": "50.00",
+              "days_used": 10
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Email",
+          "args": {
+            "id": 1,
+            "template": "renewed_with_credit"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "team plan charged after credit; points truncate to 94",
+    "inputs": {
+      "id": 2,
+      "plan": "team"
+    },
+    "mock": "../../fixtures/subscriptions.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "renewal": {
+            "charged": "94.00",
+            "credit_left": "0.00",
+            "points": 94,
+            "receipt": "rcpt_2002"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Account",
+          "args": {
+            "id": 2
+          },
+          "result": {
+            "ok": {
+              "credit": "5.00",
+              "days_used": 0
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Charge",
+          "args": {
+            "amount": "94.00",
+            "id": 2
+          },
+          "result": {
+            "ok": "rcpt_2002"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Email",
+          "args": {
+            "id": 2,
+            "template": "renewed"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "declined card emails and fails",
+    "inputs": {
+      "id": 3,
+      "plan": "pro"
+    },
+    "mock": "../../fixtures/subscriptions.json",
+    "expect": {
+      "result": {
+        "err": "PaymentDeclined"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Account",
+          "args": {
+            "id": 3
+          },
+          "result": {
+            "ok": {
+              "credit": "0.00",
+              "days_used": 15
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Charge",
+          "args": {
+            "amount": "14.50",
+            "id": 3
+          },
+          "result": {
+            "err": "Declined"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Email",
+          "args": {
+            "id": 3,
+            "template": "card_declined"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "expired card asks for an update",
+    "inputs": {
+      "id": 4,
+      "plan": "basic"
+    },
+    "mock": "../../fixtures/subscriptions.json",
+    "expect": {
+      "result": {
+        "err": "CardExpired"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Account",
+          "args": {
+            "id": 4
+          },
+          "result": {
+            "ok": {
+              "credit": "0.00",
+              "days_used": 0
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Charge",
+          "args": {
+            "amount": "9",
+            "id": 4
+          },
+          "result": {
+            "err": "Expired"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Email",
+          "args": {
+            "id": 4,
+            "template": "update_card"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "gateway outage propagates GatewayDown",
+    "inputs": {
+      "id": 5,
+      "plan": "basic"
+    },
+    "mock": "../../fixtures/subscriptions.json",
+    "expect": {
+      "result": {
+        "err": "GatewayDown"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Account",
+          "args": {
+            "id": 5
+          },
+          "result": {
+            "ok": {
+              "credit": "0.00",
+              "days_used": 0
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Charge",
+          "args": {
+            "amount": "9",
+            "id": 5
+          },
+          "result": {
+            "err": "GatewayDown"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "closed account propagates Closed",
+    "inputs": {
+      "id": 999,
+      "plan": "pro"
+    },
+    "mock": "../../fixtures/subscriptions.json",
+    "expect": {
+      "result": {
+        "err": "Closed"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Account",
+          "args": {
+            "id": 999
+          },
+          "result": {
+            "err": "Closed"
+          }
+        }
+      ]
+    }
+  }
+]

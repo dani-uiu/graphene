@@ -1,0 +1,42 @@
+#!graphene 0.2
+@intent "Renew a subscription: prorate the new plan, spend account credit first, charge the rest"
+
+extern fx Account(id: u64) -> {credit: dec, days_used: u64} ! Closed
+extern fx Charge(id: u64, amount: dec) -> str ! Declined | Expired | GatewayDown
+extern fx~ Email(id: u64, template: str)
+
+in id: u64 -> A
+in plan: str
+
+A -> fx Account(id: id) -> ACC | err -> CLOSED
+CLOSED -> fail
+
+ACC -> match plan { "pro" => PRO, "team" => TEAM, _ => BASIC }
+PRO -> f(29.00) -> PRICE
+TEAM -> f(99.00) -> PRICE
+BASIC -> f(9.00) -> PRICE
+
+// Days are whole numbers; the remaining share of a 30-day month is exact.
+PRICE -> f(PRICE * dec(30 - ACC.days_used) / 30.00) -> DUE_NOW
+
+DUE_NOW -> match ACC.credit >= DUE_NOW { true => COVERED, false => OWED }
+COVERED -> fx~ Email(id: id, template: "renewed_with_credit") -> sink MAIL_CREDIT
+COVERED -> f({charged: 0.00, credit_left: ACC.credit - DUE_NOW, receipt: "credit", points: 0}) -> RESULT
+
+// Each payment error gets its own path.
+OWED -> fx Charge(id: id, amount: DUE_NOW - ACC.credit) -> TX | err Declined -> DECLINED | err Expired -> EXPIRED | err GatewayDown -> LATER
+DECLINED -> fx~ Email(id: id, template: "card_declined") -> sink MAIL_DECLINED
+DECLINED -> fail PaymentDeclined
+EXPIRED -> fx~ Email(id: id, template: "update_card") -> sink MAIL_EXPIRED
+EXPIRED -> fail CardExpired
+LATER -> fail
+TX -> fx~ Email(id: id, template: "renewed") -> sink MAIL_OK
+TX -> f({charged: DUE_NOW - ACC.credit, credit_left: 0.00, receipt: TX, points: u64(DUE_NOW - ACC.credit)}) -> RESULT
+
+RESULT -> out renewal: {charged: dec, credit_left: dec, receipt: str, points: u64}
+
+assert total
+assert indep(MAIL_CREDIT, out)
+assert indep(MAIL_DECLINED, out)
+assert indep(MAIL_EXPIRED, out)
+assert indep(MAIL_OK, out)

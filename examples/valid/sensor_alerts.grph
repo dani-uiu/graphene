@@ -1,0 +1,33 @@
+#!graphene 0.2
+@intent "Classify a sensor reading against per-device limits and raise the right alerts"
+
+extern fx Limits(device: str) -> {low: i64, high: i64, critical: i64} ! UnknownDevice
+extern fx~ Page(device: str, level: str)
+extern fx~ Log(device: str, reading: i64)
+
+in device: str -> D
+in temp_c: i64
+in humidity: u64
+
+D -> fx Limits(device: device) -> LIM | err -> UNKNOWN
+UNKNOWN -> fail
+LIM -> fx~ Log(device: device, reading: temp_c) -> sink LOG
+
+// Critical first, then out of range, then humidity. Each branch builds the
+// same record type; the annotations type the bare `0` literals as i64.
+LIM -> match temp_c >= LIM.critical { true => CRIT, false => NOT_CRIT }
+CRIT -> fx~ Page(device: device, level: "critical") -> sink PAGE
+CRIT -> f({level: "critical", delta: temp_c - LIM.critical}) -> STATUS
+NOT_CRIT -> match temp_c > LIM.high || temp_c < LIM.low { true => WARN, false => IN_RANGE }
+WARN -> match temp_c > LIM.high { true => HOT, false => COLD }
+HOT -> f({level: "too_hot", delta: temp_c - LIM.high}) -> STATUS
+COLD -> f({level: "too_cold", delta: temp_c - LIM.low}) -> STATUS
+IN_RANGE -> match humidity > 85 { true => DAMP, false => FINE }
+DAMP -> f({level: "humid", delta: 0}) -> STATUS: {level: str, delta: i64}
+FINE -> f({level: "ok", delta: 0}) -> STATUS: {level: str, delta: i64}
+
+STATUS -> out status: {level: str, delta: i64}
+
+assert total
+assert indep(LOG, out)
+assert indep(PAGE, out)
