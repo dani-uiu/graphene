@@ -112,6 +112,72 @@ PASS examples\valid\checkout_v2.grph: premium member, quoted shipping: 3.50*10*0
 - **`--parallel`** also runs each case on the parallel runner and requires identical output.
 - **Exit codes:** `0` if everything passes, `1` otherwise.
 
+### `graphene test --coverage`: what do the cases miss?
+
+```
+$ graphene test --coverage examples/valid/subgraph_basics.grph
+PASS ...
+     examples/valid/subgraph_basics.grph: outcomes 4/5, branches 6/7, effects 0/0
+       never reached: line 19: branch call Discount fails with Banned
+       never reached: line 20: outcome fail (propagates the error)
+```
+
+- Counts the **outcomes** (each `out` and `fail`), the **branches** (each match arm and error edge) and the **effects** that at least one case reaches.
+- Lists every item no case reaches, with its line, so you know which case to write next.
+- **`--min-outcomes N`** fails (exit `1`) when any program reaches less than `N`% of its outcomes. CI uses 80.
+- In the IDE: **Tests → Coverage** shows the same list and draws the missed branches dashed.
+
+### List inputs (v0.3)
+
+A list input is passed as JSON:
+
+```
+graphene run examples/valid/cart_checkout.grph --arg buyer=7 \
+  --arg 'cart=[{"sku":"mug","qty":2},{"sku":"desk","qty":1}]' --mock fixtures/cart.json
+```
+
+In the effect log, an entry made inside a subgraph has an `"at"` path, such as `[["PriceLine", 1]]` for the second element of a `map`.
+
+### Real effects: `--host` and `--record` (v0.3)
+
+Mocks are for tests. To answer effects for real, describe where each one goes in a host config:
+
+```json
+{
+  "effects": {
+    "Catalog": { "http": "https://api.example.com/catalog", "timeout_ms": 2000,
+                 "headers": { "Authorization": "env:CATALOG_TOKEN" } },
+    "Charge":  { "command": ["python", "scripts/charge.py"], "timeout_ms": 5000 }
+  },
+  "default": "mock:fixtures/dev.json"
+}
+```
+
+```
+graphene run order.grph --arg order_id=1 --host hosts.json --record replay/order-1.json
+graphene run order.grph --arg order_id=1 --mock replay/order-1.json     # the same run, offline
+```
+
+- **`http`**: the request is a POST with body `{"effect": "Catalog", "args": {...}}`. **`command`**: the same JSON as one line on stdin. Either way the answer is `{"ok": value}` or `{"err": "Variant"}`.
+- **`mock`** (or `"default": "mock:file.json"`) answers from a fixture; `default` covers every effect not listed.
+- **Secrets:** a header value `env:NAME` is read from the environment, so tokens never sit in the file.
+- Answers are type-checked like mock answers (R004). A timeout, connection error or unreadable answer is **R007**: a problem with the environment, not with the program.
+- **`--record file.json`** writes every answer as a mock fixture. Replaying it with `--mock` gives identical output, which turns a real run into a test case.
+- `fx~` effects are delivered after the run finishes, and only those before a fault, so parallel and sequential runs send exactly the same ones.
+- `--host` and `--mock` can't be used together. `graphene test` always uses mocks.
+
+### `graphene explain CODE`: what does this error mean?
+
+```
+$ graphene explain G007
+G007 (flow)
+Join members can be inactive independently
+
+A join waits for all its members, so they must be active together. ...
+```
+
+Without a code, it lists every code. The table in the README is the same text.
+
 ## Helper tools
 
 ### 3. `graphene fmt file.grph`: tidy the formatting
@@ -170,7 +236,7 @@ With that build, `pricing.grph` costs 202 tokens in ASCII and 228 in Unicode, so
 Start new programs with `#!graphene 0.2`. Older `0.1` files keep working unchanged.
 
 ```
-#!graphene 0.2
+#!graphene 0.3
 @intent "Double a number"
 
 in x: u64 -> A

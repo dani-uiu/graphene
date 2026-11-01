@@ -8,14 +8,19 @@ A desktop app for writing, viewing, and running Graphene programs. The text edit
 |---|---|
 | Open a project | **Files → Open folder…** (`Ctrl+Shift+O`), then click a `.grph` file |
 | Inspect a node | Click it. `Ctrl`-click to select several. The editor highlights its lines. |
-| Add a step after a node | Right-click it, or use the inspector's step buttons: `f`, `⚙ fx`, `⊗ fx~`, `? match`, `out`, `fail` |
+| Add a step after a node | Right-click it, or use the inspector's step buttons: `f`, `⚙ fx`, `⊗ fx~`, `? match`, `out`, `fail`, and (once the program has subgraphs) `↳ call`, `∀ map`, `⊂ filter` |
+| Add a subgraph | Right-click the canvas → **Add subgraph…** (needs `#!graphene 0.3`; the palette can change the header) |
+| Open a subgraph | Double-click a `call`/`map`/`filter` node, or **Open …** in the inspector. **◂ Program** (or `Esc`) goes back. |
 | Connect two nodes | `Shift`-drag from one node to the other. Drop on empty space to pick a new step instead. |
 | Join nodes | Select two or more, then right-click → **Join** |
 | Rename or delete | Inspector or right-click. Rename updates every use. |
 | Edit a statement directly | Select it and edit its line in the inspector, or type in the editor |
 | Fix a problem | **Problems** panel, or hover the squiggle in the editor → quick fix |
-| Run | **Run** panel: fill in the inputs, pick a mock, then **▶ Run** (`Ctrl+Enter`). **Replay** steps through the run. |
+| Run | **Run** panel: fill in the inputs (lists as JSON), pick a mock, then **▶ Run** (`Ctrl+Enter`). **Replay** steps through the run. |
+| Use real effects | **Run** panel → **Effects: Host config**, pick a `hosts.json`. Tick **record** to save the answers as `<program>.recorded.json`, a mock that replays the run. |
+| See one `map` element | After a run, **Show run of** picks an element; the graph opens its subgraph with that element's values. |
 | Test | **Tests** panel → **Run all cases**. **Save as test case** in the Run panel adds one. |
+| Find untested paths | **Tests** panel → **Coverage**: lists what no case reaches and dashes it on the graph. Click again to hide. |
 | Everything else | Command palette, `Ctrl+P` |
 
 **Graph settings** (⚙ above the graph):

@@ -7,7 +7,32 @@ Graphene is a deterministic dataflow language meant to be written by LLMs and ch
 - background effects such as logging can never influence the output (`assert indep`);
 - parallel execution gives exactly the same result and effect log as sequential execution.
 
-This is the v0.2 reference implementation, written in Rust. It accepts `#!graphene 0.1` and `#!graphene 0.2` files; a 0.1 file means exactly what it meant in v0.1.
+This is the v0.3 reference implementation, written in Rust. It accepts `#!graphene 0.1`, `0.2` and `0.3` files; an older file means exactly what it meant in its own version.
+
+## What's new in v0.3
+
+```
+graph IsHeavy(line: {sku: str, qty: u64, amount: dec, kg: dec} -> L) -> bool {
+  L -> f(line.kg > HEAVY_KG) -> YES
+  YES -> out
+}
+
+in cart: [{sku: str, qty: u64}] -> CART
+CART -> map PriceLine(line: each cart) -> LINES | err -> BAD_LINE
+ALL_HELD -> filter IsHeavy(line: each LINES) -> HEAVY
+HEAVY -> f(round(sum(LINES.amount) * (1.00 + TAX) + HEAVY_FEE * dec(len(HEAVY)), 2)) -> TOTAL
+DECLINED -> fx~ Release(reservation: each TRIES.reservation) -> sink UNDO_DECLINED
+```
+
+- **Lists:** `[T]` types, list literals, list inputs (`--arg 'cart=[...]'`), projection (`LINES.amount`), and builtins `len`, `sum`, `min`, `max`, `all`, `any`, `contains`, `round`, `floor`, `ceil`.
+- **Subgraphs:** `graph Name(params) -> T ! Errors { ... }`, used with `call`, `map` and `filter`. Every element of a `map` runs, in parallel when asked; the lowest-index error wins, so results stay deterministic. Recursion is rejected (G015).
+- **`each` on effects:** one effect call per list element, without writing a subgraph.
+- **Constants** (`const TAX: dec = 0.20`), **`dec(N)` scales**, `str` concatenation, and statements that span several lines.
+- **Relaxed joins and references:** branches whose conditions imply each other can now be joined (see `relaxed_join.grph`).
+- **Real hosts:** `graphene run --host hosts.json` answers effects over HTTP or with local commands; `--record` saves a run as a mock fixture you can replay.
+- **Tooling:** `graphene test --coverage` lists outcomes and branches no case reaches, `graphene explain CODE` explains any code, and messages suggest the closest name ("did you mean `TOTAL`?").
+
+See `examples/valid/cart_checkout.grph` for most of it together, and `docs/v0.3.md` for the design.
 
 ## What's new in v0.2
 
@@ -62,6 +87,7 @@ A desktop app (`ide/`) for editing Graphene programs as text or as an Obsidian-s
   - values painted on nodes, untaken branches dimmed, and a step-by-step replay;
   - recording of missing mock responses;
   - test cases, run as a list and saved from any run.
+- **v0.3:** subgraphs drawn as groups you can open, a picker for each `map` element's run, real hosts with a Record toggle, and a coverage overlay that dashes untested branches.
 
 ```sh
 cd ide && npm install
@@ -85,10 +111,18 @@ graphene check --json examples/invalid/unhandled_err.grph   # diagnostics as JSO
 # Run every X.cases.json next to an X.grph (exit 1 if any case fails)
 graphene test
 graphene test --parallel examples/valid/checkout_v2.grph
+graphene test --coverage --min-outcomes 80     # which outcomes/branches no case reaches
+
+# What does a code mean, and how do I fix it?
+graphene explain G007
 
 # Run it against mocked effects (exit 2 = runtime fault)
 graphene run examples/valid/pricing.grph --arg usr_id=1 --mock fixtures/users.json
 graphene run examples/valid/pricing.grph --arg usr_id=1 --mock fixtures/users.json --parallel
+
+# List inputs are JSON; real hosts and record/replay (see docs/usage.md)
+graphene run examples/valid/cart_checkout.grph --arg buyer=7 --arg 'cart=[{"sku":"mug","qty":2}]' --mock fixtures/cart.json
+graphene run order.grph --arg order_id=1 --host hosts.json --record replay.json
 
 # Canonical formatting, ASCII or Unicode
 graphene fmt examples/valid/pricing.grph
