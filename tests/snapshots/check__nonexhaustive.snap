@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G004
+
+  × match on `str` is not exhaustive
+   ╭─[nonexhaustive.grph:6:1]
+ 5 │ 
+ 6 │ A -> match tier { "gold" => G, "silver" => S }
+   · ───────────────────────┬──────────────────────
+   ·                        ╰── some values match no arm
+ 7 │ G -> f(1.00) -> P
+   ╰────
+  help: add a wildcard arm: `_ => Node`

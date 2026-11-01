@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G003
+
+  × cannot apply `*` to `u64` and `dec`
+   ╭─[type_mismatch.grph:6:8]
+ 5 │ 
+ 6 │ A -> f(qty * 0.50) -> B
+   ·        ─────┬────
+   ·             ╰── mismatched operands
+ 7 │ B -> out half: dec
+   ╰────
+  help: Graphene has no implicit conversions: make both sides the same type (e.g. write `2.00` for
+        a dec)

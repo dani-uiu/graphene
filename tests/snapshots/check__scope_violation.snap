@@ -1,0 +1,19 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G009
+
+  × `D2` is not available here
+    ╭─[scope_violation.grph:9:9]
+  7 │ BIG -> match BIG { true => C1, false => C2 }
+  8 │ C2 -> f(amount * 0.95) -> D2
+    ·                           ─┬
+    ·                            ╰── `D2` is defined here
+  9 │ C1 -> f(D2 * 0.90) -> D
+    ·         ─┬
+    ·          ╰── not computed on every path to this statement
+ 10 │ D2 -> f(D2) -> D
+    ╰────
+  help: every path to this statement must pass through `D2`; use a value computed before the
+        branch, or move this computation onto `D2`'s branch

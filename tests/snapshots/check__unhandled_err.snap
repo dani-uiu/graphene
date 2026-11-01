@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G005
+
+  × `fx DbFetch` can fail but the error is not handled
+   ╭─[unhandled_err.grph:8:1]
+ 7 │ 
+ 8 │ A -> fx DbFetch(table: "usr", key: usr_id) -> B
+   · ───────────────────────┬───────────────────────
+   ·                        ╰── may raise NotFound | DbDown
+ 9 │ B -> f(B.bal) -> D
+   ╰────
+  help: add an error edge: `... -> Target | err -> ErrNode`, then handle `ErrNode` (for example
+        `ErrNode -> fail`)

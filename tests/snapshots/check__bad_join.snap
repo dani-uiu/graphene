@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G007
+
+  × join members can be active independently
+    ╭─[bad_join.grph:9:1]
+  8 │ A -> f(amount * 0.16) -> TAX
+  9 │ (C1, TAX) -> f(amount * 0.90 + TAX) -> TOTAL
+    · ──────────────────────┬─────────────────────
+    ·                       ╰── `C1` is active only when the match on line 7 takes `true`; `TAX` is active always
+ 10 │ C2 -> f(amount) -> TOTAL
+    ╰────
+  help: join only values that are active together; merge the branches into one node first, or move
+        the join inside the branch

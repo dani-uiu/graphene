@@ -1,0 +1,19 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G006
+
+  × merge `D` has writers that can both run
+   ╭─[merge_conflict.grph:8:21]
+ 6 │ 
+ 7 │ A -> f(a * 2.00) -> D
+   ·                     ┬
+   ·                     ╰── first writer
+ 8 │ B -> f(b * 3.00) -> D
+   ·                     ┬
+   ·                     ╰── second writer
+ 9 │ D -> out d: dec
+   ╰────
+  help: writers of one node must be mutually exclusive: put them on different arms of the same
+        `match`, or on the ok/err branches of one `fx`

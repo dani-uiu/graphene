@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G020
+
+  × not every execution reaches exactly one `out` or `fail`
+    ╭─[not_total.grph:14:1]
+ 13 │ 
+ 14 │ assert total
+    · ──────┬─────
+    ·       ╰── when the match on line 9 takes `false`: no `out` or `fail` is reached
+    ╰────
+  help: give every branch exactly one result: add an `out`/`fail` for the uncovered case, or merge
+        branches before the result

@@ -1,0 +1,17 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G011
+
+  × program has more than one `out` statement
+   ╭─[two_outs.grph:9:1]
+ 7 │ A -> f(x * 2) -> C
+ 8 │ B -> out b: u64
+   · ───────┬───────
+   ·        ╰── first `out` is here
+ 9 │ C -> out c: u64
+   · ───────┬───────
+   ·        ╰── second `out`
+   ╰────
+  help: a program returns exactly one value; merge the branches into one node, or return a record

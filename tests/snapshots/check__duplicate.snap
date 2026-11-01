@@ -1,0 +1,18 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G013
+
+  × `A` is already defined
+   ╭─[duplicate.grph:5:14]
+ 3 │ 
+ 4 │ in x: u64 -> A
+   ·              ┬
+   ·              ╰── first defined here
+ 5 │ in y: u64 -> A
+   ·              ┬
+   ·              ╰── second definition as an input node
+ 6 │ 
+   ╰────
+  help: every input, node, sink, and effect needs a unique name; rename one of them

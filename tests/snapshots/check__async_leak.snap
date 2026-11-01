@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G010
+
+  × sink `S1` cannot be referenced
+    ╭─[async_leak.grph:9:12]
+  8 │ A -> fx~ LogAsync(event: "seen") -> sink S1
+  9 │ A -> f(x + S1) -> B
+    ·            ─┬
+    ·             ╰── value from the async path
+ 10 │ B -> out y: u64
+    ╰────
+  help: `fx~` effects are fire-and-forget: they produce no value, so nothing may depend on them

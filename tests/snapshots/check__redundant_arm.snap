@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G014
+
+  × this arm comes after `_` and can never match
+   ╭─[redundant_arm.grph:6:40]
+ 5 │ 
+ 6 │ A -> match tier { "gold" => G, _ => S, "silver" => S }
+   ·                                        ────┬───
+   ·                                            ╰── unreachable arm
+ 7 │ G -> f(1.00) -> P
+   ╰────
+  help: remove this arm

@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G002
+
+  × `y` is not defined here
+   ╭─[undefined.grph:6:12]
+ 5 │ 
+ 6 │ A -> f(x + y) -> B
+   ·            ┬
+   ·            ╰── unknown name
+ 7 │ B -> out z: u64
+   ╰────
+  help: define it with `in`, as a flow target, or as a match arm

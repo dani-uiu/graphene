@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G002
+
+  × input node `A` cannot be used in an expression
+   ╭─[input_node_ref.grph:6:8]
+ 5 │ 
+ 6 │ A -> f(A + 1) -> B
+   ·        ┬
+   ·        ╰── use `x` here
+ 7 │ B -> out z: u64
+   ╰────
+  help: `A` is a graph handle used only as a flow source; refer to the input's value by its name
+        `x` (D-003)

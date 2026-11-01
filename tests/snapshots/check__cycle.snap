@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G001
+
+  × cycle detected: B -> C -> B
+   ╭─[cycle.grph:8:1]
+ 7 │ B -> f(B + 1) -> C
+ 8 │ C -> f(C * 2) -> B
+   · ─────────┬────────
+   ·          ╰── this flow closes the cycle
+ 9 │ C -> out y: u64
+   ╰────
+  help: a program is a DAG: no value may depend on itself; break the loop by writing to a new node

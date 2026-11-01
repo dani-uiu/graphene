@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G012
+
+  × divisor must be a non-zero literal
+   ╭─[bad_divisor.grph:7:17]
+ 6 │ 
+ 7 │ (A, B) -> f(a / b) -> Q
+   ·                 ┬
+   ·                 ╰── could be zero
+ 8 │ Q -> out q: dec
+   ╰────
+  help: v0.1 only divides by literals such as `/ 2` or `/ 100.00`, so division by zero is
+        impossible
