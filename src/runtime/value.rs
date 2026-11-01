@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde_json::{json, Map, Value as Json};
 
-use crate::ir::graph::Type;
+use crate::ir::graph::{Scale, Type};
 
 pub type Record = BTreeMap<String, Value>;
 
@@ -39,8 +39,13 @@ pub enum Value {
 pub const OUTPUT_SCALE: u32 = 2;
 
 pub fn rescale(d: Decimal) -> Decimal {
-    let mut r = d.round_dp_with_strategy(OUTPUT_SCALE, RoundingStrategy::MidpointAwayFromZero);
-    r.rescale(OUTPUT_SCALE);
+    rescale_to(d, OUTPUT_SCALE)
+}
+
+/// Round half away from zero to `places` and pad to exactly that scale.
+pub fn rescale_to(d: Decimal, places: u32) -> Decimal {
+    let mut r = d.round_dp_with_strategy(places, RoundingStrategy::MidpointAwayFromZero);
+    r.rescale(places);
     r
 }
 
@@ -53,6 +58,31 @@ impl Value {
     /// JSON form for the program result: `dec` rescaled to 2 places.
     pub fn to_output_json(&self) -> Json {
         self.json_with(&rescale)
+    }
+
+    /// JSON form for the program result with per-field output scales
+    /// from `dec(N)` (D-052); unspecified places default to 2.
+    pub fn to_output_json_scaled(&self, scale: &Scale) -> Json {
+        match (self, scale) {
+            (Value::Dec(d), Scale::Places(n)) => json!(rescale_to(*d, *n).to_string()),
+            (Value::Record(r), Scale::Record(fields)) => {
+                let m: Map<String, Json> = r
+                    .iter()
+                    .map(|(k, v)| {
+                        let s = fields.get(k).cloned().unwrap_or_default();
+                        (k.clone(), v.to_output_json_scaled(&s))
+                    })
+                    .collect();
+                Json::Object(m)
+            }
+            (Value::List(items), Scale::List(inner)) => Json::Array(
+                items
+                    .iter()
+                    .map(|v| v.to_output_json_scaled(inner))
+                    .collect(),
+            ),
+            _ => self.to_output_json(),
+        }
     }
 
     fn json_with(&self, dec: &dyn Fn(Decimal) -> Decimal) -> Json {

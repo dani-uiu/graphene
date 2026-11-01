@@ -1,0 +1,25 @@
+[
+  {
+    "name": "33.33: round, floor, ceil, and a 4-place output",
+    "inputs": {
+      "amount": "33.33",
+      "guest": "Ana"
+    },
+    "mock": null,
+    "expect": {
+      "result": {
+        "ok": {
+          "bill": {
+            "note": "thanks, Ana",
+            "service": "4.17",
+            "total": "44.50",
+            "vat_down": "6.9",
+            "vat_exact": "6.9993",
+            "vat_up": "7.0"
+          }
+        }
+      },
+      "effects": []
+    }
+  }
+]

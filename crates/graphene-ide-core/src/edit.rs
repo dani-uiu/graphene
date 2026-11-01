@@ -12,7 +12,7 @@
 
 use std::collections::BTreeSet;
 
-use graphene::fmt::{format_stmt, Style};
+use graphene::fmt::{format_stmt, format_stmt_wrapped, Style};
 use graphene::syntax::ast::*;
 use serde::Deserialize;
 
@@ -85,18 +85,19 @@ pub fn apply(src: &str, cmd: &Command) -> Result<Vec<TextEdit>, String> {
     let edits = match cmd {
         Command::SetLine { line, text } => {
             ctx.check_line(*line)?;
-            vec![text::replace_line(src, *line, text)]
+            let (first, last) = ctx.span_of(*line);
+            vec![text::replace_lines(src, first, last, text)]
         }
         Command::DeleteLine { line } => {
             ctx.check_line(*line)?;
-            vec![text::delete_line(src, *line)]
+            vec![ctx.delete_stmt(*line)]
         }
         Command::InsertLine { after, text } => vec![text::insert_after(src, *after, text)],
         Command::AddInput { name, ty, node } => ctx.add_input(name, ty, node.as_deref())?,
         Command::AddExtern { text } => {
             let at = ctx
                 .last_line(|s| matches!(s, Stmt::Extern(_) | Stmt::Intent(..)))
-                .unwrap_or(1);
+                .map_or(1, |l| ctx.span_of(l).1);
             vec![text::insert_after(src, at, &ctx.render(text)?)]
         }
         Command::AddAssert { text } => vec![text::insert_after(src, ctx.last, &ctx.render(text)?)],
@@ -131,6 +132,8 @@ pub(crate) struct Ctx<'a> {
     pub style: Style,
     /// Last line of the file.
     pub last: usize,
+    /// First line of each statement -> its last line (D-050).
+    pub ends: std::collections::HashMap<usize, usize>,
 }
 
 const RESERVED: &[&str] = &[
@@ -144,6 +147,12 @@ impl<'a> Ctx<'a> {
             .lines
             .iter()
             .filter_map(|l| l.stmt.clone().map(|s| (l.at.first, s)))
+            .collect();
+        let ends = program
+            .lines
+            .iter()
+            .filter(|l| l.stmt.is_some())
+            .map(|l| (l.at.first, l.at.last.max(l.at.first)))
             .collect();
         let words = src
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
@@ -159,7 +168,28 @@ impl<'a> Ctx<'a> {
                 unicode: uses_unicode(src),
             },
             last: text::line_count(src),
+            ends,
         }
+    }
+
+    /// First and last line of the statement starting on `line` (a single
+    /// line for anything else).
+    pub fn span_of(&self, line: usize) -> (usize, usize) {
+        (line, self.ends.get(&line).copied().unwrap_or(line))
+    }
+
+    /// Leading whitespace of `line` (statements inside a `graph` body).
+    fn indent_of(&self, line: usize) -> String {
+        text::line_text(self.src, line)
+            .chars()
+            .take_while(|c| *c == ' ' || *c == '\t')
+            .collect()
+    }
+
+    /// Delete the whole statement starting on `line`.
+    pub fn delete_stmt(&self, line: usize) -> ByteEdit {
+        let (first, last) = self.span_of(line);
+        text::delete_lines(self.src, first, last)
     }
 
     fn check_line(&self, line: usize) -> Result<(), String> {
@@ -189,16 +219,24 @@ impl<'a> Ctx<'a> {
 
     /// A statement re-rendered for `line`, keeping that line's comment.
     pub fn regenerate(&self, line: usize, stmt: &Stmt) -> ByteEdit {
-        let mut s = format_stmt(stmt, self.style);
+        let (first, last) = self.span_of(line);
+        let indent = self.indent_of(first);
+        // Only 0.3+ files may wrap a statement over several lines.
+        let body = if self.program.version >= (0, 3) {
+            format_stmt_wrapped(stmt, self.style, &indent)
+        } else {
+            format_stmt(stmt, self.style)
+        };
+        let mut s = format!("{indent}{body}");
         if let Some(c) = self.comment(line) {
             s.push_str(&format!("  //{c}"));
         }
-        text::replace_line(self.src, line, &s)
+        text::replace_lines(self.src, first, last, &s)
     }
 
     /// Parse an ASCII statement and render it in the file's style.
     pub fn render(&self, ascii: &str) -> Result<String, String> {
-        let probe = format!("#!graphene 0.2\n{ascii}\n");
+        let probe = format!("#!graphene 0.3\n{ascii}\n");
         let (p, diags) = graphene::parse(&probe);
         if let Some(d) = diags.first() {
             return Err(format!("`{ascii}` is not a valid statement: {}", d.message));
@@ -291,7 +329,7 @@ impl<'a> Ctx<'a> {
             .stmts
             .iter()
             .filter(|(_, s)| near.iter().any(|n| mentions(s, n)))
-            .map(|(l, _)| *l)
+            .map(|(l, _)| self.span_of(*l).1)
             .max()
             .or_else(|| {
                 self.stmts
@@ -355,7 +393,7 @@ impl Ctx<'_> {
         let at = self
             .last_line(|s| matches!(s, Stmt::Input(_)))
             .or_else(|| self.last_line(|s| matches!(s, Stmt::Extern(_) | Stmt::Intent(..))))
-            .unwrap_or(1);
+            .map_or(1, |l| self.span_of(l).1);
         Ok(vec![text::insert_after(
             self.src,
             at,
@@ -511,7 +549,7 @@ impl Ctx<'_> {
             }
             match trimmed(s, name) {
                 Some(kept) => edits.push(self.regenerate(*line, &kept)),
-                None => edits.push(text::delete_line(self.src, *line)),
+                None => edits.push(self.delete_stmt(*line)),
             }
         }
         Ok(edits)

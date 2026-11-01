@@ -1,0 +1,49 @@
+[
+  {
+    "name": "a class of four",
+    "inputs": {
+      "scores": [
+        72,
+        55,
+        90,
+        60
+      ],
+      "names": [
+        "ana",
+        "bo"
+      ]
+    },
+    "mock": null,
+    "expect": {
+      "result": {
+        "ok": {
+          "summary": {
+            "best": 90,
+            "count": 4,
+            "everyone_passed": false,
+            "has_ana": true,
+            "passed": 3,
+            "total_points": 277,
+            "worst": 55
+          }
+        }
+      },
+      "effects": []
+    }
+  },
+  {
+    "name": "no scores: max of an empty list is R006",
+    "inputs": {
+      "scores": [],
+      "names": []
+    },
+    "mock": null,
+    "expect": {
+      "fault": {
+        "code": "R006",
+        "message": "`max` of an empty list"
+      },
+      "effects": []
+    }
+  }
+]

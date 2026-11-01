@@ -165,7 +165,7 @@ const H2: &str = "#!graphene 0.2\n";
 fn relaxed_join_is_v03_only() {
     // D-046: RATE (ok ∨ NotFound) implies SHIP (always), so the join is
     // legal under 0.3; under 0.2 it is still G007, exactly as before.
-    let body = common::read(&common::root().join("examples/v0.3/valid/relaxed_join.grph"));
+    let body = common::read(&common::root().join("examples/valid/relaxed_join.grph"));
     let as02 = body.replacen("#!graphene 0.3", "#!graphene 0.2", 1);
     assert_eq!(codes(&body), vec![]);
     assert_eq!(codes(&as02), vec![Code::G007]);

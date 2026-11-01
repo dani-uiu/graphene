@@ -32,15 +32,25 @@ pub type Sums = BTreeMap<Span, Type>;
 
 thread_local! {
     static SUMS: std::cell::RefCell<Sums> = const { std::cell::RefCell::new(Sums::new()) };
+    /// True while evaluating a v0.3 program: fault messages show values.
+    static V03: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Make the checker's `sum` types visible to `eval` on this thread while
-/// `f` runs (each executor thread evaluates one program at a time).
-pub fn with_sums<T>(sums: &Sums, f: impl FnOnce() -> T) -> T {
-    let prev = SUMS.with(|s| std::mem::replace(&mut *s.borrow_mut(), sums.clone()));
+/// Run `f` with the program's evaluation context on this thread: the
+/// checker's `sum` types (for empty lists) and whether fault messages show
+/// values (v0.3, D-052). Nested runs restore the outer context.
+pub fn with_context<T>(checked: &crate::check::Checked, f: impl FnOnce() -> T) -> T {
+    let sums = checked.sums.clone();
+    let prev = SUMS.with(|s| std::mem::replace(&mut *s.borrow_mut(), sums));
+    let prev_v = V03.with(|v| v.replace(checked.graph.version >= (0, 3)));
     let out = f();
     SUMS.with(|s| *s.borrow_mut() = prev);
+    V03.with(|v| v.set(prev_v));
     out
+}
+
+fn verbose() -> bool {
+    V03.with(|v| v.get())
 }
 
 fn is_int_lit(e: &IExpr) -> bool {
@@ -220,7 +230,15 @@ fn round(b: Builtin, x: Value, places: &IExpr, span: Span) -> Result<Value, Faul
 /// out of range is R001.
 fn convert(to: &Type, v: Value, span: Span) -> Result<Value, Fault> {
     use rust_decimal::prelude::ToPrimitive;
-    let range = || Fault::new(Code::R001, span, format!("value out of range for `{to}`"));
+    let shown = shown(&v);
+    let range = || {
+        let msg = if verbose() {
+            format!("value {shown} is out of range for `{to}`")
+        } else {
+            format!("value out of range for `{to}`")
+        };
+        Fault::new(Code::R001, span, msg)
+    };
     match (to, v) {
         (Type::U64, Value::U64(n)) => Ok(Value::U64(n)),
         (Type::U64, Value::I64(n)) => u64::try_from(n).map(Value::U64).map_err(|_| range()),
@@ -305,6 +323,7 @@ macro_rules! checked {
 }
 
 fn arith(op: BinOp, l: Value, r: Value, span: Span) -> Result<Value, Fault> {
+    let (ls, rs) = (shown(&l), shown(&r));
     let out = match (l, r) {
         (Value::Str(a), Value::Str(b)) if op == BinOp::Add => return Ok(Value::Str(a + &b)),
         (Value::U64(a), Value::U64(b)) => checked!(op, a, b).map(Value::U64),
@@ -312,7 +331,25 @@ fn arith(op: BinOp, l: Value, r: Value, span: Span) -> Result<Value, Fault> {
         (Value::Dec(a), Value::Dec(b)) => checked!(op, a, b).map(Value::Dec),
         _ => return Err(internal(span, "bad arithmetic operands")),
     };
-    out.ok_or_else(|| overflow(span))
+    out.ok_or_else(|| {
+        if verbose() {
+            Fault::new(
+                Code::R001,
+                span,
+                format!("`{ls} {} {rs}` overflows", op.ascii()),
+            )
+        } else {
+            overflow(span)
+        }
+    })
+}
+
+/// A value as it appears in fault messages.
+fn shown(v: &Value) -> String {
+    match v {
+        Value::Str(s) => format!("{s:?}"),
+        other => other.to_json().to_string().trim_matches('"').to_string(),
+    }
 }
 
 fn compare(op: BinOp, l: &Value, r: &Value, span: Span) -> Result<bool, Fault> {

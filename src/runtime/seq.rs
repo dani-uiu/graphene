@@ -22,10 +22,14 @@ pub fn run(ctx: &Ctx) -> Result<RunOutput, RunError> {
 /// (indexed by `VId::index()`) for tools such as the IDE. On a fault,
 /// vertices after the faulting one stay `Inactive`.
 pub fn run_traced(ctx: &Ctx) -> (Result<RunOutput, RunError>, Vec<State>) {
+    super::eval::with_context(ctx.checked, || run_inner(ctx))
+}
+
+fn run_inner(ctx: &Ctx) -> (Result<RunOutput, RunError>, Vec<State>) {
     let c: &Checked = ctx.checked;
     let n = c.graph.g.node_count();
     let mut states = vec![State::Inactive; n];
-    let mut logs: Vec<Option<LogEntry>> = vec![None; n];
+    let mut logs: Vec<Vec<LogEntry>> = vec![Vec::new(); n];
     for &v in &c.graph.order {
         let fired = {
             let get = |u: petgraph::graph::NodeIndex| &states[u.index()];
@@ -42,12 +46,13 @@ pub fn run_traced(ctx: &Ctx) -> (Result<RunOutput, RunError>, Vec<State>) {
     (finish(c, &states, &logs), states)
 }
 
-fn fault_with_log(c: &Checked, fault: Fault, logs: &[Option<LogEntry>]) -> RunError {
+fn fault_with_log(c: &Checked, fault: Fault, logs: &[Vec<LogEntry>]) -> RunError {
     let effects = c
         .graph
         .order
         .iter()
-        .filter_map(|v| logs[v.index()].clone())
+        .flat_map(|v| logs[v.index()].iter().cloned())
+        .chain(fault.inner.iter().cloned())
         .collect();
     RunError { fault, effects }
 }

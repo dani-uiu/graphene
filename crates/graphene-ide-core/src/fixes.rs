@@ -37,13 +37,10 @@ pub fn fixes_for(src: &str, d: &Diag) -> Vec<Fix> {
         (Code::G005, Some(Stmt::Flow(f))) => err_edges(&ctx, d, line, f),
         (Code::G004, Some(Stmt::Match(m))) => wildcard_arm(&ctx, line, m),
         (Code::G014, Some(s)) => redundant(&ctx, d, line, s),
-        (Code::G011, _) => Some((
-            "Remove this `out`".into(),
-            vec![text::delete_line(src, line)],
-        )),
+        (Code::G011, _) => Some(("Remove this `out`".into(), vec![ctx.delete_stmt(line)])),
         (Code::G008, Some(Stmt::Input(_))) if d.message.ends_with("is never used") => Some((
             "Remove the unused input".into(),
-            vec![text::delete_line(src, line)],
+            vec![ctx.delete_stmt(line)],
         )),
         (Code::G002, _) => use_input_name(src, d),
         (Code::G010, _) if d.label == "not a sink" => Some((
@@ -124,7 +121,7 @@ fn err_edges(ctx: &Ctx, d: &Diag, line: usize, mut f: Flow) -> Found {
         format!("Handle errors: `| err -> {e}` and `{e} -> fail`"),
         vec![
             ctx.regenerate(line, &Stmt::Flow(f)),
-            text::insert_after(ctx.src, line, &fail),
+            text::insert_after(ctx.src, ctx.span_of(line).1, &fail),
         ],
     ))
 }

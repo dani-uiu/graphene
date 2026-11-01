@@ -13,13 +13,13 @@
 
 use std::collections::BTreeMap;
 
-use super::effects::{EffectHost, LogEntry, Reply};
-use super::eval::{eval, lit_matches, Env};
+use super::effects::{EffectHost, LogEntry};
+use super::eval::{eval, lit_matches};
 use super::value::{Record, Value};
 use super::{Fault, Outcome};
 use crate::check::Checked;
 use crate::diag::{Code, Span};
-use crate::ir::graph::{EKind, IArg, IArm, Type, VId, VKind};
+use crate::ir::graph::{EKind, IArm, Type, VId, VKind};
 
 /// Settled state of one vertex.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,16 +50,20 @@ pub struct Ctx<'a> {
     pub checked: &'a Checked,
     pub inputs: &'a BTreeMap<String, Value>,
     pub host: &'a dyn EffectHost,
+    /// Run nested subgraphs and `each` elements concurrently.
+    pub parallel: bool,
 }
 
-pub type Fired = (State, Option<LogEntry>);
+/// A vertex's new state and the effect-log entries it produced (several
+/// for `call`/`map`/`filter` and `each`, in their deterministic order).
+pub type Fired = (State, Vec<LogEntry>);
 
 /// Compute the state of `v`. `get` returns settled predecessor states.
 pub fn fire<'s>(ctx: &Ctx, v: VId, get: &dyn Fn(VId) -> &'s State) -> Result<Fired, Fault> {
     let g = &ctx.checked.graph;
     let vx = g.v(v);
     if vx.kind.is_op() && !vx.srcs.iter().all(|s| matches!(get(*s), State::Value(_))) {
-        return Ok((State::Inactive, None));
+        return Ok((State::Inactive, Vec::new()));
     }
     let src_value = || match get(g.src(v)) {
         State::Value(val) => val.clone(),
@@ -69,34 +73,34 @@ pub fn fire<'s>(ctx: &Ctx, v: VId, get: &dyn Fn(VId) -> &'s State) -> Result<Fir
         State::Value(val) => Some(val),
         _ => None,
     };
-    let done = |d| Ok((State::Done(d), None));
+    let done = |d| Ok((State::Done(d), Vec::new()));
     match &vx.kind {
-        VKind::Root => Ok((State::Value(Value::Unit), None)),
+        VKind::Root => Ok((State::Value(Value::Unit), Vec::new())),
         VKind::Input { input, .. } => match ctx.inputs.get(input) {
-            Some(val) => Ok((State::Value(val.clone()), None)),
+            Some(val) => Ok((State::Value(val.clone()), Vec::new())),
             None => Err(Fault::new(
                 Code::R005,
                 vx.span,
                 format!("missing input `{input}`"),
             )),
         },
-        VKind::Node | VKind::Sink => Ok((receive(ctx, v, get), None)),
+        VKind::Node | VKind::Sink => Ok((receive(ctx, v, get), Vec::new())),
         VKind::Pure { expr } => {
             let hint = target_type(ctx, v);
             done(Done::Ok(eval(expr, &env, hint.as_ref())?))
         }
-        VKind::Sync { effect, args } => sync(ctx, v, *effect, args, &env),
-        VKind::Async { effect, args } => emit(ctx, *effect, args, &env),
+        VKind::Sync { effect, args } => super::calls::effect(ctx, v, *effect, args, &env),
+        VKind::Async { effect, args } => super::calls::effect(ctx, v, *effect, args, &env),
         VKind::Match { scrutinee, arms } => {
             let s = eval(scrutinee, &env, None)?;
             done(Done::Arm(choose(arms, &s, vx.span)?, src_value()))
         }
-        VKind::Call { .. } => Err(Fault::new(
-            Code::R004,
-            vx.span,
-            "running `call`/`map`/`filter` arrives in the next v0.3 phase",
-        )),
-        VKind::Out { name, .. } => done(Done::Result(Outcome::Ok(name.clone(), src_value()))),
+        VKind::Call { sub, kind, args } => super::calls::call(ctx, v, *sub, *kind, args, &env),
+        VKind::Out { name, scale, .. } => done(Done::Result(Outcome::Ok(
+            name.clone(),
+            src_value(),
+            scale.clone(),
+        ))),
         VKind::Fail { name: Some(n) } => done(Done::Result(Outcome::Err(n.clone()))),
         VKind::Fail { name: None } => match src_value() {
             Value::Err(e) => done(Done::Result(Outcome::Err(e))),
@@ -127,7 +131,7 @@ fn receive<'s>(ctx: &Ctx, v: VId, get: &dyn Fn(VId) -> &'s State) -> State {
     State::Inactive
 }
 
-fn target_type(ctx: &Ctx, op: VId) -> Option<Type> {
+pub(crate) fn target_type(ctx: &Ctx, op: VId) -> Option<Type> {
     let g = &ctx.checked.graph;
     g.outs(op)
         .into_iter()
@@ -135,83 +139,7 @@ fn target_type(ctx: &Ctx, op: VId) -> Option<Type> {
         .and_then(|(_, t)| ctx.checked.types[t.index()].clone())
 }
 
-/// `fx~`: evaluate the arguments, hand the emit to the host, log it.
-fn emit<'e>(ctx: &Ctx, effect: usize, args: &[IArg], env: &Env<'e>) -> Result<Fired, Fault> {
-    let decl = &ctx.checked.graph.externs[effect];
-    let rec = eval_args(args, &decl.params, env)?;
-    ctx.host.emit(&decl.name, &rec);
-    let entry = LogEntry {
-        is_async: true,
-        effect: decl.name.clone(),
-        args: rec,
-        result: None,
-    };
-    Ok((State::Done(Done::Emitted), Some(entry)))
-}
-
-fn eval_args<'e>(
-    args: &[IArg],
-    params: &[(String, Type, Span)],
-    env: &Env<'e>,
-) -> Result<Record, Fault> {
-    let mut rec = Record::new();
-    for a in args {
-        let hint = params
-            .iter()
-            .find(|(n, _, _)| *n == a.name)
-            .map(|(_, t, _)| t);
-        rec.insert(a.name.clone(), eval(&a.value, env, hint)?);
-    }
-    Ok(rec)
-}
-
-fn sync<'e>(
-    ctx: &Ctx,
-    v: VId,
-    effect: usize,
-    args: &[IArg],
-    env: &Env<'e>,
-) -> Result<Fired, Fault> {
-    let g = &ctx.checked.graph;
-    let decl = &g.externs[effect];
-    let span = g.v(v).span;
-    let rec = eval_args(args, &decl.params, env)?;
-    let ret = decl.ret.clone().unwrap_or(Type::Bool);
-    let reply = match ctx.host.call(&decl.name, &rec, &ret) {
-        Ok(r) => r,
-        Err(super::effects::HostError::NoResponse) => {
-            let msg = format!(
-                "no mock response for `{}` with args {}",
-                decl.name,
-                show(&rec)
-            );
-            return Err(Fault::new(Code::R003, span, msg));
-        }
-        Err(super::effects::HostError::Invalid(why)) => {
-            let msg = format!("host returned an invalid value for `{}`: {why}", decl.name);
-            return Err(Fault::new(Code::R004, span, msg));
-        }
-    };
-    if let Reply::Err(e) = &reply {
-        if !decl.errors.contains(e) {
-            let msg = format!("`{}` raised undeclared error `{e}`", decl.name);
-            return Err(Fault::new(Code::R004, span, msg));
-        }
-    }
-    let state = match &reply {
-        Reply::Ok(x) => Done::Ok(x.clone()),
-        Reply::Err(e) => Done::Err(e.clone()),
-    };
-    let entry = LogEntry {
-        is_async: false,
-        effect: decl.name.clone(),
-        args: rec,
-        result: Some(reply),
-    };
-    Ok((State::Done(state), Some(entry)))
-}
-
-fn show(rec: &Record) -> String {
+pub(crate) fn show(rec: &Record) -> String {
     let m: serde_json::Map<String, serde_json::Value> =
         rec.iter().map(|(k, v)| (k.clone(), v.to_json())).collect();
     serde_json::Value::Object(m).to_string()

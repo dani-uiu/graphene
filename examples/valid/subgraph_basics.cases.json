@@ -1,0 +1,59 @@
+[
+  {
+    "name": "gold: both prices discounted, 15.992 rounds to 15.99",
+    "inputs": {
+      "a": "100.00",
+      "b": "19.99",
+      "tier": "gold"
+    },
+    "mock": null,
+    "expect": {
+      "result": {
+        "ok": {
+          "prices": {
+            "a": "80.00",
+            "b": "15.99",
+            "total": "95.99"
+          }
+        }
+      },
+      "effects": []
+    }
+  },
+  {
+    "name": "silver: full price",
+    "inputs": {
+      "a": "100.00",
+      "b": "19.99",
+      "tier": "silver"
+    },
+    "mock": null,
+    "expect": {
+      "result": {
+        "ok": {
+          "prices": {
+            "a": "100.00",
+            "b": "19.99",
+            "total": "119.99"
+          }
+        }
+      },
+      "effects": []
+    }
+  },
+  {
+    "name": "banned: the subgraph's declared error propagates",
+    "inputs": {
+      "a": "100.00",
+      "b": "19.99",
+      "tier": "banned"
+    },
+    "mock": null,
+    "expect": {
+      "result": {
+        "err": "Banned"
+      },
+      "effects": []
+    }
+  }
+]

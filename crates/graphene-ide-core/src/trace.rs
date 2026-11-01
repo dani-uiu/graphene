@@ -84,6 +84,7 @@ pub fn run_view(
         checked: &checked,
         inputs: &inputs,
         host: &host,
+        parallel: false,
     };
     let (result, states) = seq::run_traced(&ctx);
     let output = match &result {
@@ -157,8 +158,8 @@ fn value_of(state: &State) -> Option<Json> {
         State::Done(Done::Err(e)) => json!({ "err": e }),
         State::Done(Done::Emitted) => json!("emitted"),
         State::Done(Done::Arm(i, _)) => json!({ "arm": i }),
-        State::Done(Done::Result(Outcome::Ok(name, v))) => {
-            json!({ "ok": { name.clone(): v.to_output_json() } })
+        State::Done(Done::Result(Outcome::Ok(name, v, scale))) => {
+            json!({ "ok": { name.clone(): v.to_output_json_scaled(scale) } })
         }
         State::Done(Done::Result(Outcome::Err(e))) => json!({ "err": e }),
     })

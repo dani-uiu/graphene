@@ -1,0 +1,17 @@
+{
+  "effects": {
+    "DbFetch": {
+      "cases": [
+        { "args": { "table": "usr", "key": 1 }, "ok": { "role": "prem", "bal": "100.00" } },
+        { "args": { "table": "usr", "key": 5 }, "err": "DbDown" }
+      ],
+      "fallback": { "err": "NotFound" }
+    },
+    "ShipQuote": {
+      "cases": [
+        { "args": { "zone": "north", "kg": "2.00" }, "ok": "7.50" }
+      ],
+      "fallback": { "err": "NoRoute" }
+    }
+  }
+}

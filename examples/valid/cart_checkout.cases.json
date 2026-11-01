@@ -1,0 +1,496 @@
+[
+  {
+    "name": "two lines, one heavy: (24.00 + 150.00) * 1.20 + 9.50",
+    "inputs": {
+      "buyer": 7,
+      "cart": [
+        {
+          "sku": "mug",
+          "qty": 2
+        },
+        {
+          "sku": "desk",
+          "qty": 1
+        }
+      ]
+    },
+    "mock": "../../fixtures/cart.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "receipt": {
+            "heavy_lines": 1,
+            "lines": [
+              {
+                "amount": "24.00",
+                "kg": "0.60",
+                "qty": 2,
+                "sku": "mug"
+              },
+              {
+                "amount": "150.00",
+                "kg": "25.00",
+                "qty": 1,
+                "sku": "desk"
+              }
+            ],
+            "reservations": [
+              "r-mug",
+              "r-desk"
+            ],
+            "total": "218.30",
+            "transaction": "tx-1"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "mug"
+          },
+          "result": {
+            "ok": {
+              "kg": "0.30",
+              "price": "12.00"
+            }
+          },
+          "at": [
+            [
+              "PriceLine",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "desk"
+          },
+          "result": {
+            "ok": {
+              "kg": "25.00",
+              "price": "150.00"
+            }
+          },
+          "at": [
+            [
+              "PriceLine",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Reserve",
+          "args": {
+            "qty": 2,
+            "sku": "mug"
+          },
+          "result": {
+            "ok": "r-mug"
+          },
+          "at": [
+            [
+              "TryReserve",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Reserve",
+          "args": {
+            "qty": 1,
+            "sku": "desk"
+          },
+          "result": {
+            "ok": "r-desk"
+          },
+          "at": [
+            [
+              "TryReserve",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Charge",
+          "args": {
+            "amount": "218.30",
+            "buyer": 7
+          },
+          "result": {
+            "ok": "tx-1"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Notify",
+          "args": {
+            "buyer": 7,
+            "message": "order tx-1 confirmed"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "one line short: the held mug is released",
+    "inputs": {
+      "buyer": 7,
+      "cart": [
+        {
+          "sku": "mug",
+          "qty": 2
+        },
+        {
+          "sku": "lamp",
+          "qty": 1
+        }
+      ]
+    },
+    "mock": "../../fixtures/cart.json",
+    "expect": {
+      "result": {
+        "err": "OutOfStock"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "mug"
+          },
+          "result": {
+            "ok": {
+              "kg": "0.30",
+              "price": "12.00"
+            }
+          },
+          "at": [
+            [
+              "PriceLine",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "lamp"
+          },
+          "result": {
+            "ok": {
+              "kg": "2.50",
+              "price": "45.00"
+            }
+          },
+          "at": [
+            [
+              "PriceLine",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Reserve",
+          "args": {
+            "qty": 2,
+            "sku": "mug"
+          },
+          "result": {
+            "ok": "r-mug"
+          },
+          "at": [
+            [
+              "TryReserve",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Reserve",
+          "args": {
+            "qty": 1,
+            "sku": "lamp"
+          },
+          "result": {
+            "err": "OutOfStock"
+          },
+          "at": [
+            [
+              "TryReserve",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx~",
+          "effect": "Release",
+          "args": {
+            "reservation": "r-mug"
+          },
+          "at": [
+            [
+              "Release",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx~",
+          "effect": "Notify",
+          "args": {
+            "buyer": 7,
+            "message": "an item in your cart is out of stock"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "card declined: every hold is released",
+    "inputs": {
+      "buyer": 8,
+      "cart": [
+        {
+          "sku": "mug",
+          "qty": 2
+        }
+      ]
+    },
+    "mock": "../../fixtures/cart.json",
+    "expect": {
+      "result": {
+        "err": "CardDeclined"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "mug"
+          },
+          "result": {
+            "ok": {
+              "kg": "0.30",
+              "price": "12.00"
+            }
+          },
+          "at": [
+            [
+              "PriceLine",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Reserve",
+          "args": {
+            "qty": 2,
+            "sku": "mug"
+          },
+          "result": {
+            "ok": "r-mug"
+          },
+          "at": [
+            [
+              "TryReserve",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Charge",
+          "args": {
+            "amount": "28.80",
+            "buyer": 8
+          },
+          "result": {
+            "err": "Declined"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Release",
+          "args": {
+            "reservation": "r-mug"
+          },
+          "at": [
+            [
+              "Release",
+              0
+            ]
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "gateway down: every hold is released",
+    "inputs": {
+      "buyer": 9,
+      "cart": [
+        {
+          "sku": "desk",
+          "qty": 1
+        }
+      ]
+    },
+    "mock": "../../fixtures/cart.json",
+    "expect": {
+      "result": {
+        "err": "PaymentUnavailable"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "desk"
+          },
+          "result": {
+            "ok": {
+              "kg": "25.00",
+              "price": "150.00"
+            }
+          },
+          "at": [
+            [
+              "PriceLine",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Reserve",
+          "args": {
+            "qty": 1,
+            "sku": "desk"
+          },
+          "result": {
+            "ok": "r-desk"
+          },
+          "at": [
+            [
+              "TryReserve",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Charge",
+          "args": {
+            "amount": "189.50",
+            "buyer": 9
+          },
+          "result": {
+            "err": "GatewayDown"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Release",
+          "args": {
+            "reservation": "r-desk"
+          },
+          "at": [
+            [
+              "Release",
+              0
+            ]
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown product fails before anything is reserved",
+    "inputs": {
+      "buyer": 7,
+      "cart": [
+        {
+          "sku": "kiwi",
+          "qty": 1
+        }
+      ]
+    },
+    "mock": "../../fixtures/cart.json",
+    "expect": {
+      "result": {
+        "err": "UnknownSku"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "kiwi"
+          },
+          "result": {
+            "err": "UnknownSku"
+          },
+          "at": [
+            [
+              "PriceLine",
+              0
+            ]
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "empty cart: all([]) is true, sums are zero",
+    "inputs": {
+      "buyer": 7,
+      "cart": []
+    },
+    "mock": "../../fixtures/cart.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "receipt": {
+            "heavy_lines": 0,
+            "lines": [],
+            "reservations": [],
+            "total": "0.00",
+            "transaction": "tx-0"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Charge",
+          "args": {
+            "amount": "0.00",
+            "buyer": 7
+          },
+          "result": {
+            "ok": "tx-0"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Notify",
+          "args": {
+            "buyer": 7,
+            "message": "order tx-0 confirmed"
+          }
+        }
+      ]
+    }
+  }
+]

@@ -119,3 +119,26 @@ fn inputs_are_settled_before_anything_reads_them() {
         );
     }
 }
+
+#[test]
+fn map_elements_run_concurrently() {
+    let src = "#!graphene 0.3\nextern fx Slow(n: u64) -> u64\ngraph Twice(n: u64 -> N) -> u64 {\n  N -> fx Slow(n: n) -> R\n  R -> out\n}\nin ns: [u64] -> A\nA -> map Twice(n: each ns) -> R\nR -> out r: [u64]\n";
+    let checked = graphene::check(src).expect("checks");
+    let obj = serde_json::json!({ "ns": [1, 2] });
+    let inputs =
+        bind_inputs(&checked, RawInputs::Json(obj.as_object().expect("obj"))).expect("bind");
+    let host = Rendezvous {
+        in_flight: AtomicUsize::new(0),
+        peak: AtomicUsize::new(0),
+    };
+    let out = run(&checked, &inputs, &host, true).expect("runs");
+    assert_eq!(
+        out.to_json()["result"]["ok"]["r"],
+        serde_json::json!([1, 2])
+    );
+    assert_eq!(
+        host.peak.load(Ordering::SeqCst),
+        2,
+        "the two elements never overlapped"
+    );
+}

@@ -1,0 +1,27 @@
+{
+  "effects": {
+    "Catalog": {
+      "cases": [
+        { "args": { "sku": "mug" },  "ok": { "price": "12.00",  "kg": "0.30" } },
+        { "args": { "sku": "desk" }, "ok": { "price": "150.00", "kg": "25.00" } },
+        { "args": { "sku": "lamp" }, "ok": { "price": "45.00",  "kg": "2.50" } }
+      ],
+      "fallback": { "err": "UnknownSku" }
+    },
+    "Reserve": {
+      "cases": [
+        { "args": { "sku": "mug",  "qty": 2 }, "ok": "r-mug" },
+        { "args": { "sku": "desk", "qty": 1 }, "ok": "r-desk" },
+        { "args": { "sku": "lamp", "qty": 1 }, "err": "OutOfStock" }
+      ]
+    },
+    "Charge": {
+      "cases": [
+        { "args": { "buyer": 7, "amount": "218.30" }, "ok": "tx-1" },
+        { "args": { "buyer": 7, "amount": "0.00" },   "ok": "tx-0" },
+        { "args": { "buyer": 8, "amount": "28.80" },  "err": "Declined" },
+        { "args": { "buyer": 9, "amount": "189.50" }, "err": "GatewayDown" }
+      ]
+    }
+  }
+}

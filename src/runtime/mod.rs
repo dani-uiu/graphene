@@ -9,6 +9,7 @@
 //! - the log is ordered by canonical position of the issuing op, never by
 //!   wall-clock completion (semantics §5.7).
 
+pub mod calls;
 pub mod effects;
 pub mod eval;
 pub mod par;
@@ -22,7 +23,7 @@ use serde_json::{json, Value as Json};
 
 use crate::check::Checked;
 use crate::diag::{Code, Span};
-use crate::ir::graph::{Type, VKind};
+use crate::ir::graph::{Scale, Type, VKind};
 use effects::{EffectHost, LogEntry};
 use step::{Ctx, Done, State};
 use value::Value;
@@ -33,6 +34,9 @@ pub struct Fault {
     pub code: Code,
     pub span: Span,
     pub message: String,
+    /// Effects logged inside a nested run (`call`/`map`/`each`) before
+    /// the fault, already prefixed with their `at` path.
+    pub inner: Vec<LogEntry>,
 }
 
 impl Fault {
@@ -41,6 +45,7 @@ impl Fault {
             code,
             span,
             message: message.into(),
+            inner: Vec::new(),
         }
     }
 }
@@ -48,8 +53,8 @@ impl Fault {
 /// What the program produced.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
-    /// `out name` with its value.
-    Ok(String, Value),
+    /// `out name` with its value and output scale (`dec(N)`).
+    Ok(String, Value, Scale),
     /// The error variant raised by `fail`.
     Err(String),
 }
@@ -74,7 +79,9 @@ fn log_json(effects: &[LogEntry]) -> Json {
 impl RunOutput {
     pub fn to_json(&self) -> Json {
         let result = match &self.result {
-            Outcome::Ok(name, v) => json!({ "ok": { name.clone(): v.to_output_json() } }),
+            Outcome::Ok(name, v, scale) => {
+                json!({ "ok": { name.clone(): v.to_output_json_scaled(scale) } })
+            }
             Outcome::Err(e) => json!({ "err": e }),
         };
         json!({ "result": result, "effects": log_json(&self.effects) })
@@ -160,35 +167,70 @@ fn parse_one(
 }
 
 /// Run a checked program. `parallel` selects `par` over `seq`.
+///
+/// Async (`fx~`) emits are buffered and delivered to `host` after the run,
+/// in log order, and only those positioned before a fault (D-048): a
+/// parallel run never emits anything the sequential run would not.
 pub fn run(
     c: &Checked,
     inputs: &BTreeMap<String, Value>,
     host: &dyn EffectHost,
     parallel: bool,
 ) -> Result<RunOutput, RunError> {
+    let buffered = BufferEmits(host);
     let ctx = Ctx {
         checked: c,
         inputs,
-        host,
+        host: &buffered,
+        parallel,
     };
-    if parallel {
-        par::run(&ctx)
-    } else {
-        seq::run(&ctx)
+    let out = run_ctx(&ctx);
+    let effects = match &out {
+        Ok(o) => &o.effects,
+        Err(e) => &e.effects,
+    };
+    for e in effects.iter().filter(|e| e.is_async) {
+        host.emit(&e.effect, &e.args);
     }
+    out
+}
+
+/// Run with an existing context (also used for nested subgraph runs).
+pub(crate) fn run_ctx(ctx: &Ctx) -> Result<RunOutput, RunError> {
+    if ctx.parallel {
+        par::run(ctx)
+    } else {
+        seq::run(ctx)
+    }
+}
+
+/// Forwards sync calls; swallows emits, which `run` delivers afterwards.
+struct BufferEmits<'h>(&'h dyn EffectHost);
+
+impl EffectHost for BufferEmits<'_> {
+    fn call(
+        &self,
+        effect: &str,
+        args: &value::Record,
+        ret: &Type,
+    ) -> Result<effects::Reply, effects::HostError> {
+        self.0.call(effect, args, ret)
+    }
+
+    fn emit(&self, _effect: &str, _args: &value::Record) {}
 }
 
 /// Collect the result after every vertex has settled (semantics §5.4).
 pub(crate) fn finish(
     c: &Checked,
     states: &[State],
-    logs: &[Option<LogEntry>],
+    logs: &[Vec<LogEntry>],
 ) -> Result<RunOutput, RunError> {
     let effects: Vec<LogEntry> = c
         .graph
         .order
         .iter()
-        .filter_map(|v| logs[v.index()].clone())
+        .flat_map(|v| logs[v.index()].iter().cloned())
         .collect();
     let results: Vec<Outcome> = c
         .graph

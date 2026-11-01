@@ -1,0 +1,129 @@
+[
+  {
+    "name": "premium customer, quoted shipping",
+    "inputs": {
+      "usr_id": 1,
+      "zone": "north",
+      "kg": "2.00"
+    },
+    "mock": "../../fixtures/relaxed_join.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "quote": {
+            "rate": "0.80",
+            "shipping": "7.50"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "DbFetch",
+          "args": {
+            "key": 1,
+            "table": "usr"
+          },
+          "result": {
+            "ok": {
+              "bal": "100.00",
+              "role": "prem"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "ShipQuote",
+          "args": {
+            "kg": "2.00",
+            "zone": "north"
+          },
+          "result": {
+            "ok": "7.50"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown customer and no route: 1.00 and 25.00 + 2.00 * 5.00",
+    "inputs": {
+      "usr_id": 999,
+      "zone": "east",
+      "kg": "2.00"
+    },
+    "mock": "../../fixtures/relaxed_join.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "quote": {
+            "rate": "1.00",
+            "shipping": "35.00"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "DbFetch",
+          "args": {
+            "key": 999,
+            "table": "usr"
+          },
+          "result": {
+            "err": "NotFound"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "ShipQuote",
+          "args": {
+            "kg": "2.00",
+            "zone": "east"
+          },
+          "result": {
+            "err": "NoRoute"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "database down fails; shipping still ran (no early stop)",
+    "inputs": {
+      "usr_id": 5,
+      "zone": "north",
+      "kg": "2.00"
+    },
+    "mock": "../../fixtures/relaxed_join.json",
+    "expect": {
+      "result": {
+        "err": "DbDown"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "DbFetch",
+          "args": {
+            "key": 5,
+            "table": "usr"
+          },
+          "result": {
+            "err": "DbDown"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "ShipQuote",
+          "args": {
+            "kg": "2.00",
+            "zone": "north"
+          },
+          "result": {
+            "ok": "7.50"
+          }
+        }
+      ]
+    }
+  }
+]

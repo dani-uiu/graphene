@@ -21,6 +21,7 @@ use std::sync::{Condvar, Mutex, OnceLock};
 
 use petgraph::Direction;
 
+use super::effects::LogEntry;
 use super::step::{fire, Ctx, Fired, State};
 use super::{finish, Fault, RunError, RunOutput};
 use crate::ir::graph::{VId, VKind};
@@ -73,9 +74,11 @@ pub fn run(ctx: &Ctx) -> Result<RunOutput, RunError> {
 }
 
 fn worker(sh: &Shared) {
-    while let Some(v) = next(sh) {
-        run_one(sh, v);
-    }
+    super::eval::with_context(sh.ctx.checked, || {
+        while let Some(v) = next(sh) {
+            run_one(sh, v);
+        }
+    });
 }
 
 /// Fire `v` (unless it lies past a known fault) and release successors.
@@ -102,6 +105,10 @@ fn run_one(sh: &Shared, v: VId) {
 /// so expressions may read inputs from anywhere (D-029). Other vertices
 /// made ready meanwhile stay queued, in order, for the workers.
 fn settle_inputs(sh: &Shared) {
+    super::eval::with_context(sh.ctx.checked, || settle_inputs_inner(sh));
+}
+
+fn settle_inputs_inner(sh: &Shared) {
     let g = &sh.ctx.checked.graph;
     let mut deferred = VecDeque::new();
     loop {
@@ -153,10 +160,10 @@ fn collect(sh: &Shared) -> Result<RunOutput, RunError> {
     let c = sh.ctx.checked;
     let order = &c.graph.order;
     let fault_pos = sh.fault_pos.load(Ordering::SeqCst);
-    let logs: Vec<_> = (0..sh.slots.len())
+    let logs: Vec<Vec<LogEntry>> = (0..sh.slots.len())
         .map(|i| match sh.slots[i].get() {
             Some(Ok((_, log))) if c.graph.pos[i] < fault_pos => log.clone(),
-            _ => None,
+            _ => Vec::new(),
         })
         .collect();
     if fault_pos != usize::MAX {
@@ -166,7 +173,8 @@ fn collect(sh: &Shared) -> Result<RunOutput, RunError> {
         };
         let effects = order
             .iter()
-            .filter_map(|v| logs[v.index()].clone())
+            .flat_map(|v| logs[v.index()].iter().cloned())
+            .chain(fault.inner.iter().cloned())
             .collect();
         return Err(RunError { fault, effects });
     }

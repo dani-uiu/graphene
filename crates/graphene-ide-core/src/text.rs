@@ -97,6 +97,31 @@ pub fn replace_line(src: &str, line: usize, text: &str) -> ByteEdit {
     }
 }
 
+/// Replace lines `first..=last` (keeping the final line break).
+pub fn replace_lines(src: &str, first: usize, last: usize, text: &str) -> ByteEdit {
+    ByteEdit {
+        from: line_start(src, first),
+        to: line_end(src, last.max(first)),
+        insert: text.to_string(),
+    }
+}
+
+/// Delete lines `first..=last` together with their line breaks.
+pub fn delete_lines(src: &str, first: usize, last: usize) -> ByteEdit {
+    let mut e = delete_line(src, last.max(first));
+    e.from = e.from.min(line_start(src, first));
+    if first > 1 && e.to == src.len() && !src[line_start(src, first)..].ends_with('\n') {
+        // Last statement without a trailing newline: drop the break before it.
+        let before = line_start(src, first) - 1;
+        e.from = if before > 0 && src.as_bytes()[before - 1] == b'\r' {
+            before - 1
+        } else {
+            before
+        };
+    }
+    e
+}
+
 /// Delete `line` together with its line break.
 pub fn delete_line(src: &str, line: usize) -> ByteEdit {
     let start = line_start(src, line);

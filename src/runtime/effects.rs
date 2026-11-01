@@ -49,6 +49,9 @@ pub struct LogEntry {
     pub args: Record,
     /// `None` for `fx~`.
     pub result: Option<Reply>,
+    /// Where a nested entry came from: `(subgraph or effect, element)`
+    /// from the top-level op down (D-043, D-049). Empty at the top level.
+    pub at: Vec<(String, Option<usize>)>,
 }
 
 impl LogEntry {
@@ -66,7 +69,17 @@ impl LogEntry {
                 Reply::Err(e) => json!({ "err": e }),
             };
         }
+        if !self.at.is_empty() {
+            obj["at"] = Json::Array(self.at.iter().map(|(n, i)| json!([n, i])).collect());
+        }
         obj
+    }
+
+    /// This entry as seen from one level up: `name[index]` is prepended.
+    pub fn nested(&self, name: &str, index: Option<usize>) -> LogEntry {
+        let mut e = self.clone();
+        e.at.insert(0, (name.to_string(), index));
+        e
     }
 }
 
