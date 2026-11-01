@@ -181,9 +181,12 @@ pub fn run(
     let buffered = BufferEmits(host);
     let ctx = Ctx {
         checked: c,
+        subs: &c.subs,
         inputs,
         host: &buffered,
         parallel,
+        trace: None,
+        at: Vec::new(),
     };
     let out = run_ctx(&ctx);
     let effects = match &out {

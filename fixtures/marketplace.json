@@ -89,6 +89,39 @@
             "qty": 1,
             "express": false
           }
+        },
+        {
+          "args": {
+            "id": 9
+          },
+          "ok": {
+            "buyer": 109,
+            "sku": "mug",
+            "qty": 1,
+            "express": false
+          }
+        },
+        {
+          "args": {
+            "id": 10
+          },
+          "ok": {
+            "buyer": 101,
+            "sku": "ghost",
+            "qty": 1,
+            "express": false
+          }
+        },
+        {
+          "args": {
+            "id": 11
+          },
+          "ok": {
+            "buyer": 104,
+            "sku": "mug",
+            "qty": 7,
+            "express": false
+          }
         }
       ],
       "fallback": {

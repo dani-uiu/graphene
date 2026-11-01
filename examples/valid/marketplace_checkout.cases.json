@@ -865,5 +865,197 @@
         }
       ]
     }
+  },
+  {
+    "name": "unknown buyer fails with UnknownBuyer",
+    "inputs": {
+      "order_id": 9,
+      "region": "EU",
+      "coupon": ""
+    },
+    "mock": "../../fixtures/marketplace.json",
+    "expect": {
+      "result": {
+        "err": "UnknownBuyer"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 9
+          },
+          "result": {
+            "ok": {
+              "buyer": 109,
+              "express": false,
+              "qty": 1,
+              "sku": "mug"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "checkout_started",
+            "order": 9
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Buyer",
+          "args": {
+            "id": 109
+          },
+          "result": {
+            "err": "NotFound"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown product propagates UnknownSku",
+    "inputs": {
+      "order_id": 10,
+      "region": "EU",
+      "coupon": ""
+    },
+    "mock": "../../fixtures/marketplace.json",
+    "expect": {
+      "result": {
+        "err": "UnknownSku"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 10
+          },
+          "result": {
+            "ok": {
+              "buyer": 101,
+              "express": false,
+              "qty": 1,
+              "sku": "ghost"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "checkout_started",
+            "order": 10
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Buyer",
+          "args": {
+            "id": 101
+          },
+          "result": {
+            "ok": {
+              "orders": 12,
+              "risk": 10,
+              "tier": "gold",
+              "wallet": "2000.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "ghost"
+          },
+          "result": {
+            "err": "UnknownSku"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "locked stock propagates Locked",
+    "inputs": {
+      "order_id": 11,
+      "region": "EU",
+      "coupon": ""
+    },
+    "mock": "../../fixtures/marketplace.json",
+    "expect": {
+      "result": {
+        "err": "Locked"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "OrderFetch",
+          "args": {
+            "id": 11
+          },
+          "result": {
+            "ok": {
+              "buyer": 104,
+              "express": false,
+              "qty": 7,
+              "sku": "mug"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "event": "checkout_started",
+            "order": 11
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Buyer",
+          "args": {
+            "id": 104
+          },
+          "result": {
+            "ok": {
+              "orders": 0,
+              "risk": 5,
+              "tier": "standard",
+              "wallet": "800.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Catalog",
+          "args": {
+            "sku": "mug"
+          },
+          "result": {
+            "ok": {
+              "category": "home",
+              "kg": "0.30",
+              "price": "12.00"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Reserve",
+          "args": {
+            "qty": 7,
+            "sku": "mug"
+          },
+          "result": {
+            "err": "Locked"
+          }
+        }
+      ]
+    }
   }
 ]

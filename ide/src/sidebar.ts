@@ -1,7 +1,7 @@
 // Left sidebar: Files, Program (header, intent, externs, inputs, asserts),
 // Problems (diagnostics with quick fixes), and Tests (.cases.json).
 
-import { api, type Analysis, type CaseResult, type Entry } from "./api";
+import { api, type Analysis, type CaseResult, type CoverItem, type Entry } from "./api";
 import { app } from "./app";
 import { runPanel } from "./runpanel";
 import { store } from "./store";
@@ -210,12 +210,45 @@ function problemsView(a: Analysis | null): HTMLElement {
 // ---------------------------------------------------------------- tests
 
 let lastCases: CaseResult[] | null = null;
+let lastCoverage: CoverItem[] | null = null;
+
+/** Totals per kind plus the items no case reaches. */
+function coverageView(items: CoverItem[]): HTMLElement {
+  const kinds: [CoverItem["kind"], string][] = [
+    ["outcome", "outcomes"],
+    ["branch", "branches"],
+    ["effect", "effects"],
+  ];
+  const totals = kinds
+    .map(([k, label]) => {
+      const all = items.filter((i) => i.kind === k);
+      return all.length ? `${all.filter((i) => i.covered).length}/${all.length} ${label}` : null;
+    })
+    .filter((x) => x !== null);
+  const missing = items.filter((i) => !i.covered);
+  return h(
+    "div",
+    { class: "coverage" },
+    h("p", { class: missing.length ? "bad-line" : "ok-line" }, `Coverage: ${totals.join(", ") || "nothing to cover"}`),
+    ...missing.map((i) =>
+      h(
+        "div",
+        { class: "case fail", title: "Not reached by any case. Click to show the line.", onclick: () => app.editor.mark([i.line], true) },
+        h("div", {}, `${i.kind} ${i.graph ? `${i.graph} › ` : ""}${i.label}`),
+        h("div", { class: "case-detail mono" }, `line ${i.line}`),
+      ),
+    ),
+  );
+}
 
 function testsView(): HTMLElement {
   const tab = store.tab;
   const out = h("div", {});
   const parallel = h("input", { type: "checkbox" });
+  const cov = h("div", {});
+  const showCoverage = () => mount(cov, lastCoverage ? coverageView(lastCoverage) : h("span", {}));
   const render = () => {
+    showCoverage();
     if (!lastCases) return mount(out, h("p", { class: "hint" }, "Runs every case in the program's .cases.json against the text in the editor."));
     if (!lastCases.length) return mount(out, h("p", { class: "hint" }, "No .cases.json next to this program. Use “Save as test case” in the Run panel to create one."));
     const passed = lastCases.filter((c) => c.pass).length;
@@ -242,11 +275,33 @@ function testsView(): HTMLElement {
     }
     render();
   };
+  const coverage = async () => {
+    if (!tab?.path) return toast("save the program first: cases live next to the .grph file", "error");
+    if (lastCoverage) {
+      lastCoverage = null;
+      app.graph.setCoverage(null);
+      return showCoverage();
+    }
+    try {
+      lastCoverage = await api.coverage(app.editor.text, tab.path);
+      app.graph.setCoverage(lastCoverage);
+    } catch (e) {
+      toast(String(e), "error");
+    }
+    showCoverage();
+  };
   render();
   return h(
     "div",
     { class: "panel" },
-    h("div", { class: "row-actions" }, h("button", { class: "primary", onclick: runAll }, "Run all cases"), h("label", { class: "check" }, parallel, " also in parallel")),
+    h(
+      "div",
+      { class: "row-actions" },
+      h("button", { class: "primary", onclick: runAll }, "Run all cases"),
+      h("button", { onclick: coverage, title: "Which outcomes and branches no case reaches (shown dashed on the graph)" }, "Coverage"),
+      h("label", { class: "check" }, parallel, " also in parallel"),
+    ),
+    cov,
     out,
   );
 }

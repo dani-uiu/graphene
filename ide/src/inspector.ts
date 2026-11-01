@@ -4,16 +4,8 @@
 import type { NodeView } from "./api";
 import { app } from "./app";
 import { store } from "./store";
-import { ask, h, mount, short } from "./util";
-
-const STEPS: [string, string][] = [
-  ["f", "f(…) compute"],
-  ["fx", "⚙ effect"],
-  ["fx~", "⊗ fire & forget"],
-  ["match", "? match"],
-  ["out", "out"],
-  ["fail", "fail"],
-];
+import { addStep, focusGroup, stepItems } from "./steps";
+import { ask, h, mount, valueText } from "./util";
 
 const KIND: Record<string, string> = {
   input: "input",
@@ -78,11 +70,13 @@ function single(n: NodeView): HTMLElement {
   };
   kv("Kind", n.op ? `${KIND[n.kind]} (${n.op})` : KIND[n.kind]);
   kv("Type", n.ty, "mono");
+  kv("Subgraph", n.group);
+  kv("Calls", n.calls);
   kv("Active when", n.guard);
   kv("Depends on", n.deps.length ? n.deps.join(", ") : null, "mono");
   kv("Run order", n.order === null ? null : `#${n.order}`);
   kv("Writers", n.writers > 1 ? `${n.writers} (a merge)` : null);
-  if (st) kv("Last run", st.status === "inactive" ? "did not run" : st.value === null ? st.status : short(st.value, 80), st.status === "fault" ? "bad" : "mono");
+  if (st) kv("Last run", st.status === "inactive" ? "did not run" : st.value === null ? st.status : valueText(st.value, 80), st.status === "fault" ? "bad" : "mono");
   if (!n.defined && n.kind === "value") kv("Problem", "used but never defined", "bad");
   return h(
     "div",
@@ -95,6 +89,7 @@ function single(n: NodeView): HTMLElement {
     h(
       "div",
       { class: "row-actions" },
+      n.calls ? h("button", { class: "primary", onclick: () => focusGroup(n.calls) }, `Open ${n.calls}`) : null,
       name ? h("button", { onclick: () => rename(name) }, "Rename…") : null,
       name && n.kind !== "sink" ? h("button", { onclick: () => connect(name) }, "Connect to…") : null,
       h("button", { onclick: () => app.graph.togglePin(n.id) }, app.graph.isPinned(n.id) ? "Unpin" : "Pin"),
@@ -124,7 +119,7 @@ function stepButtons(name: string): HTMLElement {
     "div",
     {},
     h("div", { class: "subhead" }, "Add a step after this node"),
-    h("div", { class: "steps" }, ...STEPS.map(([step, label]) => h("button", { onclick: () => app.command({ cmd: "add_step", from: name, step, effect: null }) }, label))),
+    h("div", { class: "steps" }, ...stepItems().map(([step, label]) => h("button", { onclick: () => addStep(name, step) }, label))),
   );
 }
 

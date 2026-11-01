@@ -218,20 +218,31 @@ pub(crate) fn call(
     args: &[IArg],
     env: &Env,
 ) -> Result<Fired, Fault> {
-    let sig = &ctx.checked.graph.subs[sub];
-    let child = &ctx.checked.subs[sub];
-    let bound = bind(args, &sig.params, env, ctx.checked.graph.v(v).span)?;
+    let span = ctx.checked.graph.v(v).span;
+    let (Some(sig), Some(child)) = (ctx.checked.graph.subs.get(sub), ctx.subs.get(sub)) else {
+        return Err(Fault::new(
+            Code::R004,
+            span,
+            "internal error: unknown subgraph",
+        ));
+    };
+    let bound = bind(args, &sig.params, env, span)?;
+    let index = |i: usize| (kind != CallKind::Call).then_some(i);
     let runs = for_each(ctx, bound.records.len(), |i| {
         let inputs: BTreeMap<String, Value> = bound.records[i].clone().into_iter().collect();
+        let mut at = ctx.at.clone();
+        at.push((sig.name.clone(), index(i)));
         let nested = Ctx {
             checked: child,
+            subs: ctx.subs,
             inputs: &inputs,
             host: ctx.host,
             parallel: ctx.parallel,
+            trace: ctx.trace,
+            at,
         };
-        Ok(run_ctx(&nested))
+        Ok(nested_run(&nested, sub))
     });
-    let index = |i: usize| (kind != CallKind::Call).then_some(i);
     let mut log = Vec::new();
     let mut results = Vec::new();
     for (i, r) in runs.into_iter().enumerate() {
@@ -249,6 +260,22 @@ pub(crate) fn call(
         }
     }
     Ok((State::Done(collect(kind, results, bound.each)), log))
+}
+
+/// Run a nested body; when tracing, record its settled states.
+fn nested_run(ctx: &Ctx, sub: usize) -> Result<super::RunOutput, super::RunError> {
+    let Some(trace) = ctx.trace else {
+        return run_ctx(ctx);
+    };
+    let (out, states) = super::seq::run_traced(ctx);
+    if let Ok(mut t) = trace.lock() {
+        t.push(super::step::ElementTrace {
+            at: ctx.at.clone(),
+            sub,
+            states,
+        });
+    }
+    out
 }
 
 /// The op's outcome from every element's result (D-045).

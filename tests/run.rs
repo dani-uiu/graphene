@@ -286,3 +286,21 @@ fn fault_messages_show_values_in_v03_only() {
         "`18446744073709551615 * 2` overflows"
     );
 }
+
+#[test]
+fn subgraphs_can_call_other_subgraphs() {
+    // Regression: nested bodies must see every subgraph, not only the
+    // main program (this used to index an empty list).
+    let src = "#!graphene 0.3\ngraph Double(x: u64 -> X) -> u64 {\n  X -> f(x * 2) -> R\n  R -> out\n}\ngraph Quad(x: u64 -> X) -> u64 {\n  X -> call Double(x: x) -> D\n  D -> call Double(x: D) -> R\n  R -> out\n}\nin ns: [u64] -> A\nA -> map Quad(x: each ns) -> Q\nQ -> out q: [u64]\n";
+    let checked = graphene::check(src).expect("checks");
+    let obj = serde_json::json!({ "ns": [1, 3] });
+    let inputs =
+        bind_inputs(&checked, RawInputs::Json(obj.as_object().expect("obj"))).expect("bind");
+    for parallel in [false, true] {
+        let out = run(&checked, &inputs, &MockHost::empty(), parallel).expect("runs");
+        assert_eq!(
+            out.to_json()["result"]["ok"]["q"],
+            serde_json::json!([4, 12])
+        );
+    }
+}

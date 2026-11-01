@@ -15,9 +15,9 @@ import {
   type SimulationLinkDatum,
   type SimulationNodeDatum,
 } from "d3-force";
-import type { Analysis, EdgeView, NodeState, NodeView, RunView } from "./api";
+import type { Analysis, CoverItem, EdgeView, ElementView, NodeState, NodeView, RunView } from "./api";
 import type { GraphSettings } from "./store";
-import { short } from "./util";
+import { short, valueText } from "./util";
 
 export interface GNode extends SimulationNodeDatum {
   id: string;
@@ -54,7 +54,7 @@ type Drag =
   | { kind: "pan"; sx: number; sy: number; ox: number; oy: number; moved: boolean }
   | { kind: "connect"; from: GNode; x: number; y: number };
 
-const GLYPH: Record<string, string> = { f: "f", fx: "⚙", "fx~": "⊗" };
+const GLYPH: Record<string, string> = { f: "f", fx: "⚙", "fx~": "⊗", call: "↳", map: "∀", filter: "⊂" };
 
 export class GraphView {
   readonly canvas: HTMLCanvasElement;
@@ -66,6 +66,12 @@ export class GraphView {
   private visibleLinks: GLink[] = [];
   private selection = new Set<string>();
   private states = new Map<string, NodeState>();
+  /** States of one nested run (a `map` element) laid over its group. */
+  private element: ElementView | null = null;
+  /** Only this subgraph's body is shown (drill-in), or everything. */
+  focusGroup: string | null = null;
+  /** Coverage: statement ids and `op->target` edges no case reaches. */
+  private uncovered: Set<string> | null = null;
   private faultNode: string | null = null;
   private replay: number | null = null;
   private search = "";
@@ -223,7 +229,51 @@ export class GraphView {
   setRun(run: RunView | null) {
     this.states = new Map((run?.nodes ?? []).map((s) => [s.id, s]));
     this.faultNode = run?.fault_node ?? null;
+    this.element = null;
     this.dirty = true;
+  }
+
+  /** Show one nested run's states on its subgraph's nodes. */
+  setElement(el: ElementView | null) {
+    this.element = el;
+    this.dirty = true;
+  }
+
+  /** Show only `group`'s body (drill into a subgraph), or everything. */
+  setFocusGroup(group: string | null) {
+    this.focusGroup = group;
+    this.rebuild();
+    this.fitted = false;
+    // Fit once the layout has had time to settle around the new set.
+    window.setTimeout(() => this.fit(), 50);
+    window.setTimeout(() => this.fit(), 600);
+  }
+
+  /** Mark what no test case reaches (dashed), or clear with null. */
+  setCoverage(items: CoverItem[] | null) {
+    if (!items) {
+      this.uncovered = null;
+    } else {
+      const ids = new Set<string>();
+      for (const i of items.filter((x) => !x.covered)) {
+        if (i.kind === "outcome") ids.add(`s:${i.line}`);
+        if (i.kind === "branch" && i.target) {
+          ids.add(`s:${i.line}->${i.graph ? `v:${i.graph}/${i.target}` : `v:${i.target}`}`);
+        }
+      }
+      this.uncovered = ids;
+    }
+    this.dirty = true;
+  }
+
+  /** The state shown for a node: the picked element's, else the run's. */
+  private stateOf(id: string): NodeState | undefined {
+    const el = this.element;
+    if (el) {
+      const n = this.all.get(id);
+      if (n?.data.group === el.group) return el.nodes.find((x) => x.id === id);
+    }
+    return this.states.get(id);
   }
 
   setReplay(step: number | null) {
@@ -293,6 +343,7 @@ export class GraphView {
       return true;
     };
     let vis = [...this.all.values()].filter(shown);
+    if (this.focusGroup !== null) vis = vis.filter((n) => n.data.group === this.focusGroup);
     if (s.local && this.selection.size) vis = this.neighborhood(vis, s.localDepth);
     const ids = new Set(vis.map((n) => n.id));
     this.visible = vis;
@@ -527,6 +578,7 @@ export class GraphView {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr * this.view.k, 0, 0, dpr * this.view.k, dpr * this.view.x, dpr * this.view.y);
     const focus = this.focusSet();
+    this.drawGroups();
     for (const l of this.visibleLinks) this.drawLink(l, focus);
     for (const n of this.visible) this.drawNode(n, focus);
     for (const n of this.visible) this.drawLabel(n, focus);
@@ -541,6 +593,42 @@ export class GraphView {
       ctx.lineTo(x, y);
       ctx.stroke();
       ctx.setLineDash([]);
+    }
+  }
+
+  /** Soft hulls around each subgraph's body, labeled with its name. */
+  private drawGroups() {
+    const { ctx } = this;
+    const groups = new Map<string, GNode[]>();
+    for (const n of this.visible) {
+      if (n.data.group && n.x !== undefined) {
+        const list = groups.get(n.data.group) ?? [];
+        list.push(n);
+        groups.set(n.data.group, list);
+      }
+    }
+    for (const [name, ns] of groups) {
+      const cx = ns.reduce((a, n) => a + n.x!, 0) / ns.length;
+      const cy = ns.reduce((a, n) => a + n.y!, 0) / ns.length;
+      const r = Math.max(30, ...ns.map((n) => Math.hypot(n.x! - cx, n.y! - cy) + n.r + 18));
+      const color = paletteColor(name);
+      ctx.globalAlpha = 0.07;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 0.45;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1 / this.view.k;
+      ctx.setLineDash([5 / this.view.k, 4 / this.view.k]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = color;
+      ctx.textAlign = "center";
+      ctx.font = `600 ${12 / this.view.k}px Inter, "Segoe UI", sans-serif`;
+      ctx.fillText(name, cx, cy - r - 6 / this.view.k);
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -561,7 +649,7 @@ export class GraphView {
     let a = 1;
     if (focus && !focus.has(n.id)) a = 0.12;
     if (this.search && !this.matches(n)) a = Math.min(a, 0.12);
-    const st = this.states.get(n.id);
+    const st = this.stateOf(n.id);
     if (this.states.size && (!st || st.status === "inactive")) a = Math.min(a, 0.22);
     if (this.replay !== null && st && st.step > this.replay) a = Math.min(a, 0.22);
     return a;
@@ -583,7 +671,7 @@ export class GraphView {
     ctx.globalAlpha = hot ? 0.95 : 0.55 * a;
     ctx.strokeStyle = hot ? this.colors.accent : kind === "err" ? this.colors["edge-err"] : kind === "ref" ? this.colors["edge-ref"] : this.colors.edge;
     ctx.lineWidth = (hot ? 1.6 : 1) / Math.sqrt(this.view.k);
-    if (kind === "ref") ctx.setLineDash([3 / this.view.k, 3 / this.view.k]);
+    if (kind === "ref" || this.uncovered?.has(`${s.id}->${t.id}`)) ctx.setLineDash([3 / this.view.k, 3 / this.view.k]);
     const ang = Math.atan2(t.y - s.y, t.x - s.x);
     const ex = t.x - Math.cos(ang) * (t.r + 1.5);
     const ey = t.y - Math.sin(ang) * (t.r + 1.5);
@@ -671,6 +759,11 @@ export class GraphView {
       ctx.setLineDash([]);
     }
     if (n.data.error || this.faultNode === n.id) ring(ctx, n.x, n.y, n.r + 2.5, this.colors.error, 1.8);
+    if (this.uncovered?.has(n.id)) {
+      ctx.setLineDash([2, 2]);
+      ring(ctx, n.x, n.y, n.r + 4, this.colors["text-dim"], 1);
+      ctx.setLineDash([]);
+    }
     if (this.selection.has(n.id)) ring(ctx, n.x, n.y, n.r + 5, this.colors.accent, 1.4);
     if (n.pinned) {
       ctx.fillStyle = this.colors["text-dim"];
@@ -703,19 +796,25 @@ export class GraphView {
       ctx.font = `${px(10.5)}px "JetBrains Mono", Consolas, monospace`;
       ctx.fillText(short(n.data.detail, 56), n.x, n.y + n.r + px(26));
     }
-    const st = this.states.get(n.id);
+    const st = this.stateOf(n.id);
+    if (isOp && st?.count !== null && st?.count !== undefined && (k > 0.8 || near)) {
+      ctx.fillStyle = this.colors.value;
+      ctx.font = `${px(10)}px Inter, "Segoe UI", sans-serif`;
+      ctx.fillText(`×${st.count}`, n.x, n.y - n.r - px(5));
+    }
     const shown = st && st.status !== "inactive" && st.value !== null && st.value !== undefined;
     if (shown && !isOp && (k > 0.8 || near) && (this.replay === null || st.step <= this.replay)) {
       ctx.globalAlpha = Math.max(a, near ? 1 : 0);
       ctx.fillStyle = this.colors.value;
       ctx.font = `${px(10.5)}px "JetBrains Mono", Consolas, monospace`;
-      ctx.fillText(`= ${short(st.value, near ? 60 : 28)}`, n.x, n.y - n.r - px(6));
+      ctx.fillText(`= ${valueText(st.value, near ? 60 : 28)}`, n.x, n.y - n.r - px(6));
     }
     ctx.globalAlpha = 1;
   }
 }
 
 function labelOf(d: NodeView): string {
+  if (d.kind === "op" && d.calls) return `${d.op} ${d.name}`;
   if (d.kind === "op") return d.op === "f" ? "f" : `${GLYPH[d.op ?? "f"]} ${d.name}`;
   if (d.kind === "match") return "?";
   return d.name;

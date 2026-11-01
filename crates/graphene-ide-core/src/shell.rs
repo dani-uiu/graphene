@@ -20,7 +20,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 
 use crate::edit::Command;
-use crate::trace::{failed_view, run_view, RunView};
+use crate::trace::{failed_view, run_view_with, RunView};
+use graphene::runtime::effects::{EffectHost, MockHost};
+use graphene::runtime::hosts::{RealHost, RecordingHost};
 
 pub fn format_text(text: &str, unicode: bool) -> Result<String, String> {
     let (program, diags) = graphene::parse(text);
@@ -34,20 +36,56 @@ pub fn format_text(text: &str, unicode: bool) -> Result<String, String> {
     }
 }
 
+/// Where a run gets effect answers (D-048): a mock fixture, or a host
+/// configuration; `record` writes a replayable fixture.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostChoice {
+    pub mock_path: Option<String>,
+    pub host_path: Option<String>,
+    pub record_path: Option<String>,
+}
+
 pub fn run_program(
     text: &str,
     args: &[(String, String)],
-    mock_path: Option<&str>,
+    hosts: &HostChoice,
     parallel: bool,
 ) -> RunView {
-    let mock = match mock_path.filter(|p| !p.is_empty()) {
-        Some(p) => match std::fs::read_to_string(p) {
-            Ok(t) => Some(t),
-            Err(e) => return failed_view(format!("cannot read mock {p}: {e}")),
+    let some = |p: &Option<String>| p.clone().filter(|p| !p.is_empty());
+    let host: Box<dyn EffectHost> = match (some(&hosts.host_path), some(&hosts.mock_path)) {
+        (Some(cfg), _) => match RealHost::from_file(Path::new(&cfg)) {
+            Ok(h) => Box::new(h),
+            Err(e) => return failed_view(e),
         },
-        None => None,
+        (None, Some(m)) => match MockHost::from_file(Path::new(&m)) {
+            Ok(h) => Box::new(h),
+            Err(e) => return failed_view(e),
+        },
+        (None, None) => Box::new(MockHost::empty()),
     };
-    run_view(text, args, mock.as_deref(), parallel)
+    let recorder = RecordingHost::new(host.as_ref());
+    let view = run_view_with(text, args, &recorder, parallel);
+    if let Some(out) = some(&hosts.record_path) {
+        let fixture = serde_json::to_string_pretty(&recorder.fixture()).unwrap_or_default() + "\n";
+        if let Err(e) = std::fs::write(&out, fixture) {
+            return failed_view(format!("cannot write {out}: {e}"));
+        }
+    }
+    view
+}
+
+/// Coverage of the `.cases.json` next to `program_path`, against `text`.
+pub fn coverage(text: &str, program_path: &str) -> Result<Vec<graphene::cases::CoverItem>, String> {
+    let file = graphene::cases::cases_path(Path::new(program_path));
+    let cases = if file.is_file() {
+        graphene::cases::load(&file)?
+    } else {
+        Vec::new()
+    };
+    let checked = graphene::check(text)
+        .map_err(|d| format!("the program does not check ({} problem(s))", d.len()))?;
+    graphene::cases::coverage(&checked, &cases)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -271,14 +309,10 @@ pub fn dispatch(cmd: &str, args: &Json) -> Result<Json, String> {
         "format_text" => to_json(format_text(&text()?, arg(args, "unicode")?)?),
         "run_program" => {
             let a: Vec<(String, String)> = arg(args, "args")?;
-            let mock: Option<String> = arg(args, "mockPath")?;
-            to_json(run_program(
-                &text()?,
-                &a,
-                mock.as_deref(),
-                arg(args, "parallel")?,
-            ))
+            let hosts: HostChoice = arg(args, "hosts")?;
+            to_json(run_program(&text()?, &a, &hosts, arg(args, "parallel")?))
         }
+        "coverage" => to_json(coverage(&text()?, &arg::<String>(args, "programPath")?)?),
         "run_cases" => to_json(run_cases(
             &text()?,
             &arg::<String>(args, "programPath")?,

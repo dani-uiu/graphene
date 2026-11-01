@@ -49,6 +49,12 @@ enum Cmd {
         /// Also run each case in parallel; both runs must match.
         #[arg(long)]
         parallel: bool,
+        /// Report which outcomes, branches, and effects the cases reach.
+        #[arg(long)]
+        coverage: bool,
+        /// Fail when a program's outcome coverage is below this percent.
+        #[arg(long, value_name = "PERCENT")]
+        min_outcomes: Option<u32>,
     },
     /// Run a program and print the result and effect log as JSON.
     Run {
@@ -96,7 +102,19 @@ fn main() -> ExitCode {
     match cli.cmd {
         Cmd::Check { file, json: false } => cmd_check(&file),
         Cmd::Check { file, json: true } => cmd_check_json(&file),
-        Cmd::Test { paths, parallel } => cmd_test(&paths, parallel),
+        Cmd::Test {
+            paths,
+            parallel,
+            coverage,
+            min_outcomes,
+        } => {
+            let opts = TestOpts {
+                parallel,
+                coverage: coverage || min_outcomes.is_some(),
+                min_outcomes,
+            };
+            cmd_test(&paths, &opts)
+        }
         Cmd::Run {
             file,
             args,
@@ -176,7 +194,14 @@ fn cmd_check_json(path: &Path) -> ExitCode {
     }
 }
 
-fn cmd_test(paths: &[PathBuf], parallel: bool) -> ExitCode {
+/// Options of `graphene test`.
+struct TestOpts {
+    parallel: bool,
+    coverage: bool,
+    min_outcomes: Option<u32>,
+}
+
+fn cmd_test(paths: &[PathBuf], opts: &TestOpts) -> ExitCode {
     let roots = if paths.is_empty() {
         vec![PathBuf::from(".")]
     } else {
@@ -187,40 +212,89 @@ fn cmd_test(paths: &[PathBuf], parallel: bool) -> ExitCode {
         eprintln!("error: no `X.cases.json` next to an `X.grph` was found");
         return ExitCode::from(1);
     }
-    let (mut passed, mut failed) = (0, 0);
+    let (mut passed, mut failed, mut short) = (0, 0, 0);
     for program in &programs {
-        let (p, f) = test_program(program, parallel);
+        let (p, f, below) = test_program(program, opts);
         passed += p;
         failed += f;
+        short += usize::from(below);
     }
     println!("\n{passed} passed, {failed} failed");
-    if failed == 0 {
+    if short > 0 {
+        println!("{short} program(s) below the outcome coverage threshold");
+    }
+    if failed == 0 && short == 0 {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(1)
     }
 }
 
-/// Run one program's cases; returns `(passed, failed)`.
-fn test_program(path: &Path, parallel: bool) -> (usize, usize) {
+/// Run one program's cases; returns `(passed, failed, below threshold)`.
+fn test_program(path: &Path, opts: &TestOpts) -> (usize, usize, bool) {
     let name = path.display().to_string();
     let cases = match graphene::cases::load(&graphene::cases::cases_path(path)) {
         Ok(c) => c,
         Err(e) => {
             println!("FAIL {name}: {e}");
-            return (0, 1);
+            return (0, 1, false);
         }
     };
     let checked = match load(path) {
         Ok((_, c)) => c,
         Err(_) => {
             println!("FAIL {name}: the program does not check");
-            return (0, cases.len().max(1));
+            return (0, cases.len().max(1), false);
         }
     };
+    let (p, f) = run_cases(&name, &checked, &cases, opts.parallel);
+    let below = opts.coverage && report_coverage(&name, &checked, &cases, opts.min_outcomes);
+    (p, f, below)
+}
+
+/// Print the coverage of one program; true when below `min` percent.
+fn report_coverage(
+    name: &str,
+    checked: &graphene::Checked,
+    cases: &[graphene::cases::Case],
+    min: Option<u32>,
+) -> bool {
+    use graphene::cases::{coverage, tally};
+    let items = match coverage(checked, cases) {
+        Ok(i) => i,
+        Err(e) => {
+            println!("     coverage unavailable: {e}");
+            return min.is_some();
+        }
+    };
+    let (o, ot) = tally(&items, "outcome");
+    let (b, bt) = tally(&items, "branch");
+    let (e, et) = tally(&items, "effect");
+    println!("     {name}: outcomes {o}/{ot}, branches {b}/{bt}, effects {e}/{et}");
+    for i in items.iter().filter(|i| !i.covered) {
+        let place = i
+            .graph
+            .as_ref()
+            .map_or(String::new(), |g| format!(" in `{g}`"));
+        println!(
+            "       never reached: line {}{place}: {} {}",
+            i.line, i.kind, i.label
+        );
+    }
+    let percent = (o * 100).checked_div(ot).unwrap_or(100);
+    min.is_some_and(|m| (percent as u32) < m)
+}
+
+/// Run every case; returns `(passed, failed)`.
+fn run_cases(
+    name: &str,
+    checked: &graphene::Checked,
+    cases: &[graphene::cases::Case],
+    parallel: bool,
+) -> (usize, usize) {
     let mut tally = (0, 0);
-    for case in &cases {
-        match case_outcome(&checked, case, parallel) {
+    for case in cases {
+        match case_outcome(checked, case, parallel) {
             None => {
                 println!("PASS {name}: {}", case.name);
                 tally.0 += 1;

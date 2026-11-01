@@ -269,6 +269,8 @@ pub struct ExternDecl {
     pub ret: Option<Type>,
     pub errors: Vec<String>,
     pub span: Span,
+    /// 1-based line of the declaration.
+    pub line: usize,
 }
 
 /// Output scale of every `dec` inside an `out` type (D-052): `None`

@@ -414,6 +414,18 @@ body[data-layout="text"] .inspector {
   width: 220px;
   background: color-mix(in srgb, var(--bg-2) 85%, transparent);
 }
+.graph-toolbar .crumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-2) 85%, transparent);
+  font-weight: 600;
+}
+.graph-toolbar .crumb[hidden] {
+  display: none;
+}
 .graph-toolbar button:last-child {
   margin-left: auto;
 }

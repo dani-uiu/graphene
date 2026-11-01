@@ -7,7 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 export interface NodeView {
   id: string;
   kind: "input" | "param" | "value" | "sink" | "op" | "match" | "out" | "fail";
-  op: "f" | "fx" | "fx~" | null;
+  op: "f" | "fx" | "fx~" | "call" | "map" | "filter" | null;
   name: string;
   detail: string;
   line: number;
@@ -19,6 +19,19 @@ export interface NodeView {
   deps: string[];
   order: number | null;
   error: boolean;
+  /** Subgraph whose body holds this node (null: main program). */
+  group: string | null;
+  /** For call/map/filter nodes: the subgraph they run. */
+  calls: string | null;
+}
+
+export interface GroupView {
+  name: string;
+  line: number;
+  end_line: number;
+  params: [string, string][];
+  ret: string;
+  errors: string[];
 }
 
 export interface EdgeView {
@@ -76,6 +89,7 @@ export interface Analysis {
   externs: ExternView[];
   inputs: InputView[];
   asserts: { text: string; line: number }[];
+  groups: GroupView[];
   diags: DiagView[];
   checked: boolean;
   unicode: boolean;
@@ -93,13 +107,36 @@ export type Command =
   | { cmd: "join"; members: string[]; target: string | null }
   | { cmd: "rename"; old: string; new: string }
   | { cmd: "delete_node"; name: string }
-  | { cmd: "set_header"; version: string };
+  | { cmd: "set_header"; version: string }
+  | { cmd: "add_subgraph"; name: string; ty: string };
 
 export interface NodeState {
   id: string;
   status: "active" | "inactive" | "fault";
   value: unknown;
   step: number;
+  count: number | null;
+}
+
+export interface ElementView {
+  at: [string, number | null][];
+  group: string;
+  nodes: NodeState[];
+}
+
+export interface CoverItem {
+  kind: "outcome" | "branch" | "effect";
+  graph: string | null;
+  line: number;
+  label: string;
+  target: string | null;
+  covered: boolean;
+}
+
+export interface HostChoice {
+  mockPath: string | null;
+  hostPath: string | null;
+  recordPath: string | null;
 }
 
 export interface RunView {
@@ -108,6 +145,7 @@ export interface RunView {
   nodes: NodeState[];
   fault_node: string | null;
   parallel_matches: boolean | null;
+  elements: ElementView[];
 }
 
 export interface CaseResult {
@@ -131,8 +169,9 @@ export const api = {
   analyze: (text: string) => invoke<Analysis>("analyze", { text }),
   apply: (text: string, command: Command) => invoke<TextEdit[]>("apply_command", { text, command }),
   format: (text: string, unicode: boolean) => invoke<string>("format_text", { text, unicode }),
-  run: (text: string, args: [string, string][], mockPath: string | null, parallel: boolean) =>
-    invoke<RunView>("run_program", { text, args, mockPath, parallel }),
+  run: (text: string, args: [string, string][], hosts: HostChoice, parallel: boolean) =>
+    invoke<RunView>("run_program", { text, args, hosts, parallel }),
+  coverage: (text: string, programPath: string) => invoke<CoverItem[]>("coverage", { text, programPath }),
   runCases: (text: string, programPath: string, parallel: boolean) =>
     invoke<CaseResult[]>("run_cases", { text, programPath, parallel }),
   saveCase: (programPath: string, name: string, inputsJson: string, mock: string | null, expect: unknown) =>

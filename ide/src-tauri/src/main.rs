@@ -33,8 +33,13 @@ fn format_text(text: String, unicode: bool) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn run_program(text: String, args: Vec<(String, String)>, mock_path: Option<String>, parallel: bool) -> RunView {
-    shell::run_program(&text, &args, mock_path.as_deref(), parallel)
+fn run_program(text: String, args: Vec<(String, String)>, hosts: shell::HostChoice, parallel: bool) -> RunView {
+    shell::run_program(&text, &args, &hosts, parallel)
+}
+
+#[tauri::command]
+fn coverage(text: String, program_path: String) -> Result<Vec<graphene::cases::CoverItem>, String> {
+    shell::coverage(&text, &program_path)
 }
 
 #[tauri::command]
@@ -93,6 +98,7 @@ fn main() {
             run_program,
             run_cases,
             save_case,
+            coverage,
             tokens,
             export_dot,
             read_file,

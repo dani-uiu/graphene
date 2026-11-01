@@ -3,8 +3,9 @@
 // replay timeline over the run order, "record missing" for mock responses,
 // and saving a run as a test case.
 
-import { api, type CaseResult, type Entry, type RunView } from "./api";
+import { api, type CaseResult, type ElementView, type Entry, type HostChoice, type RunView } from "./api";
 import { app } from "./app";
+import { focusGroup } from "./steps";
 import { store } from "./store";
 import { ask, baseName, dirName, h, mount, short, toast } from "./util";
 
@@ -13,6 +14,9 @@ class RunPanel {
   /** Input values per program (by path or name), as typed. */
   private values = new Map<string, Record<string, string>>();
   private mocks = new Map<string, string>();
+  /** Per program: answer effects from a mock fixture or a host config. */
+  private modes = new Map<string, "mock" | "hosts">();
+  private record = false;
   private parallel = false;
   private timer: number | undefined;
 
@@ -64,21 +68,32 @@ class RunPanel {
     }
     if (!a.inputs.length) form.append(h("p", { class: "hint" }, "This program has no inputs."));
     const mockSel = h("select", {
+      class: "mock-select",
       onchange: (e: Event) => this.mocks.set(this.key(), (e.target as HTMLSelectElement).value),
     });
     mockSel.append(h("option", { value: "" }, "No mock (effects fail with R003)"));
     for (const p of jsonFiles(store.folder)) mockSel.append(h("option", { value: p, selected: p === this.mock }, relative(p)));
     if (this.mock && !jsonFiles(store.folder).includes(this.mock)) mockSel.append(h("option", { value: this.mock, selected: true }, baseName(this.mock)));
     const par = h("input", { type: "checkbox", checked: this.parallel, onchange: (e: Event) => (this.parallel = (e.target as HTMLInputElement).checked) });
+    const mode = this.modes.get(this.key()) ?? "mock";
+    const modeSel = h(
+      "select",
+      { onchange: (e: Event) => (this.modes.set(this.key(), (e.target as HTMLSelectElement).value as "mock" | "hosts"), this.render()) },
+      h("option", { value: "mock", selected: mode === "mock" }, "Mock fixture"),
+      h("option", { value: "hosts", selected: mode === "hosts" }, "Host config (real effects)"),
+    );
+    const rec = h("input", { type: "checkbox", checked: this.record, onchange: (e: Event) => (this.record = (e.target as HTMLInputElement).checked) });
     mount(
       this.element,
       form,
-      h("label", { class: "field" }, h("span", {}, "Mock"), mockSel),
+      h("label", { class: "field" }, h("span", {}, "Effects"), modeSel),
+      h("label", { class: "field" }, h("span", {}, mode === "mock" ? "Mock" : "Config"), mockSel),
       h(
         "div",
         { class: "row-actions" },
         h("button", { class: "primary", onclick: () => this.run(), title: "Ctrl+Enter" }, "▶ Run"),
         h("label", { class: "check" }, par, " also run in parallel"),
+        h("label", { class: "check", title: "Write every answer to <program>.recorded.json, a mock fixture that replays this run" }, rec, " record"),
         this.mock ? h("button", { onclick: () => app.openFile(this.mock) }, "Edit mock") : null,
       ),
       this.results(store.run),
@@ -90,11 +105,21 @@ class RunPanel {
     if (!a) return;
     const args: [string, string][] = a.inputs.map((i) => [i.name, this.inputs[i.name] ?? ""]);
     try {
-      const r = await api.run(app.editor.text, args, this.mock || null, this.parallel);
+      const r = await api.run(app.editor.text, args, this.hosts(), this.parallel);
       this.show(r);
     } catch (e) {
       toast(String(e), "error");
     }
+  }
+
+  /** The selected effect source, plus where to record, if enabled. */
+  private hosts(): HostChoice {
+    const file = this.mock || null;
+    const prog = store.tab?.path;
+    const recordPath = this.record && prog ? prog.replace(/\.grph$/, ".recorded.json") : null;
+    return (this.modes.get(this.key()) ?? "mock") === "hosts"
+      ? { mockPath: null, hostPath: file, recordPath }
+      : { mockPath: file, hostPath: null, recordPath };
   }
 
   private show(r: RunView) {
@@ -135,12 +160,33 @@ class RunPanel {
       status,
       r.parallel_matches === null ? null : h("div", { class: r.parallel_matches ? "ok-line" : "bad-line" }, r.parallel_matches ? "✓ parallel run identical" : "✗ parallel run differs"),
       this.replayBar(r),
+      this.elementPicker(r.elements),
       out.fault?.code === "R003" ? this.recordMissing(out.fault.message) : null,
       h("div", { class: "subhead" }, `Effect log (${effects.length})`),
       effects.length ? log : h("p", { class: "hint" }, "No effects were called."),
       h("div", { class: "row-actions" }, h("button", { onclick: () => this.saveCase(out) }, "Save as test case")),
       h("details", {}, h("summary", {}, "Raw output"), h("pre", { class: "mono" }, JSON.stringify(out, null, 2))),
     );
+  }
+
+  /** Pick one nested subgraph run to see its states on the graph. */
+  private elementPicker(elements: ElementView[]): HTMLElement | null {
+    if (!elements.length) return null;
+    const label = (el: ElementView) => el.at.map(([n, i]) => (i === null ? n : `${n}[${i}]`)).join(" › ");
+    const sel = h(
+      "select",
+      {
+        onchange: (e: Event) => {
+          const i = Number((e.target as HTMLSelectElement).value);
+          const el = elements[i] ?? null;
+          app.graph.setElement(el);
+          focusGroup(el ? el.group : null);
+        },
+      },
+      h("option", { value: "-1" }, "main program"),
+      ...elements.map((el, i) => h("option", { value: String(i) }, label(el))),
+    );
+    return h("label", { class: "field" }, h("span", {}, "Show run of"), sel);
   }
 
   private replayBar(r: RunView): HTMLElement {

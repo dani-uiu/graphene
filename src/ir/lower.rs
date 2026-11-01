@@ -295,6 +295,7 @@ impl Lower<'_> {
         }
         let ret = e.ret.as_ref().map(|t| self.ty(t));
         let (name, is_async, span) = (e.name.name.clone(), e.is_async, e.pos.0);
+        let line = self.line(span);
         self.externs.push(ExternDecl {
             name,
             is_async,
@@ -302,6 +303,7 @@ impl Lower<'_> {
             ret,
             errors,
             span,
+            line,
         });
     }
 

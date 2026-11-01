@@ -10,7 +10,8 @@
 //! - when the program checks, types, guards, dependencies, and run order
 //!   from the checker are laid over the same nodes;
 //! - node ids are stable across edits that do not touch them: value nodes
-//!   are `v:<name>`, statements are `s:<line>`.
+//!   are `v:<name>` (`v:<Subgraph>/<name>` inside a subgraph body),
+//!   statements are `s:<first line>`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -33,6 +34,8 @@ pub struct Analysis {
     pub externs: Vec<ExternView>,
     pub inputs: Vec<InputView>,
     pub asserts: Vec<AssertView>,
+    /// v0.3 subgraphs, drawn as groups of their body's nodes.
+    pub groups: Vec<GroupView>,
     pub diags: Vec<DiagView>,
     /// True when the program passed every check.
     pub checked: bool,
@@ -63,6 +66,20 @@ pub struct NodeView {
     pub order: Option<usize>,
     /// A diagnostic points at this node.
     pub error: bool,
+    /// The subgraph whose body holds this node (`None`: main program).
+    pub group: Option<String>,
+    /// For `call` / `map` / `filter` nodes: the subgraph they run.
+    pub calls: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GroupView {
+    pub name: String,
+    pub line: usize,
+    pub end_line: usize,
+    pub params: Vec<(String, String)>,
+    pub ret: String,
+    pub errors: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -143,6 +160,7 @@ pub fn analyze(src: &str) -> Analysis {
         externs: b.externs,
         inputs: b.inputs,
         asserts: b.asserts,
+        groups: b.groups,
         diags,
         checked,
         unicode: uses_unicode(src),
@@ -176,10 +194,13 @@ struct Builder<'a> {
     src: &'a str,
     nodes: Vec<NodeView>,
     index: HashMap<String, usize>,
-    /// Defining span of each value node, for diagnostic marking.
+    /// Defining span of each value node (by node id), for diagnostics.
     def_spans: HashMap<String, Span>,
-    /// Input name -> node id (an input node, or the parameter itself).
-    input_ids: HashMap<String, String>,
+    /// (scope, input name) -> node id (an input node, or the parameter).
+    input_ids: HashMap<(Option<String>, String), String>,
+    /// The subgraph body being built, if any.
+    scope: Option<String>,
+    groups: Vec<GroupView>,
     edges: Vec<EdgeView>,
     externs: Vec<ExternView>,
     inputs: Vec<InputView>,
@@ -203,6 +224,16 @@ fn blank(id: String, kind: &'static str, name: &str, line: usize) -> NodeView {
         deps: Vec::new(),
         order: None,
         error: false,
+        group: None,
+        calls: None,
+    }
+}
+
+/// The id of value `name` in `scope`.
+fn value_id(scope: &Option<String>, name: &str) -> String {
+    match scope {
+        Some(g) => format!("v:{g}/{name}"),
+        None => format!("v:{name}"),
     }
 }
 
@@ -210,9 +241,20 @@ impl<'a> Builder<'a> {
     fn new(src: &'a str, program: &Program) -> Builder<'a> {
         let mut input_ids = HashMap::new();
         for stmt in program.lines.iter().filter_map(|l| l.stmt.as_ref()) {
-            if let Stmt::Input(i) = stmt {
+            let mut add = |scope: &Option<String>, i: &Input| {
                 let handle = i.node.as_ref().unwrap_or(&i.name);
-                input_ids.insert(i.name.name.clone(), format!("v:{}", handle.name));
+                input_ids.insert(
+                    (scope.clone(), i.name.name.clone()),
+                    value_id(scope, &handle.name),
+                );
+            };
+            match stmt {
+                Stmt::Input(i) => add(&None, i),
+                Stmt::GraphHeader(h) => {
+                    let scope = Some(h.name.name.clone());
+                    h.params.iter().for_each(|p| add(&scope, p));
+                }
+                _ => {}
             }
         }
         Builder {
@@ -221,6 +263,8 @@ impl<'a> Builder<'a> {
             index: HashMap::new(),
             def_spans: HashMap::new(),
             input_ids,
+            scope: None,
+            groups: Vec::new(),
             edges: Vec::new(),
             externs: Vec::new(),
             asserts: Vec::new(),
@@ -233,7 +277,9 @@ impl<'a> Builder<'a> {
         let i = match self.index.get(&id) {
             Some(&i) => i,
             None => {
-                self.nodes.push(blank(id.clone(), kind, name, line));
+                let mut n = blank(id.clone(), kind, name, line);
+                n.group = self.scope.clone();
+                self.nodes.push(n);
                 self.index.insert(id, self.nodes.len() - 1);
                 self.nodes.len() - 1
             }
@@ -243,7 +289,7 @@ impl<'a> Builder<'a> {
 
     /// A value node mentioned on `line`; `def` marks a defining mention.
     fn value(&mut self, id: &Ident, line: usize, def: Option<&'static str>) -> String {
-        let key = format!("v:{}", id.name);
+        let key = value_id(&self.scope, &id.name);
         let n = self.node(key.clone(), "value", &id.name, line);
         if !n.lines.contains(&line) {
             n.lines.push(line);
@@ -253,7 +299,7 @@ impl<'a> Builder<'a> {
                 n.defined = true;
                 n.kind = kind;
                 n.line = line;
-                self.def_spans.insert(id.name.clone(), id.span());
+                self.def_spans.insert(key.clone(), id.span());
             }
         }
         key
@@ -296,7 +342,14 @@ impl<'a> Builder<'a> {
         match stmt {
             Stmt::Intent(t, _) => self.intent = Some(t.clone()),
             Stmt::Extern(e) => self.extern_decl(line, e),
-            Stmt::Input(i) => self.input(line, i),
+            Stmt::Input(i) => self.input(line, i, false),
+            Stmt::GraphHeader(h) => self.graph_header(line, h),
+            Stmt::GraphEnd(_) => {
+                if let Some(g) = self.groups.last_mut() {
+                    g.end_line = line;
+                }
+                self.scope = None;
+            }
             Stmt::Flow(f) => self.flow(line, f),
             Stmt::Match(m) => self.match_stmt(line, m),
             Stmt::Out(o) => {
@@ -320,8 +373,7 @@ impl<'a> Builder<'a> {
                 let s = self.value(&f.source, line, None);
                 self.edge(&s, &id, "flow", None, line);
             }
-            // Subgraphs and constants get their own view in IDE phase F.
-            Stmt::Const(_) | Stmt::GraphHeader(_) | Stmt::GraphEnd(_) => {}
+            Stmt::Const(_) => {}
             Stmt::AssertTotal(_) => self.asserts.push(AssertView {
                 text: "assert total".into(),
                 line,
@@ -368,14 +420,37 @@ impl<'a> Builder<'a> {
         });
     }
 
-    fn input(&mut self, line: usize, i: &Input) {
-        let ty = format_ty(&i.ty);
-        self.inputs.push(InputView {
-            name: i.name.name.clone(),
-            ty: ty.clone(),
-            node: i.node.as_ref().map(|n| n.name.clone()),
+    fn graph_header(&mut self, line: usize, h: &GraphHeader) {
+        self.groups.push(GroupView {
+            name: h.name.name.clone(),
             line,
+            end_line: line,
+            params: h
+                .params
+                .iter()
+                .map(|p| (p.name.name.clone(), format_ty(&p.ty)))
+                .collect(),
+            ret: format_ty(&h.ret),
+            errors: h.errors.iter().map(|e| e.name.clone()).collect(),
         });
+        self.scope = Some(h.name.name.clone());
+        for p in &h.params {
+            self.input(line, p, true);
+        }
+    }
+
+    /// An input, or (`param`) a subgraph parameter, which is not part of
+    /// the program's input form.
+    fn input(&mut self, line: usize, i: &Input, param: bool) {
+        let ty = format_ty(&i.ty);
+        if !param {
+            self.inputs.push(InputView {
+                name: i.name.name.clone(),
+                ty: ty.clone(),
+                node: i.node.as_ref().map(|n| n.name.clone()),
+                line,
+            });
+        }
         let (handle, kind) = match &i.node {
             Some(n) => (n, "input"),
             None => (&i.name, "param"),
@@ -395,6 +470,11 @@ impl<'a> Builder<'a> {
             Op::Call { kind, graph, .. } => ("op", graph.name.clone(), kind.keyword()),
         };
         let id = self.op_node(line, kind, &name, format_op(&f.op, style), Some(op));
+        if let Op::Call { graph, .. } = &f.op {
+            if let Some(&i) = self.index.get(&id) {
+                self.nodes[i].calls = Some(graph.name.clone());
+            }
+        }
         for s in &f.sources {
             let sid = self.value(s, line, None);
             self.edge(&sid, &id, "flow", None, line);
@@ -407,7 +487,11 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        let ok = if op == "fx" { "ok" } else { "flow" };
+        let ok = if matches!(op, "fx" | "call" | "map" | "filter") {
+            "ok"
+        } else {
+            "flow"
+        };
         match &f.target {
             Target::Node { name, .. } => self.write_into(&id, name, ok, None, line, "value"),
             Target::Sink(name) => self.write_into(&id, name, "flow", None, line, "sink"),
@@ -456,18 +540,24 @@ impl<'a> Builder<'a> {
         let mut names = BTreeSet::new();
         collect_names(e, &mut names);
         for n in names {
-            let from = match self.input_ids.get(&n) {
+            let from = match self.input_ids.get(&(self.scope.clone(), n.clone())) {
                 Some(id) => id.clone(),
-                None => format!("v:{n}"),
+                None => value_id(&self.scope, &n),
             };
-            if self.index.contains_key(&from) || !self.input_ids.contains_key(&n) {
-                self.edge(&from, op, "ref", None, line);
-            }
+            self.edge(&from, op, "ref", None, line);
         }
     }
 
     /// Lay checker results over the syntax-built nodes.
     fn overlay(&mut self, c: &Checked) {
+        self.overlay_graph(c, &None);
+        for (i, sub) in c.subs.iter().enumerate() {
+            let scope = c.graph.subs.get(i).map(|s| s.name.clone());
+            self.overlay_graph(sub, &scope);
+        }
+    }
+
+    fn overlay_graph(&mut self, c: &Checked, scope: &Option<String>) {
         let g = &c.graph;
         let deps = graphene::dot::dependency_vectors(g);
         for v in g.g.node_indices() {
@@ -475,7 +565,7 @@ impl<'a> Builder<'a> {
             let id = if vx.kind.is_op() {
                 format!("s:{}", vx.line)
             } else {
-                format!("v:{}", vx.name)
+                value_id(scope, &vx.name)
             };
             let Some(&i) = self.index.get(&id) else {
                 continue;
@@ -503,7 +593,7 @@ impl<'a> Builder<'a> {
                 n.error = by_line.contains_key(&n.line);
                 continue;
             }
-            if let Some(span) = self.def_spans.get(&n.name) {
+            if let Some(span) = self.def_spans.get(&n.id) {
                 n.error = diags.iter().any(|d| {
                     d.span.start < span.end.max(span.start + 1)
                         && span.start < d.span.end.max(d.span.start + 1)

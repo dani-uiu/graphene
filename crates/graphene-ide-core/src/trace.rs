@@ -14,8 +14,10 @@
 use std::collections::BTreeMap;
 
 use graphene::diag::Code;
+use graphene::runtime::effects::EffectHost;
 use graphene::runtime::effects::MockHost;
-use graphene::runtime::step::{Ctx, Done, State};
+use graphene::runtime::step::{Ctx, Done, State, Trace};
+use graphene::runtime::value::Value;
 use graphene::runtime::{bind_inputs, run, seq, Outcome, RawInputs};
 use graphene::Checked;
 use serde::Serialize;
@@ -31,6 +33,18 @@ pub struct RunView {
     /// Node id of the vertex that faulted, if any.
     pub fault_node: Option<String>,
     pub parallel_matches: Option<bool>,
+    /// v0.3: the states of every nested subgraph run (one per `call`, one
+    /// per `map`/`filter` element), in path order.
+    pub elements: Vec<ElementView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ElementView {
+    /// Path from the main program down, e.g. `[["PriceLine", 1]]`.
+    pub at: Vec<(String, Option<usize>)>,
+    /// The subgraph that ran.
+    pub group: String,
+    pub nodes: Vec<NodeState>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -42,6 +56,8 @@ pub struct NodeState {
     pub value: Option<Json>,
     /// Position in the run order (the replay step).
     pub step: usize,
+    /// For list values (e.g. a `map` result): the number of elements.
+    pub count: Option<usize>,
 }
 
 /// A run that could not start, with the reason.
@@ -52,6 +68,7 @@ pub fn failed_view(error: String) -> RunView {
         nodes: Vec::new(),
         fault_node: None,
         parallel_matches: None,
+        elements: Vec::new(),
     }
 }
 
@@ -63,6 +80,20 @@ pub fn run_view(
     mock: Option<&str>,
     parallel: bool,
 ) -> RunView {
+    match mock.map(MockHost::from_json_str).transpose() {
+        Ok(h) => run_view_with(src, args, &h.unwrap_or_else(MockHost::empty), parallel),
+        Err(e) => failed_view(format!("mock: {e}")),
+    }
+}
+
+/// Like `run_view`, against any effect host (mocks, real hosts, or a
+/// recording wrapper).
+pub fn run_view_with(
+    src: &str,
+    args: &[(String, String)],
+    host: &dyn EffectHost,
+    parallel: bool,
+) -> RunView {
     let checked = match graphene::check(src) {
         Ok(c) => c,
         Err(d) => {
@@ -72,19 +103,19 @@ pub fn run_view(
             ))
         }
     };
-    let host = match mock.map(MockHost::from_json_str).transpose() {
-        Ok(h) => h.unwrap_or_else(MockHost::empty),
-        Err(e) => return failed_view(format!("mock: {e}")),
-    };
     let inputs = match bind_inputs(&checked, RawInputs::Args(args)) {
         Ok(i) => i,
         Err(f) => return failed_view(format!("[{}] {}", f.code, f.message)),
     };
+    let trace = Trace::default();
     let ctx = Ctx {
         checked: &checked,
+        subs: &checked.subs,
         inputs: &inputs,
-        host: &host,
+        host,
         parallel: false,
+        trace: Some(&trace),
+        at: Vec::new(),
     };
     let (result, states) = seq::run_traced(&ctx);
     let output = match &result {
@@ -92,7 +123,7 @@ pub fn run_view(
         Err(e) => e.to_json(),
     };
     let parallel_matches = parallel.then(|| {
-        let par = match run(&checked, &inputs, &host, true) {
+        let par = match run(&checked, &inputs, host, true) {
             Ok(o) => o.to_json(),
             Err(e) => e.to_json(),
         };
@@ -105,10 +136,28 @@ pub fn run_view(
     RunView {
         output: Some(output),
         error: None,
-        nodes: node_states(&checked, &states, fault_node.as_deref()),
+        nodes: node_states(&checked, &states, fault_node.as_deref(), &None),
         fault_node,
         parallel_matches,
+        elements: elements(&checked, trace),
     }
+}
+
+/// Every nested run, sorted by path, with node ids in its group.
+fn elements(c: &Checked, trace: Trace) -> Vec<ElementView> {
+    let mut all = trace.into_inner().unwrap_or_default();
+    all.sort_by(|a, b| a.at.cmp(&b.at));
+    all.into_iter()
+        .filter_map(|t| {
+            let sub = c.subs.get(t.sub)?;
+            let group = c.graph.subs.get(t.sub)?.name.clone();
+            Some(ElementView {
+                at: t.at,
+                nodes: node_states(sub, &t.states, None, &Some(group.clone())),
+                group,
+            })
+        })
+        .collect()
 }
 
 /// R002 has no single faulting vertex; every other fault does.
@@ -116,7 +165,12 @@ fn e_code_ok<T>(r: &Result<T, graphene::runtime::RunError>) -> bool {
     r.as_ref().err().is_some_and(|e| e.fault.code != Code::R002)
 }
 
-fn node_states(c: &Checked, states: &[State], fault: Option<&str>) -> Vec<NodeState> {
+fn node_states(
+    c: &Checked,
+    states: &[State],
+    fault: Option<&str>,
+    group: &Option<String>,
+) -> Vec<NodeState> {
     let g = &c.graph;
     let mut out: BTreeMap<String, NodeState> = BTreeMap::new();
     for v in g.g.node_indices() {
@@ -127,9 +181,14 @@ fn node_states(c: &Checked, states: &[State], fault: Option<&str>) -> Vec<NodeSt
         let id = if vx.kind.is_op() {
             format!("s:{}", vx.line)
         } else {
-            format!("v:{}", vx.name)
+            match group {
+                Some(g) => format!("v:{g}/{}", vx.name),
+                None => format!("v:{}", vx.name),
+            }
         };
-        let state = &states[v.index()];
+        let Some(state) = states.get(v.index()) else {
+            continue;
+        };
         let status = if fault == Some(id.as_str()) && vx.kind.is_op() {
             "fault"
         } else if matches!(state, State::Inactive) {
@@ -144,6 +203,12 @@ fn node_states(c: &Checked, states: &[State], fault: Option<&str>) -> Vec<NodeSt
                 status,
                 value: value_of(state),
                 step: g.pos.get(v.index()).copied().unwrap_or(0),
+                count: match state {
+                    State::Value(Value::List(xs)) | State::Done(Done::Ok(Value::List(xs))) => {
+                        Some(xs.len())
+                    }
+                    _ => None,
+                },
             },
         );
     }
@@ -158,6 +223,10 @@ fn value_of(state: &State) -> Option<Json> {
         State::Done(Done::Err(e)) => json!({ "err": e }),
         State::Done(Done::Emitted) => json!("emitted"),
         State::Done(Done::Arm(i, _)) => json!({ "arm": i }),
+        // A subgraph's bare `out` has no name: show just its value.
+        State::Done(Done::Result(Outcome::Ok(name, v, scale))) if name.is_empty() => {
+            json!({ "ok": v.to_output_json_scaled(scale) })
+        }
         State::Done(Done::Result(Outcome::Ok(name, v, scale))) => {
             json!({ "ok": { name.clone(): v.to_output_json_scaled(scale) } })
         }
@@ -208,5 +277,34 @@ mod tests {
         assert!(r.error.is_some_and(|e| e.contains("R005")));
         let r = run_view("#!graphene 0.2\nnope\n", &[], None, false);
         assert!(r.error.is_some());
+    }
+
+    #[test]
+    fn map_runs_report_one_element_per_item() {
+        let src = include_str!("../../../examples/valid/cart_checkout.grph");
+        let mock = include_str!("../../../fixtures/cart.json");
+        let cart = r#"[{"sku":"mug","qty":2},{"sku":"desk","qty":1}]"#;
+        let a = vec![
+            ("buyer".to_string(), "7".to_string()),
+            ("cart".to_string(), cart.to_string()),
+        ];
+        let r = run_view(src, &a, Some(mock), true);
+        assert_eq!(r.parallel_matches, Some(true), "{:?}", r.output);
+        assert!(!r.elements.is_empty());
+        for el in &r.elements {
+            assert_eq!(el.at.len(), 1);
+            assert!(el.at[0].1.is_some_and(|i| i < 2));
+            let prefix = format!("v:{}/", el.group);
+            assert!(el
+                .nodes
+                .iter()
+                .all(|n| n.id.starts_with("s:") || n.id.starts_with(&prefix)));
+            // A bare `out` shows its value, not `{"": value}`.
+            assert!(el
+                .nodes
+                .iter()
+                .all(|n| n.value.as_ref().is_none_or(|v| v["ok"].get("").is_none())));
+        }
+        assert!(r.nodes.iter().any(|n| n.count == Some(2)));
     }
 }

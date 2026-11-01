@@ -49,8 +49,9 @@ pub enum Command {
     AddAssert {
         text: String,
     },
-    /// Add a step after node `from`: `f`, `fx`, `fx~`, `match`, `out`, or
-    /// `fail`. `effect` picks the extern for `fx`/`fx~`.
+    /// Add a step after node `from`: `f`, `fx`, `fx~`, `match`, `out`,
+    /// `fail`, or (v0.3) `call` / `map` / `filter`. `effect` picks the
+    /// extern for `fx`/`fx~`, or the subgraph for `call`/`map`/`filter`.
     AddStep {
         from: String,
         step: String,
@@ -76,6 +77,11 @@ pub enum Command {
     },
     SetHeader {
         version: String,
+    },
+    /// v0.3: add `graph Name(x: T -> P) -> T { P -> out }`, ready to edit.
+    AddSubgraph {
+        name: String,
+        ty: String,
     },
 }
 
@@ -111,8 +117,9 @@ pub fn apply(src: &str, cmd: &Command) -> Result<Vec<TextEdit>, String> {
         Command::Join { members, target } => ctx.join(members, target.as_deref())?,
         Command::Rename { old, new } => ctx.rename(old, new)?,
         Command::DeleteNode { name } => ctx.delete_node(name)?,
+        Command::AddSubgraph { name, ty } => ctx.add_subgraph(name, ty)?,
         Command::SetHeader { version } => {
-            if version != "0.1" && version != "0.2" {
+            if !["0.1", "0.2", "0.3"].contains(&version.as_str()) {
                 return Err(format!("unsupported version `{version}`"));
             }
             vec![text::replace_line(src, 1, &format!("#!graphene {version}"))]
@@ -442,6 +449,7 @@ impl Ctx<'_> {
                 self.type_of(from).unwrap_or_else(|| "dec".into())
             ),
             "fail" => format!("{from} -> fail Failed"),
+            "call" | "map" | "filter" => self.call_step(from, step, effect, &mut taken)?,
             other => return Err(format!("unknown step `{other}`")),
         };
         let mut edits = vec![self.insert_near(&[&from_s], &line)?];
@@ -484,6 +492,74 @@ impl Ctx<'_> {
             *extra = Some(format!("{err} -> fail"));
         }
         Ok(s)
+    }
+
+    /// A new `call` / `map` / `filter` step: the first parameter gets the
+    /// node (`each` for map/filter), the others placeholders.
+    fn call_step(
+        &self,
+        from: &str,
+        kind: &str,
+        graph: Option<&str>,
+        taken: &mut BTreeSet<String>,
+    ) -> Result<String, String> {
+        let header = self
+            .stmts
+            .iter()
+            .find_map(|(_, s)| match s {
+                Stmt::GraphHeader(h) if graph.is_none_or(|g| h.name.name == g) => Some(h.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| match graph {
+                Some(g) => format!("there is no subgraph `{g}`"),
+                None => "declare a subgraph first (`graph Name(...) -> type { ... }`)".to_string(),
+            })?;
+        let each = if kind == "call" { "" } else { "each " };
+        let args: Vec<String> = header
+            .params
+            .iter()
+            .enumerate()
+            .map(|(i, p)| match i {
+                0 => format!("{}: {each}{}", p.name.name, self.value_ref(from)),
+                _ => format!("{}: {}", p.name.name, placeholder(&p.ty)),
+            })
+            .collect();
+        let target = self.fresh("N", taken);
+        let mut line = format!(
+            "{from} -> {kind} {}({}) -> {target}",
+            header.name.name,
+            args.join(", ")
+        );
+        if !header.errors.is_empty() {
+            line.push_str(&format!(" | err -> {}", self.fresh("E", taken)));
+        }
+        Ok(line)
+    }
+
+    /// `graph Name(x: T -> P) -> T { P -> out }` after the declarations.
+    fn add_subgraph(&self, name: &str, ty: &str) -> Result<Vec<ByteEdit>, String> {
+        self.valid_name(name)?;
+        if self.defined().contains(name) || self.words.contains(name) {
+            return Err(format!("`{name}` is already used"));
+        }
+        if self.program.version < (0, 3) {
+            return Err("subgraphs need `#!graphene 0.3`; change the header first".into());
+        }
+        let nl = text::newline(self.src);
+        let block = format!("graph {name}(x: {ty} -> P) -> {ty} {{{nl}  P -> out{nl}}}");
+        let at = self
+            .last_line(|s| {
+                matches!(
+                    s,
+                    Stmt::Extern(_) | Stmt::Const(_) | Stmt::Intent(..) | Stmt::GraphEnd(_)
+                )
+            })
+            .map_or(1, |l| self.span_of(l).1);
+        Ok(vec![text::insert_after(
+            self.src,
+            at,
+            &format!("{nl}{block}"),
+        )])
     }
 
     /// The checked type of node `name`, when the program checks.

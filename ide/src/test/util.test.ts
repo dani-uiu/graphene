@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { paletteColor } from "../graph";
-import { baseName, dirName, fuzzy, short } from "../util";
+import { baseName, dirName, fuzzy, short, valueText } from "../util";
 
 describe("util", () => {
+  it("shows list values with their length", () => {
+    expect(valueText([1, 2, 3])).toBe("[3] [1,2,3]");
+    expect(valueText({ a: 1 })).toBe(short({ a: 1 }));
+    expect(valueText(Array(50).fill(7), 20).startsWith("[50] [7,7")).toBe(true);
+  });
   it("fuzzy matches letters in order", () => {
     expect(fuzzy("format document", "fmt")).toBe(true);
     expect(fuzzy("format document", "tmf")).toBe(false);

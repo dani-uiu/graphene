@@ -48,11 +48,29 @@ pub enum Done {
 /// Everything a step needs besides predecessor states.
 pub struct Ctx<'a> {
     pub checked: &'a Checked,
+    /// Every subgraph body of the program (the root's `subs`), so nested
+    /// bodies can call other subgraphs.
+    pub subs: &'a [Checked],
     pub inputs: &'a BTreeMap<String, Value>,
     pub host: &'a dyn EffectHost,
     /// Run nested subgraphs and `each` elements concurrently.
     pub parallel: bool,
+    /// Collect the states of nested runs (for tools such as the IDE).
+    pub trace: Option<&'a Trace>,
+    /// Path of this run inside its callers, e.g. `[("PriceLine", Some(1))]`.
+    pub at: Vec<(String, Option<usize>)>,
 }
+
+/// The settled states of one nested run of subgraph `sub` at path `at`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ElementTrace {
+    pub at: Vec<(String, Option<usize>)>,
+    pub sub: usize,
+    pub states: Vec<State>,
+}
+
+/// Collects `ElementTrace`s from nested runs (in any order; callers sort).
+pub type Trace = std::sync::Mutex<Vec<ElementTrace>>;
 
 /// A vertex's new state and the effect-log entries it produced (several
 /// for `call`/`map`/`filter` and `each`, in their deterministic order).

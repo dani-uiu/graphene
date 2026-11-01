@@ -125,5 +125,51 @@
         }
       ]
     }
+  },
+  {
+    "name": "basic customer pays full price",
+    "inputs": {
+      "usr_id": 2,
+      "zone": "north",
+      "kg": "2.00"
+    },
+    "mock": "../../fixtures/relaxed_join.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "quote": {
+            "rate": "1.00",
+            "shipping": "7.50"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "DbFetch",
+          "args": {
+            "key": 2,
+            "table": "usr"
+          },
+          "result": {
+            "ok": {
+              "bal": "50.00",
+              "role": "basic"
+            }
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "ShipQuote",
+          "args": {
+            "kg": "2.00",
+            "zone": "north"
+          },
+          "result": {
+            "ok": "7.50"
+          }
+        }
+      ]
+    }
   }
 ]

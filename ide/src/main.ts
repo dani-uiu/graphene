@@ -10,16 +10,9 @@ import { connect, inspector, join, rename } from "./inspector";
 import { runPanel } from "./runpanel";
 import { sidebar } from "./sidebar";
 import { defaultSettings, store, type GraphSettings } from "./store";
+import { addStep, addSubgraph, focusGroup, onFocusGroup, stepItems } from "./steps";
 import { ask, fuzzy, h, menu, mount, toast } from "./util";
 
-const STEP_ITEMS: [string, string][] = [
-  ["f", "f(…) compute"],
-  ["fx", "⚙ effect (fx)"],
-  ["fx~", "⊗ fire & forget (fx~)"],
-  ["match", "? match"],
-  ["out", "out (result)"],
-  ["fail", "fail"],
-];
 
 function build() {
   const tabsBar = h("div", { class: "tabs" });
@@ -44,7 +37,7 @@ function build() {
   });
   const graph = new GraphView(graphHost, store.settings, {
     onSelect: (ids, additive) => app.selectNodes(ids, additive),
-    onOpen: (n) => app.editor.mark([n.line], true),
+    onOpen: (n) => (n.calls ? focusGroup(n.calls) : app.editor.mark([n.line], true)),
     onContext: (n, x, y) => (n ? nodeMenu(n, x, y) : canvasMenu(x, y)),
     onConnect: (from, to, x, y) => connectGesture(from, to, x, y),
     onPinsChanged: () => app.saveLayout(),
@@ -109,9 +102,20 @@ function graphToolbar(): HTMLElement {
       app.graph.setSearch(store.search);
     },
   });
+  // Breadcrumb while drilled into a subgraph: "Program › Name".
+  const crumb = h("div", { class: "crumb", hidden: true });
+  onFocusGroup((g) => {
+    crumb.hidden = g === null;
+    if (g !== null) mount(crumb, h("button", { title: "Show the whole program (Esc)", onclick: () => focusGroup(null) }, "◂ Program"), h("span", {}, ` › ${g}`));
+  });
+  store.on("analysis", () => {
+    const g = app.graph.focusGroup;
+    if (g !== null && !store.analysis?.groups.some((x) => x.name === g)) focusGroup(null);
+  });
   return h(
     "div",
     { class: "graph-toolbar" },
+    crumb,
     search,
     h("button", { title: "Fit the graph to the view (F)", onclick: () => app.graph.fit() }, "Fit"),
     h("button", { title: "Graph settings", onclick: () => document.querySelector(".graph-settings")?.classList.toggle("open") }, "⚙"),
@@ -165,9 +169,10 @@ function nodeMenu(n: NodeView, x: number, y: number) {
   const name = app.nameOf(n);
   const items: Parameters<typeof menu>[2] = [{ label: n.detail || n.name, action: null }];
   if (name && n.kind !== "sink") {
-    for (const [step, label] of STEP_ITEMS) items.push({ label: `Add ${label}`, action: () => app.command({ cmd: "add_step", from: name, step, effect: null }) });
+    for (const [step, label] of stepItems()) items.push({ label: `Add ${label}`, action: () => addStep(name, step) });
     items.push("-", { label: "Connect to…", action: () => connect(name) });
   }
+  if (n.calls) items.push({ label: `Open subgraph ${n.calls}`, action: () => focusGroup(n.calls) });
   const sel = [...store.selection].filter((id) => id.startsWith("v:")).map((id) => id.slice(2));
   if (name && sel.length >= 2 && sel.includes(name)) items.push({ label: `Join ${sel.length} selected…`, action: () => join(sel) });
   if (name) items.push({ label: "Rename…", action: () => rename(name) });
@@ -186,6 +191,7 @@ function canvasMenu(x: number, y: number) {
     { label: "Add input…", action: () => addInput() },
     { label: "Add effect (extern)…", action: async () => { const t = await ask("New effect", "extern fx Name(arg: u64) -> u64 ! Failed"); if (t) await app.command({ cmd: "add_extern", text: t }); } },
     { label: "Add assert total", action: () => app.command({ cmd: "add_assert", text: "assert total" }) },
+    { label: "Add subgraph…", action: () => addSubgraph() },
     "-",
     { label: "Fit view", action: () => app.graph.fit() },
     { label: store.settings.local ? "Show whole graph" : "Local graph of selection", action: () => { store.settings.local = !store.settings.local; store.saveSettings(); app.graph.setSettings(store.settings); } },
@@ -209,7 +215,7 @@ function connectGesture(from: NodeView, to: NodeView | null, x: number, y: numbe
     void app.command({ cmd: "connect", from: name, to: target });
     return;
   }
-  menu(x, y, [{ label: `New step after ${name}`, action: null }, ...STEP_ITEMS.map(([step, label]) => ({ label, action: () => void app.command({ cmd: "add_step", from: name, step, effect: null }) }))]);
+  menu(x, y, [{ label: `New step after ${name}`, action: null }, ...stepItems().map(([step, label]) => ({ label, action: () => void addStep(name, step) }))]);
 }
 
 // ---------------------------------------------------------------- palette
@@ -234,6 +240,9 @@ function commands(): Cmd[] {
     { label: "Fit graph", key: "F", run: () => app.graph.fit() },
     { label: "Toggle local graph", run: () => { store.settings.local = !store.settings.local; store.saveSettings(); app.graph.setSettings(store.settings); } },
     { label: "Add input…", run: () => addInput() },
+    { label: "Add subgraph…", run: () => addSubgraph() },
+    ...(store.analysis?.groups ?? []).map((g) => ({ label: `Open subgraph ${g.name}`, run: () => focusGroup(g.name) })),
+    { label: "Show the whole program", run: () => focusGroup(null) },
     { label: "Token count", run: async () => { try { const t = await api.tokens(app.editor.text); toast(`ASCII ${t.ascii} tokens, Unicode ${t.unicode} tokens (${t.method})`); } catch (e) { toast(String(e), "error"); } } },
     { label: "Export graph as DOT…", run: exportDot },
     { label: "Copy graph image", run: copyImage },
@@ -243,10 +252,11 @@ function commands(): Cmd[] {
     { label: "Toggle light/dark theme", run: toggleTheme },
     { label: `Format on save: ${localStorage.getItem("graphene.formatOnSave") === "false" ? "off" : "on"} (toggle)`, run: () => localStorage.setItem("graphene.formatOnSave", localStorage.getItem("graphene.formatOnSave") === "false" ? "true" : "false") },
     { label: "Header: #!graphene 0.2", run: () => app.command({ cmd: "set_header", version: "0.2" }) },
+    { label: "Header: #!graphene 0.3", run: () => app.command({ cmd: "set_header", version: "0.3" }) },
   ];
   if (sel.length === 1) {
     list.push({ label: `Rename ${sel[0]}…`, run: () => rename(sel[0]) });
-    for (const [step, label] of STEP_ITEMS) list.push({ label: `Add ${label} after ${sel[0]}`, run: () => app.command({ cmd: "add_step", from: sel[0], step, effect: null }) });
+    for (const [step, label] of stepItems()) list.push({ label: `Add ${label} after ${sel[0]}`, run: () => addStep(sel[0], step) });
   }
   if (sel.length >= 2) list.push({ label: `Join ${sel.join(", ")}…`, run: () => join(sel) });
   return list;
@@ -397,6 +407,7 @@ function keys() {
     if (inField) return;
     if (e.key === "f" || e.key === "F") app.graph.fit();
     if (e.key === "Delete" || e.key === "Backspace") void deleteSelection();
+    if (e.key === "Escape" && !store.selection.size && app.graph.focusGroup !== null) return focusGroup(null);
     if (e.key === "Escape") app.selectNodes([], false);
   });
 }

@@ -46,6 +46,11 @@ export function short(v: unknown, max = 40): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
+/** A run value for display: lists lead with their length, `[3] [...]`. */
+export function valueText(v: unknown, max = 40): string {
+  return Array.isArray(v) ? `[${v.length}] ${short(v, Math.max(8, max - 6))}` : short(v, max);
+}
+
 /** Display name of a path (last segment). */
 export function baseName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
