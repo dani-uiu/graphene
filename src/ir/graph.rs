@@ -35,13 +35,15 @@ pub enum Type {
     Bool,
     Str,
     Record(BTreeMap<String, Type>),
+    /// v0.3 list of elements of one type.
+    List(Box<Type>),
     /// Value of an error node: the variant raised by effect `E`.
     Err(String),
 }
 
 impl Type {
     pub fn is_scalar(&self) -> bool {
-        !matches!(self, Type::Record(_) | Type::Err(_))
+        !matches!(self, Type::Record(_) | Type::List(_) | Type::Err(_))
     }
 
     pub fn is_numeric(&self) -> bool {
@@ -58,6 +60,7 @@ impl fmt::Display for Type {
             Type::Bool => f.write_str("bool"),
             Type::Str => f.write_str("str"),
             Type::Err(e) => write!(f, "err<{e}>"),
+            Type::List(t) => write!(f, "[{t}]"),
             Type::Record(fields) => {
                 let parts: Vec<String> = fields.iter().map(|(k, v)| format!("{k}: {v}")).collect();
                 write!(f, "{{{}}}", parts.join(", "))

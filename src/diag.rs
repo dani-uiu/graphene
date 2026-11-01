@@ -242,3 +242,30 @@ impl Diag {
         })
     }
 }
+
+/// Edit distance between two names (Levenshtein, by characters).
+pub fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut cur = vec![i + 1; b.len() + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != *cb);
+            cur[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1);
+        }
+        prev = cur;
+    }
+    prev[b.len()]
+}
+
+/// The closest candidate within edit distance 2, for "did you mean `X`?"
+/// hints (D-052). Ties go to the first candidate; exact matches are skipped.
+pub fn suggest<'a>(name: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    candidates
+        .into_iter()
+        .filter(|c| *c != name)
+        .map(|c| (edit_distance(name, c), c))
+        .filter(|(d, _)| *d <= 2 && *d < name.chars().count().max(2))
+        .min_by_key(|(d, _)| *d)
+        .map(|(_, c)| c)
+}

@@ -36,7 +36,7 @@ fn every_example_parses_without_diagnostics() {
 /// (source, expected code, expected line)
 const SYNTAX_ERRORS: &[(&str, Code, usize)] = &[
     ("in x: u64 -> A\n", Code::P003, 1),
-    ("#!graphene 0.3\nin x: u64 -> A\n", Code::P003, 1),
+    ("#!graphene 0.9\nin x: u64 -> A\n", Code::P003, 1),
     ("#!graphene 0.1\n@intent \"open\n", Code::P002, 2),
     ("#!graphene 0.1\n@intent \"bad \n escape\"\n", Code::P002, 2),
     (
@@ -131,4 +131,80 @@ fn v02_constructs_under_01_are_p006() {
         let codes: Vec<Code> = diags.iter().map(|d| d.code).collect();
         assert_eq!(codes, vec![Code::P006], "{src}");
     }
+}
+
+#[test]
+fn statements_can_span_lines_inside_brackets() {
+    let src = "#!graphene 0.3\nin x: u64 -> A\nA -> f({\n  a: x,  // first\n  b: x * 2,\n}) -> R  // last\nR -> out r: {a: u64, b: u64}\n";
+    let (prog, diags) = parse(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let stmts: Vec<_> = prog.lines.iter().filter(|l| l.stmt.is_some()).collect();
+    assert_eq!(stmts.len(), 3);
+    assert_eq!((stmts[1].at.first, stmts[1].at.last), (3, 6));
+    assert_eq!(stmts[1].comment.as_deref(), Some(" first // last"));
+    assert_eq!((stmts[2].at.first, stmts[2].at.last), (7, 7));
+}
+
+#[test]
+fn graph_blocks_parse_flat() {
+    let src = "#!graphene 0.3\ngraph Twice(x: u64 -> X) -> u64 {\n  X -> f(x * 2) -> R\n  R -> out\n}\nin y: u64 -> Y\nY -> call Twice(x: y) -> T\nT -> out t: u64\n";
+    let (prog, diags) = parse(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let kinds: Vec<&str> = prog
+        .lines
+        .iter()
+        .filter_map(|l| l.stmt.as_ref())
+        .map(|s| match s {
+            graphene::syntax::ast::Stmt::GraphHeader(_) => "header",
+            graphene::syntax::ast::Stmt::GraphEnd(_) => "end",
+            graphene::syntax::ast::Stmt::Out(o) if o.name.is_none() => "bare-out",
+            _ => "stmt",
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        ["header", "stmt", "bare-out", "end", "stmt", "stmt", "stmt"]
+    );
+}
+
+#[test]
+fn v03_constructs_under_older_headers_are_p006() {
+    let cases = [
+        ("#!graphene 0.2\nconst K: u64 = 1\n", "0.3"),
+        ("#!graphene 0.2\nin xs: [u64] -> A\n", "0.3"),
+        (
+            "#!graphene 0.2\nin x: u64 -> A\nA -> f(len([x])) -> B\n",
+            "0.3",
+        ),
+        (
+            "#!graphene 0.2\nin x: u64 -> A\nA -> call G(x: x) -> B\n",
+            "0.3",
+        ),
+        (
+            "#!graphene 0.2\nin x: u64 -> A\nA -> f({\n  a: x,\n}) -> B\n",
+            "0.3",
+        ),
+        (
+            "#!graphene 0.1\nin x: u64 -> A\nA -> f({a: x}) -> B\n",
+            "0.2",
+        ),
+    ];
+    for (src, needs) in cases {
+        let (_, diags) = parse(src);
+        let got: Vec<(Code, bool)> = diags
+            .iter()
+            .map(|d| (d.code, d.message.contains(&format!("#!graphene {needs}"))))
+            .collect();
+        assert_eq!(got, vec![(Code::P006, true)], "{src}");
+    }
+}
+
+#[test]
+fn v03_words_stay_names_in_older_files() {
+    // `map`, `each`, `const`, `graph` are contextual: a 0.2 program may
+    // still use them as node and input names.
+    let src = "#!graphene 0.2\nin each: u64 -> map\nmap -> f(each + 1) -> graph\ngraph -> out const: u64\n";
+    let (_, diags) = parse(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert!(graphene::check(src).is_ok());
 }

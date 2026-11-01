@@ -27,6 +27,8 @@ pub enum Value {
     Bool(bool),
     Str(String),
     Record(Record),
+    /// v0.3 list.
+    List(Vec<Value>),
     /// The variant held by an error node.
     Err(String),
     /// Marker held by the root and by sinks; carries no data.
@@ -69,6 +71,7 @@ impl Value {
                     .collect();
                 Json::Object(m)
             }
+            Value::List(items) => Json::Array(items.iter().map(|v| v.json_with(dec)).collect()),
         }
     }
 
@@ -102,6 +105,14 @@ impl Value {
                 }
                 Ok(Value::Record(out))
             }
+            Type::List(inner) => {
+                let items = j.as_array().ok_or_else(bad)?;
+                items
+                    .iter()
+                    .map(|x| Value::from_json(x, inner))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(Value::List)
+            }
             Type::Err(_) => Err(bad()),
         }
     }
@@ -117,6 +128,12 @@ impl Value {
             Type::Dec => Decimal::from_str_exact(text)
                 .map(Value::Dec)
                 .map_err(|_| bad(())),
+            // Lists are written as JSON on the command line (D-044).
+            Type::List(_) => {
+                let j: Json = serde_json::from_str(text)
+                    .map_err(|_| format!("`{text}` is not valid JSON for {ty}"))?;
+                Value::from_json(&j, ty)
+            }
             Type::Record(_) | Type::Err(_) => Err(format!("inputs of type {ty} are not supported")),
         }
     }
@@ -138,6 +155,9 @@ impl Value {
                 o.len() == r.len()
                     && r.iter()
                         .all(|(k, v)| o.get(k).is_some_and(|x| v.matches_json(x)))
+            }),
+            Value::List(items) => j.as_array().is_some_and(|a| {
+                a.len() == items.len() && items.iter().zip(a).all(|(v, x)| v.matches_json(x))
             }),
             Value::Err(_) | Value::Unit => false,
         }

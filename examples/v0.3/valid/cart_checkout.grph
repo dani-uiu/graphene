@@ -12,7 +12,9 @@ extern fx~ Release(reservation: str)
 extern fx~ Notify(buyer: u64, message: str)
 
 // One cart line -> its price and weight. Fails if the product is unknown.
-graph PriceLine(line: {sku: str, qty: u64} -> L) -> {sku: str, qty: u64, amount: dec, kg: dec} ! UnknownSku {
+graph PriceLine(
+  line: {sku: str, qty: u64} -> L,
+) -> {sku: str, qty: u64, amount: dec, kg: dec} ! UnknownSku {
   L -> fx Catalog(sku: line.sku) -> ITEM | err -> MISSING
   MISSING -> fail
   ITEM -> f({
@@ -26,7 +28,9 @@ graph PriceLine(line: {sku: str, qty: u64} -> L) -> {sku: str, qty: u64, amount:
 
 // Try to hold stock for one line. Never fails: reports whether it worked,
 // so the caller can release the holds that did succeed.
-graph TryReserve(line: {sku: str, qty: u64, amount: dec, kg: dec} -> L) -> {sku: str, held: bool, reservation: str} {
+graph TryReserve(
+  line: {sku: str, qty: u64, amount: dec, kg: dec} -> L,
+) -> {sku: str, held: bool, reservation: str} {
   L -> fx Reserve(sku: line.sku, qty: line.qty) -> RES | err -> NONE
   RES -> f({sku: line.sku, held: true, reservation: RES}) -> TRY
   NONE -> f({sku: line.sku, held: false, reservation: ""}) -> TRY
@@ -55,7 +59,10 @@ LINES -> map TryReserve(line: each LINES) -> TRIES
 TRIES -> match all(TRIES.held) { true => ALL_HELD, false => SOME_SHORT }
 SOME_SHORT -> filter IsHeld(try: each TRIES) -> PARTIAL
 PARTIAL -> fx~ Release(reservation: each PARTIAL.reservation) -> sink UNDO_PARTIAL
-SOME_SHORT -> fx~ Notify(buyer: buyer, message: "an item in your cart is out of stock") -> sink TOLD_SHORT
+SOME_SHORT -> fx~ Notify(
+  buyer: buyer,
+  message: "an item in your cart is out of stock",
+) -> sink TOLD_SHORT
 SOME_SHORT -> fail OutOfStock
 
 // 3. Total: tax on the goods, plus a fee per heavy line.

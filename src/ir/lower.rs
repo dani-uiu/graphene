@@ -258,7 +258,8 @@ impl Lower<'_> {
         match &t.kind {
             TyKind::U64 => Type::U64,
             TyKind::I64 => Type::I64,
-            TyKind::Dec => Type::Dec,
+            TyKind::Dec | TyKind::DecScale(_) => Type::Dec,
+            TyKind::List(inner) => Type::List(Box::new(self.ty(inner))),
             TyKind::Bool => Type::Bool,
             TyKind::Str => Type::Str,
             TyKind::Record(fields) => {
@@ -285,11 +286,14 @@ impl Lower<'_> {
             Stmt::Flow(f) => self.build_flow(f),
             Stmt::Match(m) => self.build_match(m),
             Stmt::Out(o) => {
-                let ty = self.ty(&o.ty);
+                let (Some(name), Some(t)) = (&o.name, &o.ty) else {
+                    return self.unsupported(o.pos.0, "a bare `out` outside a subgraph");
+                };
+                let ty = self.ty(t);
                 let kind = VKind::Out {
-                    name: o.name.name.clone(),
+                    name: name.name.clone(),
                     ty,
-                    ty_span: o.ty.pos.0,
+                    ty_span: t.pos.0,
                 };
                 self.op(kind, "out", o.pos.0, std::slice::from_ref(&o.source));
             }
@@ -398,11 +402,15 @@ impl Lower<'_> {
             Op::Pure(e) => self.expr(e).map(|expr| VKind::Pure { expr }),
             Op::Fx { effect, args } => self.effect_op(effect, args, false),
             Op::FxAsync { effect, args } => self.effect_op(effect, args, true),
+            Op::Call { kind, graph, .. } => {
+                return self.unsupported(graph.span(), &format!("`{}`", kind.keyword()));
+            }
         };
         let name = match &f.op {
             Op::Pure(_) => "f".to_string(),
             Op::Fx { effect, .. } => format!("fx {}", effect.name),
             Op::FxAsync { effect, .. } => format!("fx~ {}", effect.name),
+            Op::Call { kind, graph, .. } => format!("{} {}", kind.keyword(), graph.name),
         };
         let Some(kind) = kind else { return };
         let Some(op) = self.op(kind, &name, f.pos.0, &f.sources) else {
@@ -541,6 +549,10 @@ impl Lower<'_> {
                 IKind::Binary(*op, Box::new(l?), Box::new(r?))
             }
             ExprKind::Record(fields) => self.record_lit(fields)?,
+            ExprKind::List(_) | ExprKind::Builtin(..) => {
+                self.unsupported(e.span(), "lists and built-in functions");
+                return None;
+            }
             ExprKind::Convert(to, x) => {
                 let to = match to {
                     NumTy::U64 => Type::U64,
@@ -554,6 +566,16 @@ impl Lower<'_> {
             kind,
             span: e.span(),
         })
+    }
+
+    /// Temporary while v0.3 is implemented: constructs the checker does not
+    /// handle yet are reported instead of silently ignored.
+    fn unsupported(&mut self, span: Span, what: &str) {
+        self.diags.push(
+            Diag::new(Code::G003, span, format!("{what} is not supported yet"))
+                .label("v0.3 work in progress")
+                .help("this construct parses, but checking it lands in a later v0.3 phase"),
+        );
     }
 
     /// Lower a record literal, reporting duplicate fields (G013).

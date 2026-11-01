@@ -143,8 +143,7 @@ impl<'a> Ctx<'a> {
         let stmts = program
             .lines
             .iter()
-            .enumerate()
-            .filter_map(|(i, l)| l.stmt.clone().map(|s| (i + 2, s)))
+            .filter_map(|l| l.stmt.clone().map(|s| (l.at.first, s)))
             .collect();
         let words = src
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
@@ -183,7 +182,8 @@ impl<'a> Ctx<'a> {
     pub fn comment(&self, line: usize) -> Option<&str> {
         self.program
             .lines
-            .get(line.checked_sub(2)?)
+            .iter()
+            .find(|l| l.at.first == line)
             .and_then(|l| l.comment.as_deref())
     }
 
@@ -324,7 +324,8 @@ pub fn mentions(stmt: &Stmt, name: &str) -> bool {
 fn placeholder(t: &Ty) -> String {
     match &t.kind {
         TyKind::U64 | TyKind::I64 => "0".into(),
-        TyKind::Dec => "0.00".into(),
+        TyKind::Dec | TyKind::DecScale(_) => "0.00".into(),
+        TyKind::List(_) => "[]".into(),
         TyKind::Bool => "false".into(),
         TyKind::Str => "\"\"".into(),
         TyKind::Record(fields) => {
@@ -391,39 +392,8 @@ impl Ctx<'_> {
         let mut extra = None;
         let line = match step {
             "f" => format!("{from} -> f({r}) -> {}", self.fresh("N", &mut taken)),
-            "fx" => {
-                let e = self.extern_of(effect, false)?;
-                let args: Vec<String> = e
-                    .params
-                    .iter()
-                    .map(|p| format!("{}: {}", p.name.name, placeholder(&p.ty)))
-                    .collect();
-                let target = self.fresh("N", &mut taken);
-                let mut s = format!(
-                    "{from} -> fx {}({}) -> {target}",
-                    e.name.name,
-                    args.join(", ")
-                );
-                if !e.errors.is_empty() {
-                    let err = self.fresh("E", &mut taken);
-                    s.push_str(&format!(" | err -> {err}"));
-                    extra = Some(format!("{err} -> fail"));
-                }
-                s
-            }
-            "fx~" => {
-                let e = self.extern_of(effect, true)?;
-                let args: Vec<String> = e
-                    .params
-                    .iter()
-                    .map(|p| format!("{}: {}", p.name.name, placeholder(&p.ty)))
-                    .collect();
-                let sink = self.fresh("S", &mut taken);
-                format!(
-                    "{from} -> fx~ {}({}) -> sink {sink}",
-                    e.name.name,
-                    args.join(", ")
-                )
+            "fx" | "fx~" => {
+                self.effect_step(from, step == "fx~", effect, &mut taken, &mut extra)?
             }
             "match" => format!(
                 "{from} -> match {r} {{ _ => {} }}",
@@ -444,6 +414,38 @@ impl Ctx<'_> {
             edits[0].insert.push_str(&format!("{nl}{rendered}"));
         }
         Ok(edits)
+    }
+
+    /// The text of a new `fx` / `fx~` step, with placeholder arguments.
+    /// For an `fx` with declared errors, `extra` receives `E -> fail`.
+    fn effect_step(
+        &self,
+        from: &str,
+        is_async: bool,
+        effect: Option<&str>,
+        taken: &mut BTreeSet<String>,
+        extra: &mut Option<String>,
+    ) -> Result<String, String> {
+        let e = self.extern_of(effect, is_async)?;
+        let args: Vec<String> = e
+            .params
+            .iter()
+            .map(|p| format!("{}: {}", p.name.name, placeholder(&p.ty)))
+            .collect();
+        let call = format!("{}({})", e.name.name, args.join(", "));
+        if is_async {
+            return Ok(format!(
+                "{from} -> fx~ {call} -> sink {}",
+                self.fresh("S", taken)
+            ));
+        }
+        let mut s = format!("{from} -> fx {call} -> {}", self.fresh("N", taken));
+        if !e.errors.is_empty() {
+            let err = self.fresh("E", taken);
+            s.push_str(&format!(" | err -> {err}"));
+            *extra = Some(format!("{err} -> fail"));
+        }
+        Ok(s)
     }
 
     /// The checked type of node `name`, when the program checks.
@@ -573,6 +575,14 @@ fn name_spans(stmt: &Stmt, name: &str, out: &mut Vec<graphene::diag::Span>) {
                         expr_spans(&a.value, name, out);
                     }
                 }
+                Op::Call { graph, args, .. } => {
+                    if graph.name == name {
+                        out.push(graph.span());
+                    }
+                    for a in args {
+                        expr_spans(&a.value, name, out);
+                    }
+                }
             }
             let mut id = |i: &Ident| {
                 if i.name == name {
@@ -612,6 +622,11 @@ fn expr_spans(e: &Expr, name: &str, out: &mut Vec<graphene::diag::Span>) {
         }
         ExprKind::Record(fields) => {
             for (_, x) in fields {
+                expr_spans(x, name, out);
+            }
+        }
+        ExprKind::List(items) | ExprKind::Builtin(_, items) => {
+            for x in items {
                 expr_spans(x, name, out);
             }
         }

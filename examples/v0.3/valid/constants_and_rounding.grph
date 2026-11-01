@@ -15,6 +15,13 @@ A -> f({
   total: round(amount * (1.00 + SERVICE + VAT), 2),
   note: "thanks, " + guest,
 }) -> BILL
-BILL -> out bill: {service: dec, vat_exact: dec(4), vat_down: dec(1), vat_up: dec(1), total: dec, note: str}
+BILL -> out bill: {
+  service: dec,
+  vat_exact: dec(4),
+  vat_down: dec(1),
+  vat_up: dec(1),
+  total: dec,
+  note: str,
+}
 
 assert total

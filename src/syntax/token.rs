@@ -109,6 +109,12 @@ pub(crate) enum Raw {
     LBrace,
     #[token("}")]
     RBrace,
+    #[token("[")]
+    LBracket,
+    #[token("]")]
+    RBracket,
+    #[token("=")]
+    Assign,
     #[token(",")]
     Comma,
     #[token(":")]
@@ -161,6 +167,9 @@ pub enum Tok {
     RParen,
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
+    Assign,
     Comma,
     Colon,
     Dot,
@@ -223,6 +232,9 @@ impl Tok {
             Tok::RParen => ")",
             Tok::LBrace => "{",
             Tok::RBrace => "}",
+            Tok::LBracket => "[",
+            Tok::RBracket => "]",
+            Tok::Assign => "=",
             Tok::Comma => ",",
             Tok::Colon => ":",
             Tok::Dot => ".",

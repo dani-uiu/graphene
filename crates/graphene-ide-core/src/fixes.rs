@@ -35,19 +35,7 @@ pub fn fixes_for(src: &str, d: &Diag) -> Vec<Fix> {
         (Code::P006, _) => header(&ctx),
         (Code::G009, _) if d.help.contains("#!graphene 0.2") => header(&ctx),
         (Code::G005, Some(Stmt::Flow(f))) => err_edges(&ctx, d, line, f),
-        (Code::G004, Some(Stmt::Match(m))) => {
-            let mut taken = BTreeSet::new();
-            let n = ctx.fresh("N", &mut taken);
-            let mut m = m.clone();
-            m.arms.push(Arm {
-                pat: Pat::Wild(Pos::default()),
-                target: ident(&n),
-            });
-            Some((
-                format!("Add a `_ => {n}` arm"),
-                vec![ctx.regenerate(line, &Stmt::Match(m))],
-            ))
-        }
+        (Code::G004, Some(Stmt::Match(m))) => wildcard_arm(&ctx, line, m),
         (Code::G014, Some(s)) => redundant(&ctx, d, line, s),
         (Code::G011, _) => Some((
             "Remove this `out`".into(),
@@ -83,6 +71,20 @@ pub fn fixes_for(src: &str, d: &Diag) -> Vec<Fix> {
         })
         .into_iter()
         .collect()
+}
+
+/// G004: add a `_ => N` arm to a non-exhaustive match.
+fn wildcard_arm(ctx: &Ctx, line: usize, mut m: MatchStmt) -> Found {
+    let mut taken = BTreeSet::new();
+    let n = ctx.fresh("N", &mut taken);
+    m.arms.push(Arm {
+        pat: Pat::Wild(Pos::default()),
+        target: ident(&n),
+    });
+    Some((
+        format!("Add a `_ => {n}` arm"),
+        vec![ctx.regenerate(line, &Stmt::Match(m))],
+    ))
 }
 
 fn ident(name: &str) -> Ident {

@@ -1,5 +1,6 @@
-//! Hand-written recursive-descent parser. One statement per line; on a
-//! syntax error the parser records P001 and resumes at the next line.
+//! Hand-written recursive-descent parser. One statement per line, where a
+//! line break inside open brackets continues the statement (v0.3, D-050);
+//! on a syntax error the parser records P001 and resumes at the next line.
 //!
 //! Depends on: `syntax::lexer`, `syntax::token`, `syntax::ast`, `diag`.
 //!
@@ -7,8 +8,11 @@
 //! - lines containing a lexical error (`Tok::Error`) are skipped, because
 //!   the lexer already reported them;
 //! - every P001 carries a help line showing the expected statement shape;
-//! - the returned `Program` contains one `Line` per source line after the
-//!   header, so the formatter can preserve comments and blank lines.
+//! - the returned `Program` contains one `Line` per statement, blank line,
+//!   or comment line after the header, each with the source lines it spans,
+//!   so the formatter can preserve comments and blank lines;
+//! - `graph` blocks stay flat (header line, body lines, `}` line); their
+//!   nesting is validated later by `syntax::blocks`.
 
 use super::ast::*;
 use super::lexer::lex;
@@ -26,6 +30,9 @@ const HELP_EXTERN: &str =
 const HELP_INPUT: &str = "an input looks like `in name: type -> Node`, or `in name: type` (0.2)";
 const HELP_OUT: &str = "results look like `X -> out name: type`, `X -> fail`, or `X -> fail Name`";
 const HELP_ASSERT: &str = "assertions are `assert total` or `assert indep(Sink, out)`";
+const HELP_CONST: &str = "a constant looks like `const NAME: type = literal`";
+const HELP_GRAPH: &str =
+    "a subgraph starts with `graph Name(param: type -> Node) -> type ! Errors {` and ends with `}` on its own line";
 const HELP_STMT: &str =
     "statements start with `in`, `extern`, `assert`, `@intent`, `(`, or a node name";
 
@@ -34,7 +41,8 @@ pub fn parse(src: &str) -> (Program, Vec<Diag>) {
     let lexed = lex(src);
     let mut diags = lexed.diags;
     let mut lines = Vec::new();
-    for raw in split_lines(&lexed.tokens) {
+    let starts = LineStarts::new(src);
+    for raw in split_lines(&lexed.tokens, &starts) {
         lines.push(parse_line(raw, &mut diags));
     }
     // Drop the phantom empty line produced by a trailing newline.
@@ -42,7 +50,8 @@ pub fn parse(src: &str) -> (Program, Vec<Diag>) {
         lines.last(),
         Some(Line {
             stmt: None,
-            comment: None
+            comment: None,
+            ..
         })
     ) {
         lines.pop();
@@ -51,60 +60,114 @@ pub fn parse(src: &str) -> (Program, Vec<Diag>) {
         version: lexed.version,
         lines,
     };
-    if program.version < (0, 2) {
+    if program.version < (0, 3) {
         super::features::gate(&program, &mut diags);
     }
     crate::diag::sort(&mut diags);
     (program, diags)
 }
 
-/// Split the token stream into lines, excluding the `Nl`/`Eof` terminator
-/// but keeping it as the last element for "end of line" spans.
-fn split_lines(tokens: &[Token]) -> Vec<&[Token]> {
+/// Byte offsets where each source line starts, for line numbers.
+struct LineStarts(Vec<usize>);
+
+impl LineStarts {
+    fn new(src: &str) -> LineStarts {
+        let mut v = vec![0];
+        v.extend(src.match_indices('\n').map(|(i, _)| i + 1));
+        LineStarts(v)
+    }
+
+    /// 1-based line containing byte `offset`.
+    fn line(&self, offset: usize) -> usize {
+        match self.0.binary_search(&offset) {
+            Ok(i) => i + 1,
+            Err(i) => i,
+        }
+    }
+}
+
+/// The tokens of one logical line (one statement, possibly spanning
+/// several source lines), without line breaks and comments.
+#[derive(Default)]
+struct RawLine {
+    toks: Vec<Token>,
+    comments: Vec<String>,
+    at: LineSpan,
+    /// Span of the terminator, used for "found end of line".
+    end: Span,
+}
+
+/// Split the token stream into logical lines. A line break ends a line
+/// only outside brackets (D-050); the `{` that ends a `graph` header line
+/// opens a block, not a bracket, and a `}` closing one never goes below 0.
+fn split_lines(tokens: &[Token], starts: &LineStarts) -> Vec<RawLine> {
     let mut out = Vec::new();
-    let mut start = 0;
+    let mut cur = RawLine::default();
+    let mut depth = 0usize;
+    let mut fresh = true;
     for (i, t) in tokens.iter().enumerate() {
-        if matches!(t.tok, Tok::Nl | Tok::Eof) {
-            out.push(&tokens[start..=i]);
-            start = i + 1;
+        if fresh {
+            cur.at.first = starts.line(t.span.start);
+            fresh = false;
+        }
+        match &t.tok {
+            Tok::Eof | Tok::Nl if depth == 0 || t.tok == Tok::Eof => {
+                cur.at.last = starts.line(t.span.start);
+                cur.end = t.span;
+                out.push(std::mem::take(&mut cur));
+                depth = 0;
+                fresh = true;
+            }
+            Tok::Nl => {}
+            Tok::Comment(c) => cur.comments.push(c.clone()),
+            tok => {
+                match tok {
+                    Tok::LParen | Tok::LBracket => depth += 1,
+                    Tok::LBrace if !opens_block(&cur.toks, &tokens[i + 1..]) => depth += 1,
+                    Tok::RParen | Tok::RBracket | Tok::RBrace => depth = depth.saturating_sub(1),
+                    _ => {}
+                }
+                cur.toks.push(t.clone());
+            }
         }
     }
     out
 }
 
-fn parse_line(raw: &[Token], diags: &mut Vec<Diag>) -> Line {
-    let (body, comment) = match raw {
-        [rest @ .., Token {
-            tok: Tok::Comment(c),
-            ..
-        }, _] => (rest, Some(c.clone())),
-        [rest @ .., _] => (rest, None),
-        [] => (raw, None),
+/// True for the `{` that ends a `graph Name(...) -> T {` header line.
+fn opens_block(line: &[Token], rest: &[Token]) -> bool {
+    let is_graph = matches!(line.first().map(|t| &t.tok), Some(Tok::Ident(w)) if w == "graph");
+    let next = rest.iter().find(|t| !matches!(t.tok, Tok::Comment(_)));
+    is_graph && matches!(next.map(|t| &t.tok), None | Some(Tok::Nl | Tok::Eof))
+}
+
+fn parse_line(raw: RawLine, diags: &mut Vec<Diag>) -> Line {
+    let comment = match raw.comments.len() {
+        0 => None,
+        _ => Some(raw.comments.join(" //")),
     };
-    if body.is_empty() || body.iter().any(|t| t.tok == Tok::Error) {
-        return Line {
-            stmt: None,
-            comment,
-        };
+    let blank = |comment| Line {
+        stmt: None,
+        comment,
+        at: raw.at,
+    };
+    if raw.toks.is_empty() || raw.toks.iter().any(|t| t.tok == Tok::Error) {
+        return blank(comment);
     }
-    // `raw` always ends with its terminator, so `last()` exists.
-    let end = raw.last().map_or(Span::default(), |t| t.span);
     let mut p = P {
-        toks: body,
+        toks: &raw.toks,
         pos: 0,
-        end,
+        end: raw.end,
     };
     match p.statement() {
         Ok(stmt) => Line {
             stmt: Some(stmt),
             comment,
+            at: raw.at,
         },
         Err(d) => {
             diags.push(d);
-            Line {
-                stmt: None,
-                comment,
-            }
+            blank(comment)
         }
     }
 }
@@ -217,6 +280,16 @@ impl<'t> P<'t> {
             Tok::In => (self.input(), HELP_INPUT),
             Tok::Assert => (self.assertion(), HELP_ASSERT),
             Tok::LParen => (self.flow(), HELP_FLOW),
+            Tok::Ident(w) if w == "const" && self.word_then(Tok::Colon) => {
+                (self.const_decl(), HELP_CONST)
+            }
+            Tok::Ident(w) if w == "graph" && self.word_then(Tok::LParen) => {
+                (self.graph_header(), HELP_GRAPH)
+            }
+            Tok::RBrace if self.toks.len() == 1 => {
+                let span = self.bump().span;
+                (Ok(Stmt::GraphEnd(Pos(span))), HELP_GRAPH)
+            }
             Tok::Ident(_) => self.arrow_statement(),
             _ => (Err(self.error("a statement")), HELP_STMT),
         };
@@ -237,6 +310,11 @@ impl<'t> P<'t> {
         }
         match self.peek_at(2) {
             Tok::F | Tok::Fx | Tok::FxAsync => (self.flow(), HELP_FLOW),
+            Tok::Ident(w)
+                if CallKind::from_word(w).is_some() && matches!(self.peek_at(3), Tok::Ident(_)) =>
+            {
+                (self.flow(), HELP_FLOW)
+            }
             Tok::Match => (self.match_stmt(), HELP_MATCH),
             Tok::Out | Tok::Fail => (self.output(), HELP_OUT),
             _ => {
@@ -245,6 +323,72 @@ impl<'t> P<'t> {
                 (Err(self.error(what)), HELP_FLOW)
             }
         }
+    }
+
+    /// `KEYWORD IDENT <then>`: distinguishes `const X:` and `graph G(` from
+    /// nodes named `const` or `graph` (contextual words, like `total`).
+    fn word_then(&self, then: Tok) -> bool {
+        matches!(self.peek_at(1), Tok::Ident(_))
+            && std::mem::discriminant(self.peek_at(2)) == std::mem::discriminant(&then)
+    }
+
+    fn const_decl(&mut self) -> PResult<Stmt> {
+        let start = self.bump().span;
+        let name = self.ident("a constant name")?;
+        self.expect(Tok::Colon, "`:`")?;
+        let ty = self.ty()?;
+        self.expect(Tok::Assign, "`=`")?;
+        let value = self.expr()?;
+        Ok(Stmt::Const(ConstDecl {
+            name,
+            ty,
+            value,
+            pos: self.since(start),
+        }))
+    }
+
+    fn graph_header(&mut self) -> PResult<Stmt> {
+        let start = self.bump().span;
+        let name = self.ident("a subgraph name")?;
+        self.expect(Tok::LParen, "`(`")?;
+        let params = self.list(Tok::RParen, "parameters", |p| p.param())?;
+        self.expect(Tok::Arrow, "`->` and the result type")?;
+        let ret = self.ty()?;
+        let mut errors = Vec::new();
+        if self.eat(&Tok::Bang) {
+            errors.push(self.ident("an error name")?);
+            while self.eat(&Tok::Pipe) {
+                errors.push(self.ident("an error name")?);
+            }
+        }
+        let pos = self.since(start);
+        self.expect(Tok::LBrace, "`{` at the end of the line")?;
+        Ok(Stmt::GraphHeader(GraphHeader {
+            name,
+            params,
+            ret,
+            errors,
+            pos,
+        }))
+    }
+
+    /// A subgraph parameter: `name: type [-> Node]`, like an input.
+    fn param(&mut self) -> PResult<Input> {
+        let start = self.span();
+        let name = self.ident("a parameter name")?;
+        self.expect(Tok::Colon, "`:`")?;
+        let ty = self.ty()?;
+        let node = if self.eat(&Tok::Arrow) {
+            Some(self.ident("a node name")?)
+        } else {
+            None
+        };
+        Ok(Input {
+            name,
+            ty,
+            node,
+            pos: self.since(start),
+        })
     }
 
     fn intent(&mut self) -> PResult<Stmt> {
@@ -394,16 +538,44 @@ impl<'t> P<'t> {
                     Op::Fx { effect, args }
                 })
             }
-            _ => Err(self.error("`f`, `fx`, or `fx~`")),
+            Tok::Ident(w) if CallKind::from_word(w).is_some() => {
+                let kind = CallKind::from_word(w).unwrap_or(CallKind::Call);
+                self.bump();
+                let graph = self.ident("a subgraph name")?;
+                self.expect(Tok::LParen, "`(`")?;
+                let args = self.list(Tok::RParen, "arguments", |p| p.arg())?;
+                Ok(Op::Call { kind, graph, args })
+            }
+            _ => Err(self.error("`f`, `fx`, `fx~`, `call`, `map`, or `filter`")),
         }
     }
 
     fn arg(&mut self) -> PResult<Arg> {
         let name = self.ident("an argument name")?;
         self.expect(Tok::Colon, "`:` after the argument name")?;
+        // `each` is a contextual word: it is the keyword only when an
+        // expression clearly follows (`x: each`, `x: each.f`, `x: each + 1`
+        // still name a node called `each`).
+        let each = matches!(self.peek(), Tok::Ident(w) if w == "each")
+            && matches!(
+                self.peek_at(1),
+                Tok::Ident(_)
+                    | Tok::Int(_)
+                    | Tok::Dec(_)
+                    | Tok::Str(_)
+                    | Tok::True
+                    | Tok::False
+                    | Tok::LParen
+                    | Tok::LBracket
+                    | Tok::LBrace
+            );
+        if each {
+            self.bump();
+        }
         Ok(Arg {
             name,
             value: self.expr()?,
+            each,
         })
     }
 
@@ -471,13 +643,22 @@ impl<'t> P<'t> {
                 pos: self.since(start),
             }));
         }
+        if self.at(&Tok::Nl) {
+            // Bare `out` ends a subgraph body (v0.3).
+            return Ok(Stmt::Out(OutStmt {
+                source,
+                name: None,
+                ty: None,
+                pos: self.since(start),
+            }));
+        }
         let name = self.ident("an output name")?;
         self.expect(Tok::Colon, "`:`")?;
         let ty = self.ty()?;
         Ok(Stmt::Out(OutStmt {
             source,
-            name,
-            ty,
+            name: Some(name),
+            ty: Some(ty),
             pos: self.since(start),
         }))
     }
@@ -507,6 +688,17 @@ impl<'t> P<'t> {
                 pos: self.since(start),
             });
         }
+        if self.eat(&Tok::LBracket) {
+            let inner = self.ty()?;
+            self.expect(Tok::RBracket, "`]`")?;
+            return Ok(Ty {
+                kind: TyKind::List(Box::new(inner)),
+                pos: self.since(start),
+            });
+        }
+        if matches!(self.peek(), Tok::Ident(n) if n == "dec") && self.peek_at(1) == &Tok::LParen {
+            return self.dec_scale(start);
+        }
         let kind = match self.peek() {
             Tok::Ident(n) => match n.as_str() {
                 "u64" => TyKind::U64,
@@ -526,10 +718,32 @@ impl<'t> P<'t> {
     }
 }
 
+impl P<'_> {
+    /// `dec(N)`: a decimal emitted with N places (v0.3).
+    fn dec_scale(&mut self, start: Span) -> PResult<Ty> {
+        self.bump();
+        self.bump();
+        let n = match self.peek() {
+            Tok::Int(n) if *n <= 28 => *n as u32,
+            _ => {
+                return Err(self
+                    .error("a scale from 0 to 28")
+                    .help("write the output scale as `dec(2)` … `dec(28)`"))
+            }
+        };
+        self.bump();
+        self.expect(Tok::RParen, "`)`")?;
+        Ok(Ty {
+            kind: TyKind::DecScale(n),
+            pos: self.since(start),
+        })
+    }
+}
+
 fn type_error(span: Span, name: &str) -> Diag {
     Diag::new(Code::P001, span, format!("unknown type `{name}`"))
         .label("not a type")
-        .help("types are `u64`, `i64`, `dec`, `bool`, `str`, or a record `{name: type, ...}`")
+        .help("types are `u64`, `i64`, `dec`, `bool`, `str`, a record `{name: type, ...}`, or a list `[type]`")
 }
 
 fn with_help(d: Diag, help: &str) -> Diag {
@@ -652,6 +866,7 @@ impl P<'_> {
                 })
             }
             Tok::LBrace => self.record_lit(),
+            Tok::LBracket => self.list_lit(),
             Tok::LParen => {
                 self.bump();
                 let e = self.expr()?;
@@ -664,17 +879,30 @@ impl P<'_> {
 }
 
 impl P<'_> {
-    /// `u64(e)`, `i64(e)`, or `dec(e)`; the caller saw `IDENT (`.
+    /// `u64(e)`, `i64(e)`, `dec(e)`, or a built-in such as `len(xs)`;
+    /// the caller saw `IDENT (`.
     fn conversion(&mut self) -> PResult<Expr> {
-        let id = self.ident("a conversion")?;
+        let id = self.ident("a function")?;
+        if let Some(b) = Builtin::from_name(&id.name) {
+            self.bump(); // `(`
+            let args = self.list(Tok::RParen, "arguments", |p| p.expr())?;
+            return Ok(Expr {
+                kind: ExprKind::Builtin(b, args),
+                pos: self.since(id.span()),
+            });
+        }
         let Some(to) = NumTy::from_name(&id.name) else {
+            let mut known: Vec<&str> = Builtin::ALL.iter().map(|b| b.name()).collect();
+            known.extend(["u64", "i64", "dec"]);
+            let hint = crate::diag::suggest(&id.name, known.iter().copied())
+                .map_or(String::new(), |s| format!("did you mean `{s}`? "));
             return Err(Diag::new(
                 Code::P001,
                 id.span(),
                 format!("`{}` is not a function", id.name),
             )
             .label("unknown function")
-            .help("the only calls in expressions are the conversions `u64(x)`, `i64(x)`, and `dec(x)`; effects are called with `fx`"));
+            .help(format!("{hint}functions are {} and the conversions `u64`, `i64`, `dec`; effects are called with `fx`", Builtin::ALL.map(|b| format!("`{}`", b.name())).join(", "))));
         };
         self.bump(); // `(`
         let inner = self.expr()?;
@@ -682,6 +910,16 @@ impl P<'_> {
         Ok(Expr {
             kind: ExprKind::Convert(to, Box::new(inner)),
             pos: self.since(id.span()),
+        })
+    }
+
+    /// `[e, ...]` (possibly empty); the caller saw `[`.
+    fn list_lit(&mut self) -> PResult<Expr> {
+        let start = self.bump().span;
+        let items = self.list(Tok::RBracket, "a list", |p| p.expr())?;
+        Ok(Expr {
+            kind: ExprKind::List(items),
+            pos: self.since(start),
         })
     }
 

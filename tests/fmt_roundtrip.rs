@@ -115,9 +115,15 @@ fn expr() -> impl Strategy<Value = Expr> {
                 .prop_map(|fs| ex(ExprKind::Record(fs))),
             (
                 prop::sample::select(vec![NumTy::U64, NumTy::I64, NumTy::Dec]),
-                inner
+                inner.clone()
             )
                 .prop_map(|(t, e)| ex(ExprKind::Convert(t, Box::new(e)))),
+            prop::collection::vec(inner.clone(), 0..3).prop_map(|xs| ex(ExprKind::List(xs))),
+            (
+                prop::sample::select(Builtin::ALL.to_vec()),
+                prop::collection::vec(inner, 1..3)
+            )
+                .prop_map(|(b, xs)| ex(ExprKind::Builtin(b, xs))),
         ]
     })
 }
@@ -134,21 +140,31 @@ fn ty() -> impl Strategy<Value = Ty> {
         kind,
         pos: Pos::default(),
     });
-    scalar.prop_recursive(2, 8, 3, |inner| {
-        prop::collection::vec((ident(), inner), 1..3).prop_map(|fs| Ty {
-            kind: TyKind::Record(
-                fs.into_iter()
-                    .map(|(name, ty)| Field { name, ty })
-                    .collect(),
-            ),
-            pos: Pos::default(),
-        })
+    let scaled = (0u32..=28).prop_map(|n| Ty {
+        kind: TyKind::DecScale(n),
+        pos: Pos::default(),
+    });
+    prop_oneof![scalar, scaled].prop_recursive(2, 8, 3, |inner| {
+        prop_oneof![
+            prop::collection::vec((ident(), inner.clone()), 1..3).prop_map(|fs| Ty {
+                kind: TyKind::Record(
+                    fs.into_iter()
+                        .map(|(name, ty)| Field { name, ty })
+                        .collect(),
+                ),
+                pos: Pos::default(),
+            }),
+            inner.prop_map(|t| Ty {
+                kind: TyKind::List(Box::new(t)),
+                pos: Pos::default(),
+            }),
+        ]
     })
 }
 
 fn args() -> impl Strategy<Value = Vec<Arg>> {
     prop::collection::vec(
-        (ident(), expr()).prop_map(|(name, value)| Arg { name, value }),
+        (ident(), expr(), any::<bool>()).prop_map(|(name, value, each)| Arg { name, value, each }),
         0..3,
     )
 }
@@ -158,6 +174,12 @@ fn op() -> impl Strategy<Value = Op> {
         expr().prop_map(Op::Pure),
         (ident(), args()).prop_map(|(effect, args)| Op::Fx { effect, args }),
         (ident(), args()).prop_map(|(effect, args)| Op::FxAsync { effect, args }),
+        (
+            prop::sample::select(vec![CallKind::Call, CallKind::Map, CallKind::Filter]),
+            ident(),
+            args()
+        )
+            .prop_map(|(kind, graph, args)| Op::Call { kind, graph, args }),
     ]
 }
 
@@ -239,10 +261,46 @@ fn stmt() -> impl Strategy<Value = Stmt> {
         ),
         (ident(), ident(), ty()).prop_map(move |(source, name, ty)| Stmt::Out(OutStmt {
             source,
-            name,
-            ty,
+            name: Some(name),
+            ty: Some(ty),
             pos: p()
         })),
+        ident().prop_map(move |source| Stmt::Out(OutStmt {
+            source,
+            name: None,
+            ty: None,
+            pos: p()
+        })),
+        (ident(), ty(), expr()).prop_map(move |(name, ty, value)| Stmt::Const(ConstDecl {
+            name,
+            ty,
+            value,
+            pos: p()
+        })),
+        (
+            ident(),
+            prop::collection::vec((ident(), ty(), prop::option::of(ident())), 0..3),
+            ty(),
+            prop::collection::vec(ident(), 0..3)
+        )
+            .prop_map(
+                move |(name, ps, ret, errors)| Stmt::GraphHeader(GraphHeader {
+                    name,
+                    params: ps
+                        .into_iter()
+                        .map(|(name, ty, node)| Input {
+                            name,
+                            ty,
+                            node,
+                            pos: p()
+                        })
+                        .collect(),
+                    ret,
+                    errors,
+                    pos: p(),
+                })
+            ),
+        Just(Stmt::GraphEnd(p())),
         (ident(), prop::option::of(ident())).prop_map(move |(source, name)| Stmt::Fail(FailStmt {
             source,
             name,
@@ -254,11 +312,18 @@ fn stmt() -> impl Strategy<Value = Stmt> {
 }
 
 fn program() -> impl Strategy<Value = Program> {
-    let line = (prop::option::of(stmt()), prop::option::of("[ -~]{0,10}"))
-        .prop_map(|(stmt, comment)| Line { stmt, comment });
-    // v0.2 is a superset of v0.1, so 0.2 programs cover every construct.
+    let line =
+        (prop::option::of(stmt()), prop::option::of("[ -~]{0,10}")).prop_map(|(stmt, comment)| {
+            Line {
+                stmt,
+                comment,
+                at: LineSpan::default(),
+            }
+        });
+    // v0.3 is a superset of older versions, so 0.3 programs cover every
+    // construct.
     prop::collection::vec(line, 0..12).prop_map(|lines| Program {
-        version: (0, 2),
+        version: (0, 3),
         lines,
     })
 }

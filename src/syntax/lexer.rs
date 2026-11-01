@@ -17,10 +17,10 @@ use super::token::{Raw, Tok, Token};
 use crate::diag::{Code, Diag, Span};
 
 /// Versions accepted by this implementation (D-036).
-pub const VERSIONS: [(u32, u32); 2] = [(0, 1), (0, 2)];
+pub const VERSIONS: [(u32, u32); 3] = [(0, 1), (0, 2), (0, 3)];
 
 /// The newest version; used when the header is missing or unsupported.
-pub const LATEST: (u32, u32) = (0, 2);
+pub const LATEST: (u32, u32) = (0, 3);
 
 pub struct Lexed {
     pub tokens: Vec<Token>,
@@ -69,7 +69,7 @@ fn header(src: &str, diags: &mut Vec<Diag>) -> (usize, (u32, u32)) {
                 "missing `#!graphene` header",
             )
             .label("expected the header here")
-            .help("the first line of every file must be `#!graphene 0.2`"),
+            .help("the first line of every file must be `#!graphene 0.3`"),
         );
         return (start, LATEST);
     };
@@ -81,8 +81,8 @@ fn header(src: &str, diags: &mut Vec<Diag>) -> (usize, (u32, u32)) {
                 span,
                 format!("unsupported version `{}`", version.trim()),
             )
-            .label("this compiler implements Graphene 0.1 and 0.2")
-            .help("change the header to `#!graphene 0.2`"),
+            .label("this compiler implements Graphene 0.1, 0.2, and 0.3")
+            .help("change the header to `#!graphene 0.3`"),
         );
     }
     ((line_end + 1).min(src.len()), parsed.unwrap_or(LATEST))
@@ -151,6 +151,9 @@ fn simple(raw: Raw) -> Tok {
         Raw::RParen => Tok::RParen,
         Raw::LBrace => Tok::LBrace,
         Raw::RBrace => Tok::RBrace,
+        Raw::LBracket => Tok::LBracket,
+        Raw::RBracket => Tok::RBracket,
+        Raw::Assign => Tok::Assign,
         Raw::Comma => Tok::Comma,
         Raw::Colon => Tok::Colon,
         Raw::Dot => Tok::Dot,

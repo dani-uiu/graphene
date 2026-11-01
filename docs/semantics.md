@@ -351,7 +351,7 @@ v0.2 is a strict superset of v0.1: changing a valid `0.1` file's header to `0.2`
 
 ## 7. Version 0.3
 
-v0.3 is a strict superset of v0.2. Under an older header, every construct below is **P006**, with the message "requires `#!graphene 0.3`". The words `graph`, `call`, `map`, `filter`, `each` and `const` are reserved only under a `0.3` header. Rationale: `docs/v0.3.md`, decisions D-043 to D-054.
+v0.3 is a strict superset of v0.2. Under an older header, every construct below is **P006**, with the message "requires `#!graphene 0.3`". The words `graph`, `call`, `map`, `filter`, `each` and `const` are contextual, like `total` and `indep`. They act as keywords only where a statement, operation or argument starts, so programs of every version may still use them as names. `each` is the keyword only when an expression clearly follows it. Rationale: `docs/v0.3.md`, decisions D-043 to D-054.
 
 ### 7.1 Statements over several lines (D-050)
 

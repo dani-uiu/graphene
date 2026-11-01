@@ -32,13 +32,33 @@ pub struct Program {
     pub lines: Vec<Line>,
 }
 
-/// One source line after the header. Both fields empty means a blank line.
+/// One statement (or a blank or comment-only line) after the header.
+/// Both fields empty means a blank line. Since v0.3 a statement may span
+/// several source lines (D-050); `at` records where.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Line {
     pub stmt: Option<Stmt>,
-    /// Comment text after `//`, verbatim.
+    /// Comment text after `//`, verbatim. Comments written inside a
+    /// multi-line statement are joined here, in order.
     pub comment: Option<String>,
+    pub at: LineSpan,
 }
+
+/// First and last source line (1-based) of a `Line`. Like `Pos`, it is
+/// ignored by equality, so reformatting never changes the AST.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LineSpan {
+    pub first: usize,
+    pub last: usize,
+}
+
+impl PartialEq for LineSpan {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for LineSpan {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ident {
@@ -56,6 +76,13 @@ impl Ident {
 pub enum Stmt {
     Intent(String, Pos),
     Extern(Extern),
+    /// v0.3 `const NAME: T = e`.
+    Const(ConstDecl),
+    /// v0.3 `graph Name(params) -> T ! Errors {` (the body follows as
+    /// ordinary lines up to the matching `GraphEnd`).
+    GraphHeader(GraphHeader),
+    /// v0.3 `}` closing a subgraph body.
+    GraphEnd(Pos),
     Input(Input),
     Flow(Flow),
     Match(MatchStmt),
@@ -71,6 +98,24 @@ pub struct Extern {
     pub name: Ident,
     pub params: Vec<Field>,
     pub ret: Option<Ty>,
+    pub errors: Vec<Ident>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstDecl {
+    pub name: Ident,
+    pub ty: Ty,
+    pub value: Expr,
+    pub pos: Pos,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraphHeader {
+    pub name: Ident,
+    /// Parameters, written like inputs: `name: T [-> Node]`.
+    pub params: Vec<Input>,
+    pub ret: Ty,
     pub errors: Vec<Ident>,
     pub pos: Pos,
 }
@@ -105,14 +150,54 @@ pub struct ErrEdge {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Op {
     Pure(Expr),
-    Fx { effect: Ident, args: Vec<Arg> },
-    FxAsync { effect: Ident, args: Vec<Arg> },
+    Fx {
+        effect: Ident,
+        args: Vec<Arg>,
+    },
+    FxAsync {
+        effect: Ident,
+        args: Vec<Arg>,
+    },
+    /// v0.3 `call` / `map` / `filter` of a subgraph.
+    Call {
+        kind: CallKind,
+        graph: Ident,
+        args: Vec<Arg>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallKind {
+    Call,
+    Map,
+    Filter,
+}
+
+impl CallKind {
+    pub fn keyword(self) -> &'static str {
+        match self {
+            CallKind::Call => "call",
+            CallKind::Map => "map",
+            CallKind::Filter => "filter",
+        }
+    }
+
+    pub fn from_word(w: &str) -> Option<CallKind> {
+        match w {
+            "call" => Some(CallKind::Call),
+            "map" => Some(CallKind::Map),
+            "filter" => Some(CallKind::Filter),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arg {
     pub name: Ident,
     pub value: Expr,
+    /// v0.3 `name: each list` (D-044, D-049).
+    pub each: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,8 +245,9 @@ impl Pat {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutStmt {
     pub source: Ident,
-    pub name: Ident,
-    pub ty: Ty,
+    /// `None` for the bare `out` that ends a subgraph body (v0.3).
+    pub name: Option<Ident>,
+    pub ty: Option<Ty>,
     pub pos: Pos,
 }
 
@@ -189,9 +275,13 @@ pub enum TyKind {
     U64,
     I64,
     Dec,
+    /// v0.3 `dec(N)`: a `dec` emitted with N decimal places.
+    DecScale(u32),
     Bool,
     Str,
     Record(Vec<Field>),
+    /// v0.3 `[T]`.
+    List(Box<Ty>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,6 +315,67 @@ pub enum ExprKind {
     Record(Vec<(Ident, Expr)>),
     /// v0.2 numeric conversion `u64(e)`, `i64(e)`, `dec(e)`.
     Convert(NumTy, Box<Expr>),
+    /// v0.3 list literal `[e, ...]`.
+    List(Vec<Expr>),
+    /// v0.3 built-in function call, e.g. `len(xs)`, `round(x, 2)`.
+    Builtin(Builtin, Vec<Expr>),
+}
+
+/// v0.3 built-in functions (names stay ordinary identifiers, D-044).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Builtin {
+    Len,
+    Sum,
+    Min,
+    Max,
+    All,
+    Any,
+    Contains,
+    Round,
+    Floor,
+    Ceil,
+}
+
+impl Builtin {
+    pub const ALL: [Builtin; 10] = [
+        Builtin::Len,
+        Builtin::Sum,
+        Builtin::Min,
+        Builtin::Max,
+        Builtin::All,
+        Builtin::Any,
+        Builtin::Contains,
+        Builtin::Round,
+        Builtin::Floor,
+        Builtin::Ceil,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Builtin::Len => "len",
+            Builtin::Sum => "sum",
+            Builtin::Min => "min",
+            Builtin::Max => "max",
+            Builtin::All => "all",
+            Builtin::Any => "any",
+            Builtin::Contains => "contains",
+            Builtin::Round => "round",
+            Builtin::Floor => "floor",
+            Builtin::Ceil => "ceil",
+        }
+    }
+
+    pub fn from_name(n: &str) -> Option<Builtin> {
+        Builtin::ALL.into_iter().find(|b| b.name() == n)
+    }
+
+    /// Number of arguments the function takes.
+    pub fn arity(self) -> usize {
+        match self {
+            Builtin::Contains | Builtin::Round | Builtin::Floor | Builtin::Ceil => 2,
+            _ => 1,
+        }
+    }
 }
 
 /// Target type of a numeric conversion.

@@ -116,9 +116,9 @@ pub struct DiagView {
 pub fn analyze(src: &str) -> Analysis {
     let (program, parse_diags) = graphene::parse(src);
     let mut b = Builder::new(src, &program);
-    for (i, line) in program.lines.iter().enumerate() {
+    for line in &program.lines {
         if let Some(stmt) = &line.stmt {
-            b.stmt(i + 2, stmt);
+            b.stmt(line.at.first, stmt);
         }
     }
     let (diags, checked) = if parse_diags.is_empty() {
@@ -300,8 +300,14 @@ impl<'a> Builder<'a> {
             Stmt::Flow(f) => self.flow(line, f),
             Stmt::Match(m) => self.match_stmt(line, m),
             Stmt::Out(o) => {
-                let detail = format!("out {}: {}", o.name.name, format_ty(&o.ty));
-                let id = self.op_node(line, "out", &format!("out {}", o.name.name), detail, None);
+                let (label, detail) = match (&o.name, &o.ty) {
+                    (Some(n), Some(t)) => (
+                        format!("out {}", n.name),
+                        format!("out {}: {}", n.name, format_ty(t)),
+                    ),
+                    _ => ("out".to_string(), "out".to_string()),
+                };
+                let id = self.op_node(line, "out", &label, detail, None);
                 let s = self.value(&o.source, line, None);
                 self.edge(&s, &id, "flow", None, line);
             }
@@ -314,6 +320,8 @@ impl<'a> Builder<'a> {
                 let s = self.value(&f.source, line, None);
                 self.edge(&s, &id, "flow", None, line);
             }
+            // Subgraphs and constants get their own view in IDE phase F.
+            Stmt::Const(_) | Stmt::GraphHeader(_) | Stmt::GraphEnd(_) => {}
             Stmt::AssertTotal(_) => self.asserts.push(AssertView {
                 text: "assert total".into(),
                 line,
@@ -384,6 +392,7 @@ impl<'a> Builder<'a> {
             Op::Pure(_) => ("op", "f".to_string(), "f"),
             Op::Fx { effect, .. } => ("op", effect.name.clone(), "fx"),
             Op::FxAsync { effect, .. } => ("op", effect.name.clone(), "fx~"),
+            Op::Call { kind, graph, .. } => ("op", graph.name.clone(), kind.keyword()),
         };
         let id = self.op_node(line, kind, &name, format_op(&f.op, style), Some(op));
         for s in &f.sources {
@@ -392,7 +401,7 @@ impl<'a> Builder<'a> {
         }
         match &f.op {
             Op::Pure(e) => self.refs(e, &id, line),
-            Op::Fx { args, .. } | Op::FxAsync { args, .. } => {
+            Op::Fx { args, .. } | Op::FxAsync { args, .. } | Op::Call { args, .. } => {
                 for a in args {
                     self.refs(&a.value, &id, line);
                 }
@@ -526,6 +535,11 @@ pub fn collect_names(e: &Expr, out: &mut BTreeSet<String>) {
         }
         ExprKind::Record(fields) => {
             for (_, x) in fields {
+                collect_names(x, out);
+            }
+        }
+        ExprKind::List(items) | ExprKind::Builtin(_, items) => {
+            for x in items {
                 collect_names(x, out);
             }
         }
