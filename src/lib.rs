@@ -11,6 +11,7 @@
 
 pub mod cases;
 pub mod check;
+pub mod codes;
 pub mod diag;
 pub mod dot;
 pub mod fmt;

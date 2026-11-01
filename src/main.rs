@@ -89,6 +89,37 @@ enum Cmd {
     Graph { file: PathBuf },
     /// Print approximate token counts for the ASCII and Unicode forms.
     Tokens { file: PathBuf },
+    /// Explain a diagnostic or fault code (e.g. G007), or list them all.
+    Explain { code: Option<String> },
+}
+
+/// `graphene explain [CODE]`: one code in full, or the whole table.
+fn cmd_explain(code: Option<&str>) -> ExitCode {
+    use graphene::codes::{lookup, CODES};
+    let Some(code) = code else {
+        for c in CODES {
+            println!("{}  {:<9}  {}", c.code, c.stage, c.meaning);
+        }
+        return ExitCode::SUCCESS;
+    };
+    match lookup(code) {
+        Some(c) => {
+            println!(
+                "{} ({})
+{}
+
+{}",
+                c.code, c.stage, c.meaning, c.fix
+            );
+            ExitCode::SUCCESS
+        }
+        None => {
+            let near = graphene::diag::suggest(&code.to_uppercase(), CODES.iter().map(|c| c.code));
+            let hint = near.map_or(String::new(), |n| format!(" Did you mean {n}?"));
+            eprintln!("error: unknown code `{code}`.{hint} Run `graphene explain` for the list.");
+            ExitCode::from(2)
+        }
+    }
 }
 
 fn parse_kv(s: &str) -> Result<(String, String), String> {
@@ -137,6 +168,7 @@ fn main() -> ExitCode {
         } => cmd_fmt(&file, unicode, write),
         Cmd::Graph { file } => cmd_graph(&file),
         Cmd::Tokens { file } => cmd_tokens(&file),
+        Cmd::Explain { code } => cmd_explain(code.as_deref()),
     }
 }
 

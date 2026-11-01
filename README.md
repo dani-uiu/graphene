@@ -157,7 +157,7 @@ Every diagnostic has a stable code, points at the exact source span, and include
 | P003 | lex | Missing or unsupported `#!graphene` header |
 | P004 | lex | Numeric literal out of range |
 | P005 | lex | Invalid character (including `#` outside the header) |
-| P006 | parse | A v0.2 construct under a `#!graphene 0.1` header |
+| P006 | parse | A construct newer than the file's `#!graphene` header |
 | G001 | structure | Cycle detected |
 | G002 | names | Undefined name, an input node used in an expression, or an unknown error variant |
 | G003 | types | Type mismatch: expressions, effect signatures and arguments, merge writers, `out` |
@@ -165,13 +165,16 @@ Every diagnostic has a stable code, points at the exact source span, and include
 | G005 | types | An `fx` error variant has no error edge, or an error edge can never fire |
 | G006 | flow | Merge writers are not mutually exclusive |
 | G007 | flow | Join members can be inactive independently |
-| G008 | flow | Dead end: a value never reaches `out`, `fail`, or a sink; or an unused input |
+| G008 | flow | Dead end: a value never reaches `out`, `fail`, or a sink; or an unused input or constant |
 | G009 | flow | Reference violates the dominance rule (input names are exempt in 0.2) |
 | G010 | structure | `fx~` target is not a sink, or a sink is referenced or has outgoing edges |
 | G011 | structure | Zero or multiple `out` statements |
 | G012 | types | Division by a non-literal or zero divisor |
 | G013 | names | Duplicate definition, including a repeated record field |
 | G014 | types | Redundant match arm or error edge |
+| G015 | structure | Recursive subgraphs (a cycle in the call graph) |
+| G016 | types | `each` missing, repeated, or not a list |
+| G017 | types | Subgraph signature broken (wrong result type, undeclared error raised) |
 | G020 | assert | `assert total` fails; the diagnostic includes a counterexample |
 | G021 | assert | `assert indep` fails; the diagnostic includes the offending path |
 | R001 | runtime | Arithmetic overflow or underflow |
@@ -179,6 +182,8 @@ Every diagnostic has a stable code, points at the exact source span, and include
 | R003 | runtime | The mock host has no response for an effect call |
 | R004 | runtime | The host returned a wrongly typed value or an undeclared error |
 | R005 | runtime | An input is missing, unknown, or does not parse as its type |
+| R006 | runtime | `min` / `max` of an empty list |
+| R007 | runtime | Real host failure (timeout, transport, malformed answer) |
 
 ## Layout
 

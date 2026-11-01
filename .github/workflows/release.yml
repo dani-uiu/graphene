@@ -1,0 +1,44 @@
+name: Release
+
+# Pushing a tag like v0.3.0 builds the desktop IDE and attaches the
+# installers to a GitHub release. The installers are not code-signed, so
+# Windows SmartScreen / Smart App Control may warn before running them.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ide/src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ide/package-lock.json
+      - name: Install
+        working-directory: ide
+        run: npm ci
+      - name: Build installers
+        working-directory: ide
+        run: npx tauri build
+      - name: Build the graphene CLI
+        run: cargo build --release
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Graphene ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            ide/src-tauri/target/release/bundle/msi/*.msi
+            ide/src-tauri/target/release/bundle/nsis/*.exe
+            target/release/graphene.exe

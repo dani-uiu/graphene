@@ -220,3 +220,19 @@ fn run_with_host_config_records_a_replayable_fixture() {
     assert_eq!(replay.status.code(), Some(0), "{}", stderr(&replay));
     assert_eq!(stdout(&live), stdout(&replay));
 }
+
+#[test]
+fn explain_covers_every_code_the_examples_produce() {
+    for (name, path) in common::examples("invalid") {
+        let expected = common::read(&path.with_extension("expected"));
+        let code = expected.trim().split(':').next().unwrap_or_default();
+        let o = graphene(&["explain", code]);
+        assert_eq!(o.status.code(), Some(0), "{name}: {}", stderr(&o));
+        assert!(stdout(&o).starts_with(code), "{name}");
+    }
+    let list = graphene(&["explain"]);
+    assert!(stdout(&list).lines().count() >= 30);
+    let unknown = graphene(&["explain", "G99"]);
+    assert_eq!(unknown.status.code(), Some(2));
+    assert!(stderr(&unknown).contains("unknown code"));
+}

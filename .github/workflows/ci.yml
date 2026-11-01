@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Language (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --workspace
+      - name: Test cases (sequential and parallel) with coverage
+        run: cargo run --release -- test --parallel --coverage --min-outcomes 80
+
+  ide:
+    name: IDE (windows-latest)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            ide/src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ide/package-lock.json
+      - name: Install
+        working-directory: ide
+        run: npm ci
+      - name: Typecheck, unit tests, build
+        working-directory: ide
+        run: |
+          npm run check
+          npm test
+          npm run build
+      - name: Clippy (desktop app)
+        working-directory: ide/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Smoke test (headless Edge against the dev bridge)
+        run: |
+          cargo build -p graphene-ide-core --example bridge
+          target/debug/examples/bridge.exe 1421 &
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://127.0.0.1:1421/ && break; sleep 1; done
+          cd ide && SHOTS=e2e/shots node e2e/smoke.mjs
+      - name: Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screenshots
+          path: ide/e2e/shots
+          if-no-files-found: ignore
