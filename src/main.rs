@@ -18,7 +18,8 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use graphene::diag::{render, Diag};
 use graphene::fmt::{format, Style};
-use graphene::runtime::effects::MockHost;
+use graphene::runtime::effects::{EffectHost, MockHost};
+use graphene::runtime::hosts::{RealHost, RecordingHost};
 use graphene::runtime::{bind_inputs, run, RawInputs};
 
 #[derive(Parser)]
@@ -56,8 +57,14 @@ enum Cmd {
         #[arg(long = "arg", value_parser = parse_kv)]
         args: Vec<(String, String)>,
         /// JSON fixture with mock effect responses.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "host")]
         mock: Option<PathBuf>,
+        /// Host configuration: real HTTP/command effects (D-048).
+        #[arg(long)]
+        host: Option<PathBuf>,
+        /// Write every effect answer to this mock fixture, for replay.
+        #[arg(long)]
+        record: Option<PathBuf>,
         /// Use the parallel executor.
         #[arg(long)]
         parallel: bool,
@@ -94,8 +101,17 @@ fn main() -> ExitCode {
             file,
             args,
             mock,
+            host,
+            record,
             parallel,
-        } => cmd_run(&file, &args, mock.as_deref(), parallel),
+        } => {
+            let hosts = Hosts {
+                mock: mock.as_deref(),
+                config: host.as_deref(),
+                record: record.as_deref(),
+            };
+            cmd_run(&file, &args, &hosts, parallel)
+        }
         Cmd::Fmt {
             file,
             unicode,
@@ -242,18 +258,28 @@ fn case_outcome(
     }
 }
 
-fn cmd_run(
-    path: &Path,
-    args: &[(String, String)],
-    mock: Option<&Path>,
-    parallel: bool,
-) -> ExitCode {
+/// Where `run` gets effect answers, and where it records them.
+struct Hosts<'a> {
+    mock: Option<&'a Path>,
+    config: Option<&'a Path>,
+    record: Option<&'a Path>,
+}
+
+fn make_host(h: &Hosts) -> Result<Box<dyn EffectHost>, String> {
+    Ok(match (h.config, h.mock) {
+        (Some(cfg), _) => Box::new(RealHost::from_file(cfg)?),
+        (None, Some(m)) => Box::new(MockHost::from_file(m)?),
+        (None, None) => Box::new(MockHost::empty()),
+    })
+}
+
+fn cmd_run(path: &Path, args: &[(String, String)], hosts: &Hosts, parallel: bool) -> ExitCode {
     let (_, checked) = match load(path) {
         Ok(x) => x,
         Err(code) => return code,
     };
-    let host = match mock.map(MockHost::from_file).transpose() {
-        Ok(h) => h.unwrap_or_else(MockHost::empty),
+    let host = match make_host(hosts) {
+        Ok(h) => h,
         Err(e) => {
             eprintln!("error: {e}");
             return ExitCode::from(1);
@@ -266,7 +292,18 @@ fn cmd_run(
             return ExitCode::from(1);
         }
     };
-    match run(&checked, &inputs, &host, parallel) {
+    let recorder = RecordingHost::new(host.as_ref());
+    let result = run(&checked, &inputs, &recorder, parallel);
+    if let Some(out) = hosts.record {
+        let text = pretty(&recorder.fixture())
+            + "
+";
+        if let Err(e) = std::fs::write(out, text) {
+            eprintln!("error: cannot write {}: {e}", out.display());
+            return ExitCode::from(1);
+        }
+    }
+    match result {
         Ok(out) => {
             println!("{}", pretty(&out.to_json()));
             ExitCode::SUCCESS

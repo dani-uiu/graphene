@@ -31,6 +31,8 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tiktoken-rs = { version = "0.6", optional = true }
+# Blocking HTTP client for real effect hosts (D-048); no async runtime.
+ureq = "2"
 
 [dev-dependencies]
 insta = "1"

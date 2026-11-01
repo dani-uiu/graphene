@@ -198,6 +198,7 @@ fn host_call(ctx: &Ctx, decl: &ExternDecl, rec: &Record, span: Span) -> Result<R
             let msg = format!("host returned an invalid value for `{}`: {why}", decl.name);
             return Err(Fault::new(Code::R004, span, msg));
         }
+        Err(HostError::Transport(why)) => return Err(Fault::new(Code::R007, span, why)),
     };
     if let Reply::Err(e) = &reply {
         if !decl.errors.contains(e) {

@@ -12,6 +12,7 @@
 pub mod calls;
 pub mod effects;
 pub mod eval;
+pub mod hosts;
 pub mod par;
 pub mod seq;
 pub mod step;

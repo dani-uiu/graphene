@@ -32,6 +32,9 @@ pub enum HostError {
     NoResponse,
     /// The configured response does not fit the declared type (R004).
     Invalid(String),
+    /// A real host failed: timeout, transport error, non-zero exit, or a
+    /// malformed answer (R007, D-048).
+    Transport(String),
 }
 
 pub trait EffectHost: Sync {

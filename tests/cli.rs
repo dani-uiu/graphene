@@ -186,3 +186,37 @@ fn graph_labels_v02_error_edges_and_parameters() {
     assert!(dot.contains("label=\"err NotFound\""), "{dot}");
     assert!(dot.contains("in usr_id"), "{dot}");
 }
+
+#[test]
+fn run_with_host_config_records_a_replayable_fixture() {
+    let dir = std::env::temp_dir().join(format!("graphene-rec-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let users = common::root().join("fixtures/users.json");
+    let cfg = dir.join("hosts.json");
+    let config = serde_json::json!({ "default": format!("mock:{}", users.display()) });
+    std::fs::write(&cfg, config.to_string()).expect("write config");
+    let rec = dir.join("recorded.json");
+    let live = graphene(&[
+        "run",
+        "examples/valid/pricing.grph",
+        "--arg",
+        "usr_id=1",
+        "--host",
+        &cfg.display().to_string(),
+        "--record",
+        &rec.display().to_string(),
+    ]);
+    assert_eq!(live.status.code(), Some(0), "{}", stderr(&live));
+    let replay = graphene(&[
+        "run",
+        "examples/valid/pricing.grph",
+        "--arg",
+        "usr_id=1",
+        "--mock",
+        &rec.display().to_string(),
+        "--parallel",
+    ]);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(replay.status.code(), Some(0), "{}", stderr(&replay));
+    assert_eq!(stdout(&live), stdout(&replay));
+}
