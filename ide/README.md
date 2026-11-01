@@ -24,7 +24,10 @@ A desktop app for writing, viewing, and running Graphene programs. The text edit
 - **Coloring:** by kind, active condition, or type.
 - **Local graph:** shows only the selection's neighborhood.
 
-Pinned nodes are saved next to the program in `<file>.grph.layout.json`.
+**Arranging the graph:**
+- Drag a node to place it. It stays where you drop it; **Unpin** in the inspector or the right-click menu hands it back to the automatic layout.
+- Each open tab keeps its whole arrangement (every node position, plus zoom and pan) while you switch between tabs.
+- Placed nodes are also saved next to the program, in `<file>.grph.layout.json`, so they come back when you reopen the file.
 
 **Shortcuts:**
 

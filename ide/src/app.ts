@@ -6,7 +6,7 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import type { EditorState } from "@codemirror/state";
 import { api, type Command, type NodeView, type TextEdit } from "./api";
 import { Editor } from "./editor";
-import { GraphView } from "./graph";
+import { GraphView, type GraphSnapshot } from "./graph";
 import { store, type Tab } from "./store";
 import { baseName, debounce, toast } from "./util";
 
@@ -24,6 +24,8 @@ export class App {
   editor!: Editor;
   graph!: GraphView;
   private states = new Map<Tab, EditorState>();
+  /** Each tab's graph arrangement, kept while switching tabs. */
+  private layouts = new Map<Tab, GraphSnapshot>();
   private analyzedText = "";
   private analyzing = false;
   private pending = false;
@@ -162,11 +164,13 @@ export class App {
     void this.show(store.tabs.length - 1);
   }
 
-  /** Remember the editor state (with undo history) of the current tab. */
+  /** Remember the current tab's editor state (with undo history) and its
+   *  graph arrangement (node positions, pins, zoom and pan). */
   private stash() {
     const t = store.tab;
     if (t) {
       this.states.set(t, this.editor.snapshot());
+      this.layouts.set(t, this.graph.snapshot());
       t.text = this.editor.text;
     }
   }
@@ -186,20 +190,25 @@ export class App {
     this.graph.setReplay(null);
     store.emit("run", null);
     this.graph.clear();
+    const kept = tab ? this.layouts.get(tab) : undefined;
     if (tab) {
       this.editor.load(this.states.get(tab) ?? this.editor.fresh(tab.text));
-      await this.loadLayout(tab);
+      if (kept) this.graph.restore(kept);
+      else await this.loadLayout(tab);
     }
     store.emit("tabs", undefined);
     await this.analyze();
-    this.graph.fit();
+    if (!kept) this.graph.fit();
   }
 
   closeTab(i: number) {
     const tab = store.tabs[i];
     if (tab && tab.text !== tab.saved && !confirm(`${tab.name} has unsaved changes. Close anyway?`)) return;
     store.tabs.splice(i, 1);
-    if (tab) this.states.delete(tab);
+    if (tab) {
+      this.states.delete(tab);
+      this.layouts.delete(tab);
+    }
     if (!store.tabs.length) {
       store.active = -1;
       this.newTab();

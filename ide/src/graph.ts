@@ -33,6 +33,13 @@ interface GLink extends SimulationLinkDatum<GNode> {
   target: GNode;
 }
 
+/** A tab's graph as the user left it: positions, pins, and camera. */
+export interface GraphSnapshot {
+  positions: Map<string, [number, number]>;
+  pins: Map<string, [number, number]>;
+  view: { x: number; y: number; k: number };
+}
+
 export interface GraphHooks {
   onSelect: (ids: string[], additive: boolean) => void;
   onOpen: (node: NodeView) => void;
@@ -66,6 +73,7 @@ export class GraphView {
   private drag: Drag | null = null;
   private view = { x: 0, y: 0, k: 1 };
   private fitted = false;
+  private restoring: GraphSnapshot | null = null;
   private dirty = true;
   private colors: Record<string, string> = {};
   /** Pinned positions loaded from the layout sidecar, by node id. */
@@ -135,6 +143,22 @@ export class GraphView {
       if (n.x === undefined) this.place(n, next);
     }
     this.all = next;
+    const restoring = this.restoring;
+    this.restoring = null;
+    if (restoring) {
+      // Coming back to a tab: put every node exactly where it was and
+      // keep the camera; only nodes that are new since then move.
+      for (const n of next.values()) {
+        const p = restoring.positions.get(n.id);
+        if (p) [n.x, n.y] = p;
+        n.vx = n.vy = 0;
+      }
+      for (const n of next.values()) if (n.x === undefined) this.place(n, next);
+      this.view = { ...restoring.view };
+      this.fitted = true;
+      this.rebuild(false);
+      return;
+    }
     this.rebuild();
     if (!this.fitted && this.visible.length) {
       // Let the layout settle a little before the first fit.
@@ -163,6 +187,31 @@ export class GraphView {
     this.links = [];
     this.fitted = false;
     this.hover = null;
+    this.restoring = null;
+  }
+
+  /** Everything needed to show this graph again exactly as it is now. */
+  snapshot(): GraphSnapshot {
+    return { positions: this.positions(), pins: new Map(this.pins), view: { ...this.view } };
+  }
+
+  /** Restore a snapshot; applied by the next `update` for this program. */
+  restore(s: GraphSnapshot) {
+    this.clear();
+    this.pins = new Map(s.pins);
+    this.restoring = s;
+  }
+
+  /** Current position of a node in graph coordinates. */
+  positionOf(id: string): [number, number] | null {
+    const n = this.all.get(id);
+    return n && n.x !== undefined && n.y !== undefined ? [n.x, n.y] : null;
+  }
+
+  /** Where a node is drawn, in canvas pixels (for tests and tooltips). */
+  screenOf(id: string): [number, number] | null {
+    const p = this.positionOf(id);
+    return p && [p[0] * this.view.k + this.view.x, p[1] * this.view.k + this.view.y];
   }
 
   setSelection(ids: Set<string>) {
@@ -232,8 +281,9 @@ export class GraphView {
     return this.all.get(id)?.pinned ?? false;
   }
 
-  /** Recompute which nodes are shown and restart the layout on them. */
-  private rebuild() {
+  /** Recompute which nodes are shown and restart the layout on them.
+   *  `reheat: false` keeps the current arrangement still. */
+  private rebuild(reheat = true) {
     const s = this.settings;
     const shown = (n: GNode) => {
       const k = n.data.kind;
@@ -256,7 +306,8 @@ export class GraphView {
       (l) => ids.has(l.source.id) && ids.has(l.target.id) && (l.data.kind !== "ref" || l.source.data.kind === "param"),
     );
     (this.sim.force("link") as ReturnType<typeof forceLink<GNode, GLink>>).links(flow);
-    this.sim.alpha(Math.max(this.sim.alpha(), 0.35)).restart();
+    if (reheat) this.sim.alpha(Math.max(this.sim.alpha(), 0.35)).restart();
+    else this.sim.alpha(0).stop();
     this.dirty = true;
   }
 
@@ -450,11 +501,12 @@ export class GraphView {
       this.sim.alphaTarget(0);
       if (!d.moved) {
         this.hooks.onSelect([d.node.id], d.additive);
-      } else if (d.node.pinned) {
+      } else {
+        // A dropped node stays where the user put it (a manual
+        // arrangement); "Unpin" hands it back to the layout.
+        d.node.pinned = true;
         this.pins.set(d.node.id, [d.node.fx ?? 0, d.node.fy ?? 0]);
         this.hooks.onPinsChanged();
-      } else {
-        d.node.fx = d.node.fy = null;
       }
     } else if (d.kind === "pan" && !d.moved) {
       this.hooks.onSelect([], false);

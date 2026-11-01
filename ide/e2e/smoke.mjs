@@ -7,7 +7,7 @@
 // Env: BRIDGE (default http://127.0.0.1:1421), BROWSER (path to msedge or
 // chrome), SHOTS (folder for screenshots, default e2e/shots).
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import puppeteer from "puppeteer-core";
 
@@ -60,6 +60,33 @@ await g(() => window.__graphene.app.selectNodes(["v:B"], false));
 await settle(300);
 check("selecting B marks editor lines", (await page.$$(".cm-graph-selected")).length >= 3);
 await shot("2-selected");
+
+// 2b. Manual arrangement survives switching tabs.
+{
+  const canvas = await page.$(".graph-canvas");
+  const box = await canvas.boundingBox();
+  const [sx, sy] = await g(() => window.__graphene.app.graph.screenOf("v:B"));
+  await page.mouse.move(box.x + sx, box.y + sy);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) await page.mouse.move(box.x + sx + i * 12, box.y + sy + i * 8);
+  await page.mouse.up();
+  await settle(900);
+  const placed = await g(() => window.__graphene.app.graph.positionOf("v:B"));
+  const other = await g(() => window.__graphene.app.graph.positionOf("v:D"));
+  const view = await g(() => window.__graphene.app.graph.snapshot().view);
+  check("dropped node stays pinned", await g(() => window.__graphene.app.graph.isPinned("v:B")));
+  await open("examples/valid/order_total.grph");
+  await g((p) => window.__graphene.app.openFile(p), join(REPO, "examples/valid/pricing.grph"));
+  await settle(1200);
+  const back = await g(() => window.__graphene.app.graph.positionOf("v:B"));
+  const otherBack = await g(() => window.__graphene.app.graph.positionOf("v:D"));
+  const viewBack = await g(() => window.__graphene.app.graph.snapshot().view);
+  const same = (a, b) => a && b && Math.abs(a[0] - b[0]) < 0.5 && Math.abs(a[1] - b[1]) < 0.5;
+  check("dragged node is where it was dropped after switching tabs", same(placed, back), `${placed} vs ${back}`);
+  check("other nodes keep their positions too", same(other, otherBack), `${other} vs ${otherBack}`);
+  check("zoom and pan are restored", Math.abs(view.k - viewBack.k) < 1e-9 && Math.abs(view.x - viewBack.x) < 0.5, `${JSON.stringify(view)} vs ${JSON.stringify(viewBack)}`);
+  await g(() => window.__graphene.app.graph.togglePin("v:B"));
+}
 
 // 3. Graph action -> text edit -> undo.
 await g(() => window.__graphene.app.command({ cmd: "rename", old: "B", new: "USER" }));
@@ -134,5 +161,7 @@ await shot("8-palette");
 
 check("no page errors", errors.length === 0, errors.join(" | "));
 await browser.close();
+// The drag test pins a node, which writes a layout sidecar; remove it.
+rmSync(join(REPO, "examples/valid/pricing.grph.layout.json"), { force: true });
 console.log(failures ? `${failures} check(s) failed` : "all checks passed");
 process.exit(failures ? 1 : 0);

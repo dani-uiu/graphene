@@ -61,6 +61,7 @@ function overview(): HTMLElement {
       "ul",
       { class: "hint tips" },
       h("li", {}, "Click a node to inspect it; Ctrl-click to select several."),
+      h("li", {}, "Drag a node to place it; it stays there (Unpin to release). Each tab keeps its arrangement."),
       h("li", {}, "Shift-drag from a node to connect it, or drop on empty space to add a step."),
       h("li", {}, "Right-click a node or the canvas for actions."),
       h("li", {}, "Every action edits the text, so Ctrl+Z undoes it."),
