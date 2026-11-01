@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G015
+
+  × subgraph `Countdown` calls itself: Countdown -> Countdown
+   ╭─[recursive_graph.grph:5:3]
+ 4 │ graph Countdown(n: u64 -> N) -> u64 {
+ 5 │   N -> call Countdown(n: n) -> R
+   ·   ───────────────┬──────────────
+   ·                  ╰── this call closes the cycle
+ 6 │   R -> out
+   ╰────
+  help: subgraphs cannot recurse, so every program terminates; process lists with `map` or
+        `filter` instead

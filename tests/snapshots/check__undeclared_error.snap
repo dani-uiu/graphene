@@ -1,0 +1,19 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G017
+
+  × subgraph `Check` raises undeclared TooLarge
+   ╭─[undeclared_error.grph:6:3]
+ 3 │ 
+ 4 │ graph Check(x: u64 -> X) -> u64 ! TooBig {
+   ·       ──┬──
+   ·         ╰── it declares TooBig
+ 5 │   X -> match x > 100 { true => BIG, false => SMALL }
+ 6 │   BIG -> fail TooLarge
+   ·   ──────────┬─────────
+   ·             ╰── not in the subgraph's `!` list
+ 7 │   SMALL -> f(x) -> R
+   ╰────
+  help: add `! TooLarge` to the header of `Check`, or fail with a declared error

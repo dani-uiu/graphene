@@ -1,0 +1,14 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G002
+
+  × `DISCONTED` is not defined here
+   ╭─[typo_name.grph:6:1]
+ 5 │ P -> f(price * 0.90) -> DISCOUNTED
+ 6 │ DISCONTED -> out total: dec
+   · ────┬────
+   ·     ╰── did you mean `DISCOUNTED`?
+   ╰────
+  help: define it with `in`, as a flow target, or as a match arm

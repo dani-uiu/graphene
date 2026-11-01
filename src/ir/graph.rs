@@ -22,7 +22,7 @@ use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 
 use crate::diag::Span;
-use crate::syntax::ast::{BinOp, Lit, UnOp};
+use crate::syntax::ast::{BinOp, Builtin, CallKind, Lit, UnOp};
 
 pub type VId = NodeIndex;
 
@@ -88,6 +88,12 @@ pub enum IKind {
     Record(Vec<(String, IExpr)>),
     /// Numeric conversion to `u64`, `i64`, or `dec`.
     Convert(Type, Box<IExpr>),
+    /// v0.3 list literal.
+    List(Vec<IExpr>),
+    /// v0.3 built-in function call.
+    Builtin(Builtin, Vec<IExpr>),
+    /// v0.3 constant, inlined with its declared type (D-051).
+    Typed(Box<IExpr>, Type, String),
 }
 
 impl IExpr {
@@ -97,6 +103,12 @@ impl IExpr {
             IKind::Lit(_) => {}
             IKind::Ref(v, name) => out.push((*v, self.span, name.clone())),
             IKind::Field(b, _) | IKind::Unary(_, b) | IKind::Convert(_, b) => b.refs(out),
+            IKind::Typed(..) => {}
+            IKind::List(items) | IKind::Builtin(_, items) => {
+                for e in items {
+                    e.refs(out);
+                }
+            }
             IKind::Binary(_, l, r) => {
                 l.refs(out);
                 r.refs(out);
@@ -115,6 +127,8 @@ pub struct IArg {
     pub name: String,
     pub name_span: Span,
     pub value: IExpr,
+    /// v0.3 `name: each list`.
+    pub each: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,10 +167,19 @@ pub enum VKind {
         scrutinee: IExpr,
         arms: Vec<IArm>,
     },
+    /// v0.3 `call` / `map` / `filter` of subgraph `sub`.
+    Call {
+        sub: usize,
+        kind: CallKind,
+        args: Vec<IArg>,
+    },
+    /// `out name: T`, or the bare `out` of a subgraph body (`name` empty,
+    /// `ty` the declared result type).
     Out {
         name: String,
         ty: Type,
         ty_span: Span,
+        scale: Scale,
     },
     Fail {
         name: Option<String>,
@@ -175,7 +198,7 @@ impl VKind {
     pub fn exprs(&self) -> Vec<&IExpr> {
         match self {
             VKind::Pure { expr } => vec![expr],
-            VKind::Sync { args, .. } | VKind::Async { args, .. } => {
+            VKind::Sync { args, .. } | VKind::Async { args, .. } | VKind::Call { args, .. } => {
                 args.iter().map(|a| &a.value).collect()
             }
             VKind::Match { scrutinee, .. } => vec![scrutinee],
@@ -248,10 +271,40 @@ pub struct ExternDecl {
     pub span: Span,
 }
 
+/// Output scale of every `dec` inside an `out` type (D-052): `None`
+/// means the default 2 places.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum Scale {
+    #[default]
+    Default,
+    Places(u32),
+    Record(BTreeMap<String, Scale>),
+    List(Box<Scale>),
+}
+
+/// A subgraph's signature (D-043).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubSig {
+    pub name: String,
+    pub params: Vec<(String, Type, Span)>,
+    pub ret: Type,
+    pub errors: Vec<String>,
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Assertion {
     Total(Span),
     Indep { sink: VId, name: String, span: Span },
+}
+
+/// A lowered constant: its value and declared type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstVal {
+    pub name: String,
+    pub value: IExpr,
+    pub ty: Type,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -264,6 +317,12 @@ pub struct Graph {
     pub intent: Option<String>,
     /// Language version from the header.
     pub version: (u32, u32),
+    /// Every subgraph's signature (shared by all graphs of a program).
+    pub subs: Vec<SubSig>,
+    /// `Some(i)` when this graph is the body of subgraph `i`.
+    pub body: Option<usize>,
+    /// Top-level constants (main graph only), for type checking.
+    pub consts: Vec<ConstVal>,
     /// Canonical order; empty until `compute_order` runs.
     pub order: Vec<VId>,
     /// Position of each vertex in `order`, indexed by `VId::index()`.

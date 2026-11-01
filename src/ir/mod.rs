@@ -5,5 +5,6 @@
 //!
 //! Invariants: see `graph` and `lower`.
 
+pub mod blocks;
 pub mod graph;
 pub mod lower;

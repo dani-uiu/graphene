@@ -14,14 +14,34 @@
 
 use std::cmp::Ordering;
 
+use std::collections::BTreeMap;
+
+use rust_decimal::{Decimal, RoundingStrategy};
+
 use super::value::Value;
 use super::Fault;
 use crate::diag::{Code, Span};
 use crate::ir::graph::{IExpr, IKind, Type, VId};
-use crate::syntax::ast::{BinOp, Lit, UnOp};
+use crate::syntax::ast::{BinOp, Builtin, Lit, UnOp};
 
 /// Looks up the value of a referenced vertex.
 pub type Env<'a> = dyn Fn(VId) -> Option<&'a Value> + 'a;
+
+/// Result types of `sum(...)` from the checker, for empty lists.
+pub type Sums = BTreeMap<Span, Type>;
+
+thread_local! {
+    static SUMS: std::cell::RefCell<Sums> = const { std::cell::RefCell::new(Sums::new()) };
+}
+
+/// Make the checker's `sum` types visible to `eval` on this thread while
+/// `f` runs (each executor thread evaluates one program at a time).
+pub fn with_sums<T>(sums: &Sums, f: impl FnOnce() -> T) -> T {
+    let prev = SUMS.with(|s| std::mem::replace(&mut *s.borrow_mut(), sums.clone()));
+    let out = f();
+    SUMS.with(|s| *s.borrow_mut() = prev);
+    out
+}
 
 fn is_int_lit(e: &IExpr) -> bool {
     match &e.kind {
@@ -58,6 +78,17 @@ pub fn eval(e: &IExpr, env: &Env, hint: Option<&Type>) -> Result<Value, Fault> {
             .ok_or_else(|| internal(e.span, &format!("`{name}` has no value"))),
         IKind::Field(b, f) => match eval(b, env, None)? {
             Value::Record(mut r) => r.remove(f).ok_or_else(|| internal(e.span, "missing field")),
+            // Projection over a list of records (D-044).
+            Value::List(items) => items
+                .into_iter()
+                .map(|x| match x {
+                    Value::Record(mut r) => {
+                        r.remove(f).ok_or_else(|| internal(e.span, "missing field"))
+                    }
+                    _ => Err(internal(e.span, "projection on a non-record")),
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(Value::List),
             _ => Err(internal(e.span, "field access on a non-record")),
         },
         IKind::Unary(op, x) => unary(*op, eval(x, env, hint)?, e.span),
@@ -74,7 +105,115 @@ pub fn eval(e: &IExpr, env: &Env, hint: Option<&Type>) -> Result<Value, Fault> {
             Ok(Value::Record(out))
         }
         IKind::Convert(to, x) => convert(to, eval(x, env, None)?, e.span),
+        IKind::Typed(x, ty, _) => eval(x, env, Some(ty)),
+        IKind::List(items) => {
+            let elem = match hint {
+                Some(Type::List(t)) => Some(&**t),
+                _ => None,
+            };
+            let mut out = Vec::with_capacity(items.len());
+            for x in items {
+                let v = eval(x, env, elem.or(out.first().and_then(type_of).as_ref()))?;
+                out.push(v);
+            }
+            Ok(Value::List(out))
+        }
+        IKind::Builtin(b, args) => builtin(*b, args, env, hint, e.span),
     }
+}
+
+/// Built-in functions (D-044, D-052); the checker guarantees arities and
+/// argument types.
+fn builtin(
+    b: Builtin,
+    args: &[IExpr],
+    env: &Env,
+    hint: Option<&Type>,
+    span: Span,
+) -> Result<Value, Fault> {
+    let list_hint = hint.map(|t| Type::List(Box::new(t.clone())));
+    let first = eval(&args[0], env, list_hint.as_ref())?;
+    match b {
+        Builtin::Round | Builtin::Floor | Builtin::Ceil => round(b, first, &args[1], span),
+        Builtin::Contains => {
+            let items = list(first, span)?;
+            let needle = eval(&args[1], env, items.first().and_then(type_of).as_ref())?;
+            Ok(Value::Bool(items.contains(&needle)))
+        }
+        _ => aggregate(b, list(first, span)?, hint, span),
+    }
+}
+
+fn list(v: Value, span: Span) -> Result<Vec<Value>, Fault> {
+    match v {
+        Value::List(items) => Ok(items),
+        _ => Err(internal(span, "builtin needs a list")),
+    }
+}
+
+fn aggregate(
+    b: Builtin,
+    items: Vec<Value>,
+    hint: Option<&Type>,
+    span: Span,
+) -> Result<Value, Fault> {
+    match b {
+        Builtin::Len => Ok(Value::U64(items.len() as u64)),
+        Builtin::All => Ok(Value::Bool(items.iter().all(|v| *v == Value::Bool(true)))),
+        Builtin::Any => Ok(Value::Bool(items.contains(&Value::Bool(true)))),
+        Builtin::Sum => {
+            let zero = match items
+                .first()
+                .and_then(type_of)
+                .or_else(|| SUMS.with(|s| s.borrow().get(&span).cloned()))
+                .or(hint.cloned())
+            {
+                Some(Type::I64) => Value::I64(0),
+                Some(Type::Dec) => Value::Dec(Decimal::ZERO),
+                _ => Value::U64(0),
+            };
+            items
+                .into_iter()
+                .try_fold(zero, |acc, v| arith(BinOp::Add, acc, v, span))
+        }
+        _ => {
+            let mut best: Option<Value> = None;
+            for v in items {
+                let better = match &best {
+                    None => true,
+                    Some(cur) => {
+                        let less = compare(BinOp::Lt, &v, cur, span)?;
+                        if b == Builtin::Min {
+                            less
+                        } else {
+                            compare(BinOp::Gt, &v, cur, span)?
+                        }
+                    }
+                };
+                if better {
+                    best = Some(v);
+                }
+            }
+            best.ok_or_else(|| {
+                Fault::new(Code::R006, span, format!("`{}` of an empty list", b.name()))
+            })
+        }
+    }
+}
+
+fn round(b: Builtin, x: Value, places: &IExpr, span: Span) -> Result<Value, Fault> {
+    let (Value::Dec(d), IKind::Lit(Lit::Int(n))) = (x, &places.kind) else {
+        return Err(internal(span, "bad rounding operands"));
+    };
+    let strategy = match b {
+        Builtin::Floor => RoundingStrategy::ToNegativeInfinity,
+        Builtin::Ceil => RoundingStrategy::ToPositiveInfinity,
+        _ => RoundingStrategy::MidpointAwayFromZero,
+    };
+    let places = u32::try_from(*n).unwrap_or(28).min(28);
+    let mut r = d.round_dp_with_strategy(places, strategy);
+    r.rescale(places);
+    Ok(Value::Dec(r))
 }
 
 /// Numeric conversion (D-033): exact or truncating toward zero; anything
@@ -167,6 +306,7 @@ macro_rules! checked {
 
 fn arith(op: BinOp, l: Value, r: Value, span: Span) -> Result<Value, Fault> {
     let out = match (l, r) {
+        (Value::Str(a), Value::Str(b)) if op == BinOp::Add => return Ok(Value::Str(a + &b)),
         (Value::U64(a), Value::U64(b)) => checked!(op, a, b).map(Value::U64),
         (Value::I64(a), Value::I64(b)) => checked!(op, a, b).map(Value::I64),
         (Value::Dec(a), Value::Dec(b)) => checked!(op, a, b).map(Value::Dec),

@@ -86,22 +86,16 @@ pub fn fire<'s>(ctx: &Ctx, v: VId, get: &dyn Fn(VId) -> &'s State) -> Result<Fir
             done(Done::Ok(eval(expr, &env, hint.as_ref())?))
         }
         VKind::Sync { effect, args } => sync(ctx, v, *effect, args, &env),
-        VKind::Async { effect, args } => {
-            let decl = &g.externs[*effect];
-            let rec = eval_args(args, &decl.params, &env)?;
-            ctx.host.emit(&decl.name, &rec);
-            let entry = LogEntry {
-                is_async: true,
-                effect: decl.name.clone(),
-                args: rec,
-                result: None,
-            };
-            Ok((State::Done(Done::Emitted), Some(entry)))
-        }
+        VKind::Async { effect, args } => emit(ctx, *effect, args, &env),
         VKind::Match { scrutinee, arms } => {
             let s = eval(scrutinee, &env, None)?;
             done(Done::Arm(choose(arms, &s, vx.span)?, src_value()))
         }
+        VKind::Call { .. } => Err(Fault::new(
+            Code::R004,
+            vx.span,
+            "running `call`/`map`/`filter` arrives in the next v0.3 phase",
+        )),
         VKind::Out { name, .. } => done(Done::Result(Outcome::Ok(name.clone(), src_value()))),
         VKind::Fail { name: Some(n) } => done(Done::Result(Outcome::Err(n.clone()))),
         VKind::Fail { name: None } => match src_value() {
@@ -139,6 +133,20 @@ fn target_type(ctx: &Ctx, op: VId) -> Option<Type> {
         .into_iter()
         .find(|(e, _)| matches!(e.kind, EKind::Flow | EKind::Ok))
         .and_then(|(_, t)| ctx.checked.types[t.index()].clone())
+}
+
+/// `fx~`: evaluate the arguments, hand the emit to the host, log it.
+fn emit<'e>(ctx: &Ctx, effect: usize, args: &[IArg], env: &Env<'e>) -> Result<Fired, Fault> {
+    let decl = &ctx.checked.graph.externs[effect];
+    let rec = eval_args(args, &decl.params, env)?;
+    ctx.host.emit(&decl.name, &rec);
+    let entry = LogEntry {
+        is_async: true,
+        effect: decl.name.clone(),
+        args: rec,
+        result: None,
+    };
+    Ok((State::Done(Done::Emitted), Some(entry)))
 }
 
 fn eval_args<'e>(

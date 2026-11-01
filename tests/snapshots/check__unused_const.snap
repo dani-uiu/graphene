@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G008
+
+  × constant `RATE` is never used
+   ╭─[unused_const.grph:4:7]
+ 3 │ 
+ 4 │ const RATE: dec = 0.10
+   ·       ──┬─
+   ·         ╰── unused constant
+ 5 │ 
+   ╰────
+  help: read it in an expression, or remove the `const` line

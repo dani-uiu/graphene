@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G003
+
+  × an empty list needs a type
+   ╭─[untyped_empty_list.grph:5:12]
+ 4 │ in x: u64 -> A
+ 5 │ A -> f(len([])) -> N
+   ·            ─┬
+   ·             ╰── type unknown
+ 6 │ N -> out n: u64
+   ╰────
+  help: use it where a list type is expected (an argument, an annotated target), or add an element

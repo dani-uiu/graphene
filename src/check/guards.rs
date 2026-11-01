@@ -109,6 +109,12 @@ impl Guard {
         true
     }
 
+    /// `self ⇒ other`: every minterm of `self` contains some minterm of
+    /// `other` (D-046). Structural, hence sound for decision-tree guards.
+    pub fn implies(&self, other: &Guard) -> bool {
+        self.0.iter().all(|m| other.0.iter().any(|o| subset(o, m)))
+    }
+
     /// True when no assignment satisfies both guards.
     pub fn exclusive(&self, other: &Guard) -> bool {
         self.0
@@ -168,6 +174,12 @@ pub fn decisions(graph: &Graph) -> BTreeMap<VId, usize> {
                 let errs = graph.outs(v).iter().filter(|(e, _)| e.is_err()).count();
                 out.insert(v, 1 + errs);
             }
+            VKind::Call { sub, .. }
+                if graph.subs.get(*sub).is_some_and(|s| !s.errors.is_empty()) =>
+            {
+                let errs = graph.outs(v).iter().filter(|(e, _)| e.is_err()).count();
+                out.insert(v, 1 + errs);
+            }
             _ => {}
         }
     }
@@ -191,6 +203,7 @@ pub fn compute(graph: &Graph, diags: &mut Vec<Diag>) -> Guards {
                 }
                 acc
             }
+            _ if vx.srcs.len() > 1 && graph.version >= (0, 3) => join_guard(graph, v, &gs),
             _ => gs.get(graph.src(v)).clone(),
         };
         if g.0.len() > MAX_MINTERMS {
@@ -210,6 +223,18 @@ pub fn compute(graph: &Graph, diags: &mut Vec<Diag>) -> Guards {
     gs
 }
 
+/// A v0.3 join is active with its most specific member: the member whose
+/// guard implies every other member's (D-046). Without one, the first
+/// member's guard is kept and `join` reports G007.
+fn join_guard(graph: &Graph, op: VId, gs: &Guards) -> Guard {
+    let srcs = &graph.v(op).srcs;
+    srcs.iter()
+        .map(|s| gs.get(*s))
+        .find(|g| srcs.iter().all(|o| g.implies(gs.get(*o))))
+        .unwrap_or_else(|| gs.get(graph.src(op)))
+        .clone()
+}
+
 /// Human-readable form of one decision outcome.
 pub fn describe_atom(graph: &Graph, d: VId, o: usize) -> String {
     let vx = graph.v(d);
@@ -217,6 +242,20 @@ pub fn describe_atom(graph: &Graph, d: VId, o: usize) -> String {
         VKind::Match { arms, .. } => {
             let pat = arms.get(o).map_or("?", |a| a.text.as_str());
             format!("the match on line {} takes `{pat}`", vx.line)
+        }
+        VKind::Call { sub, kind, .. } => {
+            let errs: Vec<_> = graph
+                .outs(d)
+                .into_iter()
+                .filter(|(e, _)| e.is_err())
+                .collect();
+            let outcome = match errs.get(o.wrapping_sub(1)) {
+                _ if o == 0 => "succeeds".to_string(),
+                Some((e, _)) if errs.len() > 1 => format!("fails with {}", e.covers.join(" | ")),
+                _ => "fails".to_string(),
+            };
+            let name = graph.subs.get(*sub).map_or("?", |s| s.name.as_str());
+            format!("`{} {name}` on line {} {outcome}", kind.keyword(), vx.line)
         }
         VKind::Sync { effect, .. } => {
             let errs: Vec<_> = graph
@@ -316,6 +355,23 @@ mod tests {
         assert!(x0.exclusive(&x1));
         assert!(!x0.exclusive(&y0));
         assert!(Guard::never().exclusive(&a));
+    }
+
+    #[test]
+    fn implication() {
+        let a = Guard::always();
+        let x0 = a.and_atom(d(1), 0);
+        let x0y1 = x0.and_atom(d(2), 1);
+        assert!(x0y1.implies(&x0));
+        assert!(x0.implies(&a));
+        assert!(!x0.implies(&x0y1));
+        assert!(!x0.implies(&a.and_atom(d(1), 1)));
+        // ok ∨ NotFound implies "always", the shape of the D-046 example.
+        let either = a
+            .and_atom(d(1), 0)
+            .or(&a.and_atom(d(1), 1), &BTreeMap::from([(d(1), 3)]));
+        assert!(either.implies(&a));
+        assert!(Guard::never().implies(&x0));
     }
 
     #[test]

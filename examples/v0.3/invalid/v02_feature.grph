@@ -1,6 +1,0 @@
-#!graphene 0.2
-@intent "List types need the 0.3 header"
-
-in xs: [u64] -> A
-A -> f(len(xs)) -> N
-N -> out n: u64

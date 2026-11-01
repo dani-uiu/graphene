@@ -1,0 +1,7 @@
+#!graphene 0.2
+@intent "Constants need the 0.3 header"
+
+const LIMIT: u64 = 10
+in x: u64 -> A
+A -> f(x + 1) -> R
+R -> out r: u64

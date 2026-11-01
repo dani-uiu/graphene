@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G017
+
+  × subgraph `Half` declares `-> u64` but its `out` receives `dec`
+   ╭─[wrong_out_type.grph:6:3]
+ 5 │   X -> f(x * 0.50) -> R
+ 6 │   R -> out
+   ·   ────┬───
+   ·       ╰── wrong result type
+ 7 │ }
+   ╰────
+  help: change the header to `-> dec`, or produce a `u64` here

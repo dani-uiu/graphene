@@ -111,6 +111,10 @@ pub fn check_err_edges(graph: &Graph, diags: &mut Vec<Diag>) {
             .collect();
         let declared = match &vx.kind {
             VKind::Sync { effect, .. } => graph.externs[*effect].errors.clone(),
+            VKind::Call { sub, .. } => graph
+                .subs
+                .get(*sub)
+                .map_or(Vec::new(), |s| s.errors.clone()),
             _ => Vec::new(),
         };
         if declared.is_empty() {

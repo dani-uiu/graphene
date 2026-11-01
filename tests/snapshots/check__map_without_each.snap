@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G016
+
+  × `map Double` needs one argument marked `each`
+    ╭─[map_without_each.grph:10:1]
+  9 │ in xs: [u64] -> A
+ 10 │ A -> map Double(x: 3) -> R
+    · ─────────────┬────────────
+    ·              ╰── `each` rule
+ 11 │ R -> out r: [u64]
+    ╰────
+  help: mark the list to map over as `param: each list`; use `map` to run once per element, `call`
+        to run once

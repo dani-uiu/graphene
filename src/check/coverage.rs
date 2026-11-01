@@ -83,3 +83,18 @@ fn referenced(graph: &Graph) -> Vec<bool> {
     }
     used
 }
+
+/// G008 for constants nothing reads (D-051).
+pub fn unused_consts(unused: &[(String, crate::diag::Span)], diags: &mut Vec<Diag>) {
+    for (name, span) in unused {
+        diags.push(
+            Diag::new(
+                Code::G008,
+                *span,
+                format!("constant `{name}` is never used"),
+            )
+            .label("unused constant")
+            .help("read it in an expression, or remove the `const` line"),
+        );
+    }
+}

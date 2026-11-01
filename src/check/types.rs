@@ -14,12 +14,16 @@
 
 use std::collections::BTreeMap;
 
-use crate::diag::{Code, Diag, Span};
+use crate::diag::{suggest, Code, Diag, Span};
 use crate::ir::graph::*;
-use crate::syntax::ast::{BinOp, Lit, UnOp};
+use crate::syntax::ast::{BinOp, Builtin, CallKind, Lit, UnOp};
 
 /// Type of every value vertex (`None` for sinks, root, and failures).
 pub type Types = Vec<Option<Type>>;
+
+/// Result type of every `sum(...)`, by expression span, so the runtime
+/// knows which zero an empty list sums to (D-044).
+pub type SumTypes = BTreeMap<Span, Type>;
 
 enum Stop {
     Diag(Diag),
@@ -39,15 +43,17 @@ struct Checker<'g> {
     types: Types,
     /// Span of the writer that fixed each merge node's type.
     first_writer: Vec<Option<Span>>,
+    sums: std::cell::RefCell<SumTypes>,
     diags: Vec<Diag>,
 }
 
-pub fn check(graph: &Graph) -> (Types, Vec<Diag>) {
+pub fn check(graph: &Graph) -> (Types, SumTypes, Vec<Diag>) {
     let n = graph.g.node_count();
     let mut c = Checker {
         g: graph,
         types: vec![None; n],
         first_writer: vec![None; n],
+        sums: Default::default(),
         diags: Vec::new(),
     };
     c.externs();
@@ -56,7 +62,7 @@ pub fn check(graph: &Graph) -> (Types, Vec<Diag>) {
             c.diags.push(d);
         }
     }
-    (c.types, c.diags)
+    (c.types, c.sums.into_inner(), c.diags)
 }
 
 fn g003(span: Span, msg: impl Into<String>, label: &str, help: impl Into<String>) -> Diag {
@@ -94,18 +100,7 @@ impl Checker<'_> {
         match &vx.kind {
             VKind::Input {
                 ty, ty_span, input, ..
-            } => {
-                if !ty.is_scalar() {
-                    return Err(g003(
-                        *ty_span,
-                        format!("input `{input}` must have a scalar type"),
-                        "record input",
-                        "inputs are u64, i64, dec, bool, or str in v0.1 (D-014)",
-                    )
-                    .into());
-                }
-                self.types[v.index()] = Some(ty.clone());
-            }
+            } => self.input(v, ty, *ty_span, input)?,
             VKind::Pure { expr } => {
                 let ann = self
                     .ok_edge(v)
@@ -115,20 +110,14 @@ impl Checker<'_> {
                 self.write_targets(v, t)?;
             }
             VKind::Sync { effect, args } => self.sync(v, *effect, args)?,
-            VKind::Async { effect, args } => self.call_args(v, *effect, args, true)?,
-            VKind::Match { scrutinee, arms } => self.match_op(v, scrutinee, arms)?,
-            VKind::Out { name, ty, ty_span } => {
-                let st = self.ty_of(self.g.src(v))?;
-                if &st != ty {
-                    return Err(g003(
-                        *ty_span,
-                        format!("`out {name}` is declared `{ty}` but receives `{st}`"),
-                        "declared type",
-                        format!("change the declared type to `{st}`"),
-                    )
-                    .into());
-                }
+            VKind::Async { effect, args } => {
+                self.call_args(v, *effect, args, true)?;
             }
+            VKind::Call { sub, kind, args } => self.call(v, *sub, *kind, args)?,
+            VKind::Match { scrutinee, arms } => self.match_op(v, scrutinee, arms)?,
+            VKind::Out {
+                name, ty, ty_span, ..
+            } => self.out(v, name, ty, *ty_span)?,
             VKind::Fail { name: None } if !matches!(self.ty_of(self.g.src(v))?, Type::Err(_)) => {
                 return Err(g003(
                     vx.span,
@@ -141,6 +130,56 @@ impl Checker<'_> {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Inputs are scalars (D-014), or lists since v0.3; subgraph
+    /// parameters may have any type.
+    fn input(&mut self, v: VId, ty: &Type, ty_span: Span, input: &str) -> R<()> {
+        let list_ok = self.g.version >= (0, 3) && matches!(ty, Type::List(_));
+        if self.g.body.is_none() && !ty.is_scalar() && !list_ok {
+            return Err(g003(
+                ty_span,
+                format!("input `{input}` must have a scalar type"),
+                "record input",
+                "inputs are u64, i64, dec, bool, or str in v0.1 (D-014)",
+            )
+            .into());
+        }
+        self.types[v.index()] = Some(ty.clone());
+        Ok(())
+    }
+
+    /// `out name: T` must receive a `T`; a body's bare `out` must receive
+    /// the subgraph's declared result type (G017).
+    fn out(&self, v: VId, name: &str, ty: &Type, ty_span: Span) -> R<()> {
+        let st = self.ty_of(self.g.src(v))?;
+        if &st == ty {
+            return Ok(());
+        }
+        if !name.is_empty() {
+            return Err(g003(
+                ty_span,
+                format!("`out {name}` is declared `{ty}` but receives `{st}`"),
+                "declared type",
+                format!("change the declared type to `{st}`"),
+            )
+            .into());
+        }
+        let sub = self
+            .g
+            .body
+            .and_then(|b| self.g.subs.get(b))
+            .map_or("?", |s| s.name.as_str());
+        Err(Diag::new(
+            Code::G017,
+            self.g.v(v).span,
+            format!("subgraph `{sub}` declares `-> {ty}` but its `out` receives `{st}`"),
+        )
+        .label("wrong result type")
+        .help(format!(
+            "change the header to `-> {st}`, or produce a `{ty}` here"
+        ))
+        .into())
     }
 
     fn ok_edge(&self, op: VId) -> Option<(&Edge, VId)> {
@@ -200,10 +239,16 @@ impl Checker<'_> {
     }
 
     fn sync(&mut self, v: VId, effect: usize, args: &[IArg]) -> R<()> {
-        self.call_args(v, effect, args, false)?;
+        let each = self.call_args(v, effect, args, false)?;
         let decl = &self.g.externs[effect];
         let ret = decl.ret.clone().ok_or(Stop::Silent)?;
         let ename = decl.name.clone();
+        // `each` maps the effect over a list (D-049).
+        let ret = if each.is_some() {
+            Type::List(Box::new(ret))
+        } else {
+            ret
+        };
         self.write_targets(v, ret)?;
         for (e, t) in self.g.outs(v).into_iter().filter(|(e, _)| e.is_err()) {
             let span = e.span;
@@ -234,25 +279,39 @@ impl Checker<'_> {
         .into())
     }
 
-    fn call_args(&mut self, v: VId, effect: usize, args: &[IArg], is_async: bool) -> R<()> {
+    /// Effect arguments; returns the element type of an `each` argument.
+    fn call_args(
+        &mut self,
+        v: VId,
+        effect: usize,
+        args: &[IArg],
+        is_async: bool,
+    ) -> R<Option<Type>> {
         let decl = &self.g.externs[effect];
         self.effect_kind(v, decl, is_async)?;
-        let params: BTreeMap<&str, &Type> = decl
-            .params
-            .iter()
-            .map(|(n, t, _)| (n.as_str(), t))
-            .collect();
+        let (name, params) = (decl.name.clone(), decl.params.clone());
+        let kw = if is_async { "fx~" } else { "fx" };
+        self.bind(v, &name, &params, args, EachRule::AtMostOne(kw))
+    }
+
+    /// Type-check arguments against parameters (D-043, D-049): each
+    /// parameter exactly once, matching types, and the `each` rule. An
+    /// `each` argument must be `[T]` for parameter type `T`; its element
+    /// type is returned.
+    fn bind(
+        &mut self,
+        v: VId,
+        callee: &str,
+        params: &[(String, Type, Span)],
+        args: &[IArg],
+        rule: EachRule,
+    ) -> R<Option<Type>> {
+        self.each_rule(v, callee, args, rule)?;
         let mut given = BTreeMap::new();
+        let mut each = None;
         for a in args {
-            let Some(pt) = params.get(a.name.as_str()) else {
-                let list: Vec<&str> = params.keys().copied().collect();
-                return Err(g003(
-                    a.name_span,
-                    format!("`{}` has no parameter `{}`", decl.name, a.name),
-                    "unknown argument",
-                    format!("parameters are: {}", list.join(", ")),
-                )
-                .into());
+            let Some((_, pt, _)) = params.iter().find(|(n, _, _)| *n == a.name) else {
+                return Err(self.unknown_param(callee, params, a));
             };
             if given.insert(a.name.as_str(), ()).is_some() {
                 return Err(g003(
@@ -263,28 +322,143 @@ impl Checker<'_> {
                 )
                 .into());
             }
-            let t = self.infer(&a.value, Some(pt))?;
-            if &t != *pt {
-                return Err(g003(
-                    a.value.span,
-                    format!("argument `{}` expects `{pt}` but got `{t}`", a.name),
-                    "wrong type",
-                    "no implicit conversions; pass a value of the declared type",
-                )
-                .into());
+            self.bind_arg(a, pt)?;
+            if a.each {
+                each = Some(pt.clone());
             }
         }
-        if let Some(missing) = params.keys().find(|p| !given.contains_key(*p)) {
+        if let Some((missing, _, _)) = params
+            .iter()
+            .find(|(n, _, _)| !given.contains_key(n.as_str()))
+        {
             return Err(g003(
                 self.g.v(v).span,
-                format!("missing argument `{missing}` for `{}`", decl.name),
+                format!("missing argument `{missing}` for `{callee}`"),
                 "incomplete call",
                 format!("add `{missing}: <expr>`"),
             )
             .into());
         }
+        Ok(each)
+    }
+
+    /// One argument against its parameter type; an `each` argument must
+    /// be a list of that type (G016 when it is not a list at all).
+    fn bind_arg(&self, a: &IArg, pt: &Type) -> R<()> {
+        let want = if a.each {
+            Type::List(Box::new(pt.clone()))
+        } else {
+            pt.clone()
+        };
+        let t = self.infer(&a.value, Some(&want))?;
+        if a.each && !matches!(t, Type::List(_)) {
+            return Err(Diag::new(
+                Code::G016,
+                a.value.span,
+                format!("`each` needs a list, but `{}` is `{t}`", a.name),
+            )
+            .label("not a list")
+            .help(format!(
+                "pass a `[{pt}]` to map over it, or drop `each` to pass one value"
+            ))
+            .into());
+        }
+        if t != want {
+            return Err(g003(
+                a.value.span,
+                format!("argument `{}` expects `{want}` but got `{t}`", a.name),
+                "wrong type",
+                "no implicit conversions; pass a value of the declared type",
+            )
+            .into());
+        }
         Ok(())
     }
+
+    fn unknown_param(&self, callee: &str, params: &[(String, Type, Span)], a: &IArg) -> Stop {
+        let list: Vec<&str> = params.iter().map(|(n, _, _)| n.as_str()).collect();
+        let near = if self.g.version >= (0, 3) {
+            suggest(&a.name, list.iter().copied())
+                .map_or(String::new(), |s| format!("did you mean `{s}`? "))
+        } else {
+            String::new()
+        };
+        g003(
+            a.name_span,
+            format!("`{callee}` has no parameter `{}`", a.name),
+            "unknown argument",
+            format!("{near}parameters are: {}", list.join(", ")),
+        )
+        .into()
+    }
+
+    /// G016: `map`/`filter` need exactly one `each`; `call` none; effects
+    /// at most one.
+    fn each_rule(&self, v: VId, callee: &str, args: &[IArg], rule: EachRule) -> R<()> {
+        let eaches: Vec<&IArg> = args.iter().filter(|a| a.each).collect();
+        let msg = match (rule, eaches.len()) {
+            (EachRule::ExactlyOne(kw), 0) => {
+                format!("`{kw} {callee}` needs one argument marked `each`")
+            }
+            (EachRule::ExactlyOne(kw) | EachRule::AtMostOne(kw), n) if n > 1 => {
+                format!("`{kw} {callee}` can map over only one list, but {n} arguments are marked `each`")
+            }
+            (EachRule::None, n) if n > 0 => {
+                format!("`call {callee}` runs once; it takes no `each` argument")
+            }
+            _ => return Ok(()),
+        };
+        let span = eaches
+            .get(1)
+            .or(eaches.first())
+            .map_or(self.g.v(v).span, |a| a.name_span);
+        Err(Diag::new(Code::G016, span, msg)
+            .label("`each` rule")
+            .help("mark the list to map over as `param: each list`; use `map` to run once per element, `call` to run once")
+            .into())
+    }
+
+    /// `call` / `map` / `filter` of a subgraph (D-043, D-044).
+    fn call(&mut self, v: VId, sub: usize, kind: CallKind, args: &[IArg]) -> R<()> {
+        let sig = self.g.subs.get(sub).cloned().ok_or(Stop::Silent)?;
+        let rule = match kind {
+            CallKind::Call => EachRule::None,
+            CallKind::Map => EachRule::ExactlyOne("map"),
+            CallKind::Filter => EachRule::ExactlyOne("filter"),
+        };
+        let each = self.bind(v, &sig.name, &sig.params, args, rule)?;
+        let result = match (kind, each) {
+            (CallKind::Call, _) => sig.ret.clone(),
+            (CallKind::Map, _) => Type::List(Box::new(sig.ret.clone())),
+            (CallKind::Filter, _) if sig.ret != Type::Bool => {
+                return Err(g003(
+                    self.g.v(v).span,
+                    format!(
+                        "`filter {}` needs a subgraph that returns `bool`, not `{}`",
+                        sig.name, sig.ret
+                    ),
+                    "not a predicate",
+                    "use `map` to transform elements, or make the subgraph return `bool`",
+                )
+                .into());
+            }
+            (CallKind::Filter, Some(elem)) => Type::List(Box::new(elem)),
+            (CallKind::Filter, None) => return Err(Stop::Silent),
+        };
+        self.write_targets(v, result)?;
+        for (e, t) in self.g.outs(v).into_iter().filter(|(e, _)| e.is_err()) {
+            let span = e.span;
+            self.write(t, Type::Err(sig.name.clone()), span)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EachRule {
+    None,
+    ExactlyOne(&'static str),
+    AtMostOne(&'static str),
 }
 
 // ---------------------------------------------------------------------
@@ -403,38 +577,13 @@ impl Checker<'_> {
                 }
                 Ok(t)
             }
-            IKind::Field(b, f) => match self.infer(b, None)? {
-                Type::Record(fields) => fields.get(f).cloned().ok_or_else(|| {
-                    let list: Vec<&str> = fields.keys().map(String::as_str).collect();
-                    g003(
-                        e.span,
-                        format!("no field `{f}`"),
-                        "unknown field",
-                        format!("available fields: {}", list.join(", ")),
-                    )
-                    .into()
-                }),
-                t => Err(g003(
-                    e.span,
-                    format!("`{t}` has no fields"),
-                    "not a record",
-                    "only record values support `.field`",
-                )
-                .into()),
-            },
+            IKind::Field(b, f) => self.field_access(b, f, e.span),
             IKind::Unary(op, x) => self.unary(*op, x, hint, e.span),
             IKind::Binary(op, l, r) => self.binary(*op, l, r, hint, e.span),
-            IKind::Record(fields) => {
-                let mut out = BTreeMap::new();
-                for (name, x) in fields {
-                    let fh = match hint {
-                        Some(Type::Record(h)) => h.get(name),
-                        _ => None,
-                    };
-                    out.insert(name.clone(), self.infer(x, fh)?);
-                }
-                Ok(Type::Record(out))
-            }
+            IKind::Record(fields) => self.record(fields, hint),
+            IKind::List(items) => self.list(items, hint, e.span),
+            IKind::Builtin(b, args) => self.builtin(*b, args, hint, e.span),
+            IKind::Typed(_, ty, _) => Ok(ty.clone()),
             IKind::Convert(to, x) => {
                 let t = self.infer(x, None)?;
                 if !t.is_numeric() {
@@ -448,6 +597,207 @@ impl Checker<'_> {
                 }
                 Ok(to.clone())
             }
+        }
+    }
+
+    /// `x.f` on a record, or projection `xs.f` on a list of records.
+    fn field_access(&self, b: &IExpr, f: &str, span: Span) -> R<Type> {
+        match self.infer(b, None)? {
+            Type::Record(fields) => self.field(&fields, f, span),
+            // Projection: `xs.f` on a list of records (D-044).
+            Type::List(inner) if self.g.version >= (0, 3) && matches!(*inner, Type::Record(_)) => {
+                let Type::Record(fields) = *inner else {
+                    return Err(Stop::Silent);
+                };
+                Ok(Type::List(Box::new(self.field(&fields, f, span)?)))
+            }
+            t => Err(g003(
+                span,
+                format!("`{t}` has no fields"),
+                "not a record",
+                "only record values support `.field`",
+            )
+            .into()),
+        }
+    }
+
+    /// A record literal; an expected record type types each field.
+    fn record(&self, fields: &[(String, IExpr)], hint: Option<&Type>) -> R<Type> {
+        let mut out = BTreeMap::new();
+        for (name, x) in fields {
+            let fh = match hint {
+                Some(Type::Record(h)) => h.get(name),
+                _ => None,
+            };
+            out.insert(name.clone(), self.infer(x, fh)?);
+        }
+        Ok(Type::Record(out))
+    }
+
+    fn field(&self, fields: &BTreeMap<String, Type>, f: &str, span: Span) -> R<Type> {
+        fields.get(f).cloned().ok_or_else(|| {
+            let list: Vec<&str> = fields.keys().map(String::as_str).collect();
+            let near = if self.g.version >= (0, 3) {
+                suggest(f, list.iter().copied())
+                    .map_or(String::new(), |s| format!("did you mean `{s}`? "))
+            } else {
+                String::new()
+            };
+            g003(
+                span,
+                format!("no field `{f}`"),
+                "unknown field",
+                format!("{near}available fields: {}", list.join(", ")),
+            )
+            .into()
+        })
+    }
+
+    /// `[e, ...]`: one element type; `[]` needs an expected type (D-044).
+    fn list(&self, items: &[IExpr], hint: Option<&Type>, span: Span) -> R<Type> {
+        let elem_hint = match hint {
+            Some(Type::List(t)) => Some(&**t),
+            _ => None,
+        };
+        let Some(first) = items.first() else {
+            return match hint {
+                Some(t @ Type::List(_)) => Ok(t.clone()),
+                _ => Err(g003(
+                    span,
+                    "an empty list needs a type",
+                    "type unknown",
+                    "use it where a list type is expected (an argument, an annotated target), or add an element",
+                )
+                .into()),
+            };
+        };
+        let t = self.infer(first, elem_hint)?;
+        for x in &items[1..] {
+            let xt = self.infer(x, Some(&t))?;
+            if xt != t {
+                return Err(g003(
+                    x.span,
+                    format!("list elements must share one type: `{t}` and `{xt}`"),
+                    "different type",
+                    "make every element the same type",
+                )
+                .into());
+            }
+        }
+        Ok(Type::List(Box::new(t)))
+    }
+
+    /// Built-in functions (D-044, D-052).
+    fn builtin(&self, b: Builtin, args: &[IExpr], hint: Option<&Type>, span: Span) -> R<Type> {
+        if args.len() != b.arity() {
+            return Err(g003(
+                span,
+                format!(
+                    "`{}` takes {} argument(s), got {}",
+                    b.name(),
+                    b.arity(),
+                    args.len()
+                ),
+                "wrong number of arguments",
+                builtin_help(b),
+            )
+            .into());
+        }
+        match b {
+            Builtin::Round | Builtin::Floor | Builtin::Ceil => self.rounding(b, args, span),
+            Builtin::Contains => self.contains(args, span),
+            _ => self.aggregate(b, args, hint, span),
+        }
+    }
+
+    fn contains(&self, args: &[IExpr], span: Span) -> R<Type> {
+        let b = Builtin::Contains;
+        let elem = self.list_arg(b, &args[0], None)?;
+        if !elem.is_scalar() {
+            return Err(g003(
+                span,
+                format!("`contains` needs a list of scalars, not `[{elem}]`"),
+                "not scalar",
+                builtin_help(b),
+            )
+            .into());
+        }
+        let vt = self.infer(&args[1], Some(&elem))?;
+        if vt != elem {
+            return Err(g003(
+                args[1].span,
+                format!("looking for a `{vt}` in a `[{elem}]`"),
+                "wrong type",
+                builtin_help(b),
+            )
+            .into());
+        }
+        Ok(Type::Bool)
+    }
+
+    /// `len`, `sum`, `min`, `max`, `all`, `any` over one list.
+    fn aggregate(&self, b: Builtin, args: &[IExpr], hint: Option<&Type>, span: Span) -> R<Type> {
+        let lh = hint.map(|t| Type::List(Box::new(t.clone())));
+        let elem = self.list_arg(b, &args[0], lh.as_ref())?;
+        let ok = match b {
+            Builtin::Len => true,
+            Builtin::Sum => elem.is_numeric(),
+            Builtin::Min | Builtin::Max => elem.is_numeric() || elem == Type::Str,
+            _ => elem == Type::Bool,
+        };
+        if !ok {
+            return Err(g003(
+                args[0].span,
+                format!("`{}` is not defined for `[{elem}]`", b.name()),
+                "wrong element type",
+                builtin_help(b),
+            )
+            .into());
+        }
+        if b == Builtin::Sum {
+            self.sums.borrow_mut().insert(span, elem.clone());
+        }
+        Ok(match b {
+            Builtin::Len => Type::U64,
+            Builtin::All | Builtin::Any => Type::Bool,
+            _ => elem,
+        })
+    }
+
+    /// The element type of a builtin's list argument.
+    fn list_arg(&self, b: Builtin, x: &IExpr, hint: Option<&Type>) -> R<Type> {
+        match self.infer(x, hint)? {
+            Type::List(t) => Ok(*t),
+            t => Err(g003(
+                x.span,
+                format!("`{}` needs a list, not `{t}`", b.name()),
+                "not a list",
+                builtin_help(b),
+            )
+            .into()),
+        }
+    }
+
+    fn rounding(&self, b: Builtin, args: &[IExpr], span: Span) -> R<Type> {
+        let t = self.infer(&args[0], Some(&Type::Dec))?;
+        if t != Type::Dec {
+            return Err(g003(
+                args[0].span,
+                format!("`{}` rounds a `dec`, not `{t}`", b.name()),
+                "not a dec",
+                builtin_help(b),
+            )
+            .into());
+        }
+        match &args[1].kind {
+            IKind::Lit(Lit::Int(n)) if *n <= 28 => Ok(Type::Dec),
+            _ => Err(g003(
+                if args.len() > 1 { args[1].span } else { span },
+                "the number of places must be a literal from 0 to 28",
+                "not a literal scale",
+                builtin_help(b),
+            )
+            .into()),
         }
     }
 
@@ -506,6 +856,9 @@ impl Checker<'_> {
             let lt = self.infer(l, hint)?;
             (lt.clone(), self.infer(r, Some(&lt))?)
         };
+        if op == BinOp::Add && lt == Type::Str && rt == Type::Str && self.g.version >= (0, 3) {
+            return Ok(Type::Str);
+        }
         if lt != rt {
             return Err(g003(span, format!("cannot apply `{}` to `{lt}` and `{rt}`", op.ascii()),
                 "mismatched operands",
@@ -565,4 +918,48 @@ fn check_divisor(r: &IExpr) -> R<()> {
         .label("could be zero")
         .help("v0.1 only divides by literals such as `/ 2` or `/ 100.00`, so division by zero is impossible")
         .into())
+}
+
+fn builtin_help(b: Builtin) -> String {
+    match b {
+        Builtin::Len => "`len(xs)` counts the elements of any list".into(),
+        Builtin::Sum => "`sum(xs)` adds a list of numbers; an empty list sums to 0".into(),
+        Builtin::Min | Builtin::Max => format!(
+            "`{}(xs)` takes a list of numbers or strings; an empty list is fault R006",
+            b.name()
+        ),
+        Builtin::All | Builtin::Any => format!("`{}(xs)` takes a list of bools", b.name()),
+        Builtin::Contains => "`contains(xs, v)` checks whether a list of scalars holds `v`".into(),
+        Builtin::Round | Builtin::Floor | Builtin::Ceil => format!(
+            "`{}(x, 2)` rounds a dec to a literal number of places (0 to 28)",
+            b.name()
+        ),
+    }
+}
+
+/// Constants must match their declared types (D-051).
+pub fn check_consts(main: &Graph, diags: &mut Vec<Diag>) {
+    let c = Checker {
+        g: main,
+        types: vec![None; main.g.node_count()],
+        first_writer: vec![None; main.g.node_count()],
+        sums: Default::default(),
+        diags: Vec::new(),
+    };
+    for k in &main.consts {
+        match c.infer(&k.value, Some(&k.ty)) {
+            Ok(t) if t == k.ty => {}
+            Ok(t) => diags.push(g003(
+                k.value.span,
+                format!(
+                    "constant `{}` is declared `{}` but its value is `{t}`",
+                    k.name, k.ty
+                ),
+                "wrong type",
+                format!("change the declared type to `{t}`, or the value"),
+            )),
+            Err(Stop::Diag(d)) => diags.push(d),
+            Err(Stop::Silent) => {}
+        }
+    }
 }

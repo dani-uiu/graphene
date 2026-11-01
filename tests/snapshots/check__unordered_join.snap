@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G007
+
+  × join members can be active independently
+   ╭─[unordered_join.grph:6:1]
+ 5 │ A -> match x > 10 { true => BIG, false => SMALL }
+ 6 │ (BIG, SMALL) -> f(x) -> R
+   · ────────────┬────────────
+   ·             ╰── `BIG` is active only when the match on line 5 takes `true`; `SMALL` is active only when the match on line 5 takes `false`
+ 7 │ R -> out r: u64
+   ╰────
+  help: join only values that are active together; merge the branches into one node first, or move
+        the join inside the branch

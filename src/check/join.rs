@@ -1,5 +1,6 @@
 //! G007: all members of a join are active under the same condition
-//! (equal normalized guards).
+//! (equal normalized guards). Since v0.3 a join is also accepted when one
+//! member's guard implies every other's (D-046).
 //!
 //! Depends on: `check::guards`, `ir::graph`, `diag`.
 //!
@@ -18,6 +19,14 @@ pub fn check(graph: &Graph, guards: &Guards, diags: &mut Vec<Diag>) {
         }
         let first = guards.get(vx.srcs[0]);
         if vx.srcs.iter().all(|s| guards.get(*s) == first) {
+            continue;
+        }
+        let chain = vx.srcs.iter().any(|s| {
+            vx.srcs
+                .iter()
+                .all(|o| guards.get(*s).implies(guards.get(*o)))
+        });
+        if chain && graph.version >= (0, 3) {
             continue;
         }
         let conditions: Vec<String> = vx

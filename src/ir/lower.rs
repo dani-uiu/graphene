@@ -16,75 +16,179 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use petgraph::graph::DiGraph;
 
 use super::graph::*;
-use crate::diag::{line_col, Code, Diag, Span};
+use crate::diag::{line_col, suggest, Code, Diag, Span};
 use crate::syntax::ast::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Def {
     Extern(usize),
+    Const(usize),
+    Sub(usize),
     InputName(VId),
     InputNode(VId),
     Node(VId),
     Sink(VId),
 }
 
+/// Declarations every graph of a program shares: effects, constants, and
+/// subgraph signatures, with their names.
+#[derive(Clone, Default)]
+struct Shared {
+    names: HashMap<String, (Def, Span)>,
+    externs: Vec<ExternDecl>,
+    consts: Vec<ConstVal>,
+    subs: Vec<SubSig>,
+}
+
 struct Lower<'a> {
     src: &'a str,
+    version: (u32, u32),
+    /// `Some(i)` while lowering the body of subgraph `i`.
+    body: Option<usize>,
     g: DiGraph<Vertex, Edge>,
     root: VId,
     names: HashMap<String, (Def, Span)>,
     externs: Vec<ExternDecl>,
+    consts: Vec<ConstVal>,
+    subs: Vec<SubSig>,
     inputs: Vec<VId>,
     asserts: Vec<Assertion>,
     intent: Option<String>,
+    used_consts: BTreeSet<usize>,
     diags: Vec<Diag>,
 }
 
-/// Lower a parsed program. Returns the graph plus stage-2 diagnostics.
-pub fn lower(program: &Program, src: &str) -> (Graph, Vec<Diag>) {
-    let mut g = DiGraph::new();
-    let root = g.add_node(Vertex {
-        kind: VKind::Root,
-        name: "root".into(),
-        span: Span::default(),
-        key: 0,
-        srcs: Vec::new(),
-        line: 1,
-    });
-    let mut l = Lower {
-        src,
-        g,
-        root,
-        names: HashMap::new(),
-        externs: Vec::new(),
-        inputs: Vec::new(),
-        asserts: Vec::new(),
-        intent: None,
-        diags: Vec::new(),
-    };
-    let stmts: Vec<&Stmt> = program
-        .lines
+/// A lowered program: the main graph plus one graph per subgraph body.
+pub struct Lowered {
+    pub main: Graph,
+    pub bodies: Vec<Graph>,
+    /// Constants no expression reads (G008, reported with stage 5).
+    pub unused_consts: Vec<(String, Span)>,
+}
+
+/// Lower a parsed program. Returns the graphs plus stage-2 diagnostics.
+pub fn lower(program: &Program, src: &str) -> (Lowered, Vec<Diag>) {
+    let mut diags = Vec::new();
+    let (top, blocks) = super::blocks::split(program, &mut diags);
+    let mut main = Lower::new(src, program.version, None);
+    for s in &top {
+        main.define_shared(s);
+    }
+    for b in &blocks {
+        main.define_sub(b.header);
+    }
+    let shared = main.shared();
+    let mut used = BTreeSet::new();
+    let mut bodies = Vec::new();
+    for (i, b) in blocks.iter().enumerate() {
+        let mut l = Lower::new(src, program.version, Some(i));
+        l.adopt(&shared);
+        for p in &b.header.params {
+            l.define_input(p);
+        }
+        l.lower_stmts(&b.body);
+        // A subgraph body is always checked for totality (D-043).
+        if !l.asserts.iter().any(|a| matches!(a, Assertion::Total(_))) {
+            l.asserts.push(Assertion::Total(b.header.name.span()));
+        }
+        used.extend(l.used_consts.iter().copied());
+        diags.append(&mut l.diags);
+        bodies.push(l.finish());
+    }
+    main.lower_stmts(&top);
+    used.extend(main.used_consts.iter().copied());
+    diags.append(&mut main.diags);
+    let unused_consts = main
+        .consts
         .iter()
-        .filter_map(|l| l.stmt.as_ref())
+        .enumerate()
+        .filter(|(i, _)| !used.contains(i))
+        .map(|(_, c)| (c.name.clone(), c.span))
         .collect();
-    for s in &stmts {
-        l.define(s);
-    }
-    for s in &stmts {
-        l.build(s);
-    }
-    let graph = Graph {
-        g: l.g,
-        root,
-        externs: l.externs,
-        inputs: l.inputs,
-        asserts: l.asserts,
-        intent: l.intent,
-        version: program.version,
-        order: Vec::new(),
-        pos: Vec::new(),
+    let lowered = Lowered {
+        main: main.finish(),
+        bodies,
+        unused_consts,
     };
-    (graph, l.diags)
+    (lowered, diags)
+}
+
+impl<'a> Lower<'a> {
+    fn new(src: &'a str, version: (u32, u32), body: Option<usize>) -> Lower<'a> {
+        let mut g = DiGraph::new();
+        let root = g.add_node(Vertex {
+            kind: VKind::Root,
+            name: "root".into(),
+            span: Span::default(),
+            key: 0,
+            srcs: Vec::new(),
+            line: 1,
+        });
+        Lower {
+            src,
+            version,
+            body,
+            g,
+            root,
+            names: HashMap::new(),
+            externs: Vec::new(),
+            consts: Vec::new(),
+            subs: Vec::new(),
+            inputs: Vec::new(),
+            asserts: Vec::new(),
+            intent: None,
+            used_consts: BTreeSet::new(),
+            diags: Vec::new(),
+        }
+    }
+
+    fn shared(&self) -> Shared {
+        Shared {
+            names: self.names.clone(),
+            externs: self.externs.clone(),
+            consts: self.consts.clone(),
+            subs: self.subs.clone(),
+        }
+    }
+
+    fn adopt(&mut self, shared: &Shared) {
+        self.names = shared.names.clone();
+        self.externs = shared.externs.clone();
+        self.consts = shared.consts.clone();
+        self.subs = shared.subs.clone();
+    }
+
+    /// Pass 1 (names) then pass 2 (ops, edges, references).
+    fn lower_stmts(&mut self, stmts: &[&Stmt]) {
+        for s in stmts {
+            self.define(s);
+        }
+        for s in stmts {
+            self.build(s);
+        }
+    }
+
+    fn finish(self) -> Graph {
+        let consts = if self.body.is_none() {
+            self.consts
+        } else {
+            Vec::new()
+        };
+        Graph {
+            g: self.g,
+            root: self.root,
+            externs: self.externs,
+            inputs: self.inputs,
+            asserts: self.asserts,
+            intent: self.intent,
+            version: self.version,
+            subs: self.subs,
+            body: self.body,
+            consts,
+            order: Vec::new(),
+            pos: Vec::new(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -134,10 +238,18 @@ impl Lower<'_> {
         true
     }
 
+    /// Declarations shared by every graph: effects and constants.
+    fn define_shared(&mut self, s: &Stmt) {
+        match s {
+            Stmt::Extern(e) => self.define_extern(e),
+            Stmt::Const(c) => self.define_const(c),
+            _ => {}
+        }
+    }
+
     fn define(&mut self, s: &Stmt) {
         match s {
             Stmt::Intent(text, _) => self.intent = Some(text.clone()),
-            Stmt::Extern(e) => self.define_extern(e),
             Stmt::Input(i) => self.define_input(i),
             Stmt::Flow(f) => {
                 match &f.target {
@@ -190,6 +302,64 @@ impl Lower<'_> {
             ret,
             errors,
             span,
+        });
+    }
+
+    fn define_const(&mut self, c: &crate::syntax::ast::ConstDecl) {
+        let idx = self.consts.len();
+        if !self.claim(&c.name, Def::Const(idx), "a constant") {
+            return;
+        }
+        if !is_literal(&c.value) {
+            self.diags.push(
+                Diag::new(Code::G003, c.value.span(), "a constant must be a literal value")
+                    .label("not a literal")
+                    .help("write a number, string, bool, or a record or list of those; compute derived values in a flow"),
+            );
+            return;
+        }
+        let Some(value) = self.expr(&c.value) else {
+            return;
+        };
+        let ty = self.ty(&c.ty);
+        self.consts.push(ConstVal {
+            name: c.name.name.clone(),
+            value,
+            ty,
+            span: c.name.span(),
+        });
+    }
+
+    /// A subgraph's signature: parameters, result type, declared errors.
+    fn define_sub(&mut self, h: &GraphHeader) {
+        let idx = self.subs.len();
+        if !self.claim(&h.name, Def::Sub(idx), "a subgraph") {
+            return;
+        }
+        let mut params = Vec::new();
+        for p in &h.params {
+            if params
+                .iter()
+                .any(|(n, _, _): &(String, Type, Span)| *n == p.name.name)
+            {
+                self.dup_member(&p.name, "parameter");
+            }
+            params.push((p.name.name.clone(), self.ty(&p.ty), p.name.span()));
+        }
+        let mut errors = Vec::new();
+        for e in &h.errors {
+            if errors.contains(&e.name) {
+                self.dup_member(e, "error");
+            }
+            errors.push(e.name.clone());
+        }
+        let ret = self.ty(&h.ret);
+        self.subs.push(SubSig {
+            name: h.name.name.clone(),
+            params,
+            ret,
+            errors,
+            span: h.name.span(),
         });
     }
 
@@ -286,15 +456,7 @@ impl Lower<'_> {
             Stmt::Flow(f) => self.build_flow(f),
             Stmt::Match(m) => self.build_match(m),
             Stmt::Out(o) => {
-                let (Some(name), Some(t)) = (&o.name, &o.ty) else {
-                    return self.unsupported(o.pos.0, "a bare `out` outside a subgraph");
-                };
-                let ty = self.ty(t);
-                let kind = VKind::Out {
-                    name: name.name.clone(),
-                    ty,
-                    ty_span: t.pos.0,
-                };
+                let kind = self.out_kind(o);
                 self.op(kind, "out", o.pos.0, std::slice::from_ref(&o.source));
             }
             Stmt::Fail(f) => {
@@ -315,6 +477,30 @@ impl Lower<'_> {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// A named `out` (main program), or the bare `out` of a body, which
+    /// carries the subgraph's declared result type. Misplaced forms are
+    /// reported by `check::outputs` (G011).
+    fn out_kind(&mut self, o: &OutStmt) -> VKind {
+        if let (Some(name), Some(t)) = (&o.name, &o.ty) {
+            return VKind::Out {
+                name: name.name.clone(),
+                ty: self.ty(t),
+                ty_span: t.pos.0,
+                scale: scale_of(t),
+            };
+        }
+        let ty = self
+            .body
+            .and_then(|b| self.subs.get(b))
+            .map_or(Type::Bool, |s| s.ret.clone());
+        VKind::Out {
+            name: String::new(),
+            ty,
+            ty_span: o.pos.0,
+            scale: Scale::Default,
         }
     }
 
@@ -343,6 +529,26 @@ impl Lower<'_> {
                 );
                 None
             }
+            Some(Def::Const(_)) => {
+                self.undefined(
+                    id,
+                    format!(
+                        "`{}` is a constant; read it in an expression, e.g. `f({})`",
+                        id.name, id.name
+                    ),
+                );
+                None
+            }
+            Some(Def::Sub(_)) => {
+                self.undefined(
+                    id,
+                    format!(
+                        "`{}` is a subgraph; run it with `call`, `map`, or `filter`",
+                        id.name
+                    ),
+                );
+                None
+            }
             None => {
                 self.undefined(
                     id,
@@ -354,13 +560,28 @@ impl Lower<'_> {
     }
 
     fn undefined(&mut self, id: &Ident, help: String) {
+        // "Did you mean" hints are a v0.3 addition (D-052); older files
+        // keep their exact v0.1/v0.2 messages.
+        let hint = (self.version >= (0, 3))
+            .then(|| {
+                let values = self
+                    .names
+                    .iter()
+                    .filter(|(_, (d, _))| !matches!(d, Def::Extern(_) | Def::Sub(_)))
+                    .map(|(n, _)| n.as_str());
+                suggest(&id.name, values)
+            })
+            .flatten();
+        let label = hint.map_or("unknown name".to_string(), |h| {
+            format!("did you mean `{h}`?")
+        });
         self.diags.push(
             Diag::new(
                 Code::G002,
                 id.span(),
                 format!("`{}` is not defined here", id.name),
             )
-            .label("unknown name")
+            .label(label)
             .help(help),
         );
     }
@@ -397,14 +618,50 @@ impl Lower<'_> {
         }
     }
 
+    fn sub(&mut self, id: &Ident) -> Option<usize> {
+        match self.names.get(&id.name).map(|(d, _)| *d) {
+            Some(Def::Sub(i)) => Some(i),
+            _ => {
+                let near = suggest(&id.name, self.subs.iter().map(|s| s.name.as_str()))
+                    .map_or(String::new(), |s| format!("did you mean `{s}`? "));
+                self.undefined(
+                    id,
+                    format!(
+                        "{near}declare it first: `graph {}(param: type -> Node) -> type {{ ... }}`",
+                        id.name
+                    ),
+                );
+                None
+            }
+        }
+    }
+
+    fn call_op(&mut self, kind: CallKind, graph: &Ident, args: &[Arg]) -> Option<VKind> {
+        let sub = self.sub(graph)?;
+        let args = self.lower_args(args)?;
+        Some(VKind::Call { sub, kind, args })
+    }
+
+    fn lower_args(&mut self, args: &[Arg]) -> Option<Vec<IArg>> {
+        let mut out = Vec::new();
+        for a in args {
+            let value = self.expr(&a.value)?;
+            out.push(IArg {
+                name: a.name.name.clone(),
+                name_span: a.name.span(),
+                value,
+                each: a.each,
+            });
+        }
+        Some(out)
+    }
+
     fn build_flow(&mut self, f: &Flow) {
         let kind = match &f.op {
             Op::Pure(e) => self.expr(e).map(|expr| VKind::Pure { expr }),
             Op::Fx { effect, args } => self.effect_op(effect, args, false),
             Op::FxAsync { effect, args } => self.effect_op(effect, args, true),
-            Op::Call { kind, graph, .. } => {
-                return self.unsupported(graph.span(), &format!("`{}`", kind.keyword()));
-            }
+            Op::Call { kind, graph, args } => self.call_op(*kind, graph, args),
         };
         let name = match &f.op {
             Op::Pure(_) => "f".to_string(),
@@ -416,7 +673,7 @@ impl Lower<'_> {
         let Some(op) = self.op(kind, &name, f.pos.0, &f.sources) else {
             return;
         };
-        let is_sync = matches!(f.op, Op::Fx { .. });
+        let is_sync = matches!(f.op, Op::Fx { .. } | Op::Call { .. });
         let tid = f.target.ident();
         let ann = match &f.target {
             Target::Node { ty: Some(t), .. } => Some((self.ty(t), t.pos.0)),
@@ -435,6 +692,7 @@ impl Lower<'_> {
     fn err_edges(&mut self, op: VId, f: &Flow) {
         let declared: Vec<String> = match &self.g[op].kind {
             VKind::Sync { effect, .. } => self.externs[*effect].errors.clone(),
+            VKind::Call { sub, .. } => self.subs[*sub].errors.clone(),
             _ => Vec::new(),
         };
         let named: Vec<&str> = f
@@ -490,15 +748,7 @@ impl Lower<'_> {
 
     fn effect_op(&mut self, effect: &Ident, args: &[Arg], is_async: bool) -> Option<VKind> {
         let idx = self.effect(effect)?;
-        let mut out = Vec::new();
-        for a in args {
-            let value = self.expr(&a.value)?;
-            out.push(IArg {
-                name: a.name.name.clone(),
-                name_span: a.name.span(),
-                value,
-            });
-        }
+        let out = self.lower_args(args)?;
         Some(if is_async {
             VKind::Async {
                 effect: idx,
@@ -541,7 +791,10 @@ impl Lower<'_> {
     fn expr(&mut self, e: &Expr) -> Option<IExpr> {
         let kind = match &e.kind {
             ExprKind::Lit(l) => IKind::Lit(l.clone()),
-            ExprKind::Name(id) => IKind::Ref(self.reference(id)?, id.name.clone()),
+            ExprKind::Name(id) => match self.names.get(&id.name).map(|(d, _)| *d) {
+                Some(Def::Const(i)) => self.const_ref(i)?,
+                _ => IKind::Ref(self.reference(id)?, id.name.clone()),
+            },
             ExprKind::Field(b, f) => IKind::Field(Box::new(self.expr(b)?), f.name.clone()),
             ExprKind::Unary(op, x) => IKind::Unary(*op, Box::new(self.expr(x)?)),
             ExprKind::Binary(op, l, r) => {
@@ -549,10 +802,8 @@ impl Lower<'_> {
                 IKind::Binary(*op, Box::new(l?), Box::new(r?))
             }
             ExprKind::Record(fields) => self.record_lit(fields)?,
-            ExprKind::List(_) | ExprKind::Builtin(..) => {
-                self.unsupported(e.span(), "lists and built-in functions");
-                return None;
-            }
+            ExprKind::List(items) => IKind::List(self.exprs(items)?),
+            ExprKind::Builtin(b, args) => IKind::Builtin(*b, self.exprs(args)?),
             ExprKind::Convert(to, x) => {
                 let to = match to {
                     NumTy::U64 => Type::U64,
@@ -568,14 +819,21 @@ impl Lower<'_> {
         })
     }
 
-    /// Temporary while v0.3 is implemented: constructs the checker does not
-    /// handle yet are reported instead of silently ignored.
-    fn unsupported(&mut self, span: Span, what: &str) {
-        self.diags.push(
-            Diag::new(Code::G003, span, format!("{what} is not supported yet"))
-                .label("v0.3 work in progress")
-                .help("this construct parses, but checking it lands in a later v0.3 phase"),
-        );
+    /// Lower several expressions; `None` if any failed (already reported).
+    fn exprs(&mut self, items: &[Expr]) -> Option<Vec<IExpr>> {
+        let lowered: Vec<Option<IExpr>> = items.iter().map(|x| self.expr(x)).collect();
+        lowered.into_iter().collect()
+    }
+
+    /// A constant, inlined with its declared type (D-051).
+    fn const_ref(&mut self, i: usize) -> Option<IKind> {
+        self.used_consts.insert(i);
+        let c = self.consts.get(i)?;
+        Some(IKind::Typed(
+            Box::new(c.value.clone()),
+            c.ty.clone(),
+            c.name.clone(),
+        ))
     }
 
     /// Lower a record literal, reporting duplicate fields (G013).
@@ -625,6 +883,14 @@ impl Lower<'_> {
                 );
                 None
             }
+            Some(Def::Sub(_)) => {
+                self.undefined(
+                    id,
+                    "subgraphs are run with `call`, `map`, or `filter`, not referenced".into(),
+                );
+                None
+            }
+            Some(Def::Const(_)) => None,
             None => {
                 self.undefined(
                     id,
@@ -633,5 +899,31 @@ impl Lower<'_> {
                 None
             }
         }
+    }
+}
+
+/// A literal, or a record or list of literals (what a constant may hold).
+fn is_literal(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Lit(_) => true,
+        ExprKind::Unary(UnOp::Neg, x) => matches!(x.kind, ExprKind::Lit(_)),
+        ExprKind::Record(fields) => fields.iter().all(|(_, x)| is_literal(x)),
+        ExprKind::List(items) => items.iter().all(is_literal),
+        _ => false,
+    }
+}
+
+/// Output scales inside an `out` type (`dec(N)`, D-052).
+fn scale_of(t: &Ty) -> Scale {
+    match &t.kind {
+        TyKind::DecScale(n) => Scale::Places(*n),
+        TyKind::List(inner) => Scale::List(Box::new(scale_of(inner))),
+        TyKind::Record(fields) => Scale::Record(
+            fields
+                .iter()
+                .map(|f| (f.name.name.clone(), scale_of(&f.ty)))
+                .collect(),
+        ),
+        _ => Scale::Default,
     }
 }
