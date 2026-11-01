@@ -1,0 +1,27 @@
+[package]
+name = "graphene-ide"
+version = "0.1.0"
+edition = "2021"
+description = "Graphene IDE: edit Graphene programs as text or as a live graph, and run them"
+license = "MIT"
+
+# Standalone: the root workspace excludes this crate so the language crates
+# keep building on any toolchain; this one needs MSVC on Windows (D-037).
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+graphene = { path = "../.." }
+graphene-ide-core = { path = "../../crates/graphene-ide-core" }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

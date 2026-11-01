@@ -2,7 +2,12 @@
 
 A desktop app for writing, viewing and running Graphene programs as a graph of connected nodes, styled after Obsidian's graph view.
 
-Status: **draft, awaiting approval.** No code has been written yet.
+Status: **built.** The app is in `ide/`, the language logic in `crates/graphene-ide-core/`. Where the build differs from this plan:
+- **Stack:** plain TypeScript and Canvas 2D instead of Svelte and PixiJS (D-038).
+- **Statements:** drawn as small nodes, not glyphs on edges (D-039).
+- **Crate layout:** a workspace member plus a standalone Tauri crate, with no move of the compiler (D-037).
+
+`ide/README.md` explains how to run, build and test it.
 
 ---
 

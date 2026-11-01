@@ -51,6 +51,26 @@ assert total
 assert indep(S1, out)
 ```
 
+## Graphene IDE
+
+A desktop app (`ide/`) for editing Graphene programs as text or as an Obsidian-style live graph, and for running them.
+
+- **The text stays the program.** Every graph action (add a step, connect, rename, delete, join) is a small text edit, so comments survive and Ctrl+Z undoes graph actions too.
+- **Checking:** problems show on nodes and in the text, with one-click quick fixes.
+- **Running:**
+  - an input form built from the `in` lines, with mock fixtures;
+  - values painted on nodes, untaken branches dimmed, and a step-by-step replay;
+  - recording of missing mock responses;
+  - test cases, run as a list and saved from any run.
+
+```sh
+cd ide && npm install
+npm run tauri dev            # run the app
+npm run tauri build          # Windows installers in ide/src-tauri/target/release/bundle/
+```
+
+See `ide/README.md` for details, `docs/ide-plan.md` for the design.
+
 ## Quickstart
 
 You need a stable Rust toolchain. On Windows without Visual Studio, use the GNU target plus MinGW-w64 (see `docs/decisions.md`, D-023).

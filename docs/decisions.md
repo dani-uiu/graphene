@@ -187,3 +187,25 @@ Diagnostics are printed as data for tools and LLM fix loops. Spans give byte off
 ## D-036 — Versioned headers; P006 · Approved
 `#!graphene 0.1` and `#!graphene 0.2` are both accepted. A `0.1` file is checked and run exactly as in v0.1. Using a v0.2 construct in it is P006, whose help line suggests changing the header. `fmt` keeps the version as written. `pricing.grph` (verbatim from the brief) and v0.1 `checkout.grph` stay on `0.1` as regression examples.
 
+---
+
+# Graphene IDE
+
+## D-037 — IDE crate layout and toolchains · Recorded
+The root `Cargo.toml` is now a workspace with two members: `graphene` (the root package) and `crates/graphene-ide-core`. The core crate holds all IDE language logic in pure Rust: analysis, edit commands, quick fixes, traced runs, and the command surface (`shell`). The Tauri shell `ide/src-tauri` is **excluded** from the workspace. It pins `stable-x86_64-pc-windows-msvc` in its own `rust-toolchain.toml`, because Tauri needs the MSVC linker on Windows. The language crates keep building and testing on the GNU toolchain (D-023), unchanged. This replaces the plan's "move the compiler into `crates/graphene`" step, which would have churned every existing path for no functional gain.
+
+## D-038 — Plain TypeScript and Canvas 2D instead of Svelte and PixiJS · Recorded
+The UI is plain TypeScript modules plus CodeMirror 6. The graph uses d3-force on a Canvas 2D context. The panels are simple DOM views over one small store, so a framework would add build complexity without paying for itself. Canvas 2D handles the target sizes (hundreds to low thousands of nodes) smoothly and keeps the renderer short and deterministic. The Obsidian look comes from styling, not from WebGL.
+
+## D-039 — Statements are small nodes, not edge glyphs · Recorded
+Each statement (`f`, `fx`, `fx~`, `match`, `out`, `fail`) is drawn as a small node with its glyph, between its sources and targets. Joins, several error edges, and match arms make "glyph on an edge" ambiguous, while a small node handles all of them, can be clicked, and has its own inspector. Node ids are `v:<name>` for values and `s:<line>` for statements. When lines shift, statement nodes keep their positions by matching a signature: kind, text, and neighbors.
+
+## D-040 — Node values in the run overlay are exact · Recorded
+Values painted on nodes are the runtime's exact values (`80.0000`). Only the program's output is rescaled to 2 places (D-002), so the overlay never hides precision.
+
+## D-041 — Dev bridge and headless smoke test · Recorded
+`cargo run -p graphene-ide-core --example bridge` serves the built UI over HTTP, with a stand-in for Tauri's `invoke` that calls `shell::dispatch`. That is the same function table the Tauri commands wrap. `ide/e2e/smoke.mjs` then drives the real UI in headless Edge or Chrome. It opens programs, edits through graph commands, undoes, runs with mocks, applies a quick fix, runs test cases, and takes screenshots. The bridge is development-only and binds to 127.0.0.1.
+
+## D-042 — Layout sidecar · Recorded
+Pinned node positions are saved to `<program>.grph.layout.json` as `{"pinned": {"v:B": [x, y]}}`. The file is optional, the CLI ignores it, and deleting it only loses pins. Unpinned nodes are always placed by the force layout.
+
