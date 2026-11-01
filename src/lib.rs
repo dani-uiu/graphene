@@ -13,6 +13,7 @@ pub mod check;
 pub mod diag;
 pub mod fmt;
 pub mod ir;
+pub mod runtime;
 pub mod syntax;
 
 pub use check::Checked;
