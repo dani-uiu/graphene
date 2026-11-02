@@ -251,8 +251,11 @@ body[data-layout="graph"] .right {
 body[data-layout="text"] .main {
   grid-template-columns: var(--side-w) 4px 0 0 1fr;
 }
+/* Hidden but still in the grid: with `display: none` the later panes
+   would shift into this zero-width column and the editor would vanish. */
 body[data-layout="text"] .graph-pane {
-  display: none;
+  visibility: hidden;
+  overflow: hidden;
 }
 .v-handle {
   cursor: col-resize;
@@ -318,8 +321,12 @@ body[data-layout="text"] .graph-pane {
 body[data-layout="text"] .right {
   grid-template-rows: 0 0 1fr;
 }
-body[data-layout="text"] .inspector {
-  display: none;
+/* Same here: keep the inspector's (zero-height) row, so the editor keeps
+   the `1fr` row instead of moving into a zero-height one. */
+body[data-layout="text"] .inspector,
+body[data-layout="text"] .split-handle {
+  visibility: hidden;
+  overflow: hidden;
 }
 .inspector {
   overflow: auto;

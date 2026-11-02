@@ -1,6 +1,6 @@
 [package]
 name = "graphene-ide"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "Graphene IDE: edit Graphene programs as text or as a live graph, and run them"
 license = "MIT"

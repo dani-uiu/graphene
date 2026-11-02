@@ -1,6 +1,6 @@
 [package]
 name = "graphene-ide-core"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "Language logic for the Graphene IDE: analysis for the graph view, text-edit commands, quick fixes, traced runs"
 license = "MIT"

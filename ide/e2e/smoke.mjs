@@ -186,6 +186,15 @@ await open("examples/valid/invoice_split.grph");
 a = await g(() => window.__graphene.store.analysis);
 check("invoice_split (v0.3.1) checks", a.checked === true, JSON.stringify(a.diags));
 
+// 7d. Each view mode leaves the right panes visible (Text once showed nothing).
+const area = (sel) => g((s) => { const r = document.querySelector(s)?.getBoundingClientRect(); return r ? r.width * r.height : 0; }, sel);
+for (const [mode, editor, graph] of [["text", true, false], ["graph", false, true], ["split", true, true]]) {
+  await page.click(`.mode[data-mode="${mode}"]`);
+  await settle(400);
+  check(`${mode} view shows the ${[editor && "editor", graph && "graph"].filter(Boolean).join(" and ")}`,
+    (await area(".cm-editor") > 0) === editor && (await area(".graph-canvas") > 0) === graph);
+}
+
 // 8. Local graph, settings, light theme, palette.
 await g(() => window.__graphene.app.selectNodes(["v:RATE"], false));
 await page.click(".graph-toolbar button:last-child");
