@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learn Graphene</title>
+<meta name="description" content="Short lessons that teach the Graphene (.grph) dataflow language, from a first program to subgraphs, lists, testing and real effects.">
+<style>
+:root {
+  --bg: #fbfaf8;
+  --panel: #ffffff;
+  --side: #f3f1ed;
+  --text: #22201c;
+  --dim: #6b665e;
+  --line: #e2ded6;
+  --accent: #6d4fd8;
+  --accent-soft: #ece7fb;
+  --good: #1f7a4d;
+  --good-soft: #e3f3ea;
+  --bad: #b3261e;
+  --bad-soft: #fbe9e7;
+  --code-bg: #f6f4f0;
+  --k: #6d4fd8;   /* keywords */
+  --t: #0b6e8a;   /* types */
+  --s: #9a5b13;   /* strings */
+  --n: #1f7a4d;   /* numbers */
+  --c: #8a857c;   /* comments */
+  --node: #b0306a;/* NODE names */
+  --op: #6b665e;  /* arrows */
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17161a; --panel: #1e1d22; --side: #1a191e; --text: #e9e6ef; --dim: #a19ca8;
+    --line: #2e2c34; --accent: #a993ff; --accent-soft: #2a2540; --good: #6fd19c; --good-soft: #1b2e24;
+    --bad: #ff8a80; --bad-soft: #3a1f1d; --code-bg: #141317;
+    --k: #b9a6ff; --t: #6fc8e0; --s: #e6b26e; --n: #8fdcae; --c: #77727f; --node: #f08bbd; --op: #a19ca8;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17161a; --panel: #1e1d22; --side: #1a191e; --text: #e9e6ef; --dim: #a19ca8;
+  --line: #2e2c34; --accent: #a993ff; --accent-soft: #2a2540; --good: #6fd19c; --good-soft: #1b2e24;
+  --bad: #ff8a80; --bad-soft: #3a1f1d; --code-bg: #141317;
+  --k: #b9a6ff; --t: #6fc8e0; --s: #e6b26e; --n: #8fdcae; --c: #77727f; --node: #f08bbd; --op: #a19ca8;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.6 Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+code, pre, kbd {
+  font-family: "JetBrains Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+  /* Show `->` and `=>` as typed, never as one arrow glyph. */
+  font-variant-ligatures: none;
+  font-feature-settings: "calt" 0, "liga" 0;
+}
+a { color: var(--accent); }
+.layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 100vh; }
+nav.side {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  background: var(--side); border-right: 1px solid var(--line); padding: 20px 14px;
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; margin: 0 6px 4px; }
+.brand .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.side .sub { color: var(--dim); font-size: 13px; margin: 0 6px 14px; }
+.progress { margin: 0 6px 14px; font-size: 13px; color: var(--dim); }
+.bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+.bar > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.toc { list-style: none; margin: 0; padding: 0; }
+.toc a {
+  display: flex; gap: 10px; align-items: baseline; padding: 6px 8px; border-radius: 6px;
+  color: var(--text); text-decoration: none; font-size: 14px;
+}
+.toc a:hover { background: var(--accent-soft); }
+.toc a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.toc .num { color: var(--dim); font-variant-numeric: tabular-nums; min-width: 20px; font-size: 12px; }
+.toc a.done .num::after { content: " ✓"; color: var(--good); }
+.toc .part { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; margin: 14px 8px 4px; }
+.side-actions { margin: 16px 6px 0; display: flex; gap: 6px; }
+button {
+  font: inherit; font-size: 13px; cursor: pointer; border-radius: 6px; padding: 5px 10px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text);
+}
+button:hover { border-color: var(--accent); }
+main { padding: 32px 48px 80px; max-width: 900px; }
+.hero h1 { font-size: 34px; line-height: 1.2; margin: 0 0 10px; }
+.hero p { color: var(--dim); font-size: 17px; margin: 0 0 8px; }
+.pill { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+section.lesson {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  padding: 24px 28px; margin: 28px 0;
+}
+.lesson-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.lesson-head .n {
+  flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 14px;
+}
+.lesson-head h2 { margin: 0; font-size: 22px; line-height: 1.3; }
+.goal { color: var(--dim); margin: 0 0 14px 46px; font-size: 15px; }
+h3 { font-size: 15px; margin: 22px 0 6px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); }
+p, li { max-width: 72ch; }
+ul { padding-left: 22px; }
+li { margin: 4px 0; }
+:not(pre) > code { background: var(--code-bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: .9em; }
+.code {
+  position: relative; background: var(--code-bg); border: 1px solid var(--line);
+  border-radius: 8px; margin: 12px 0;
+}
+.code .label {
+  font-size: 11px; color: var(--dim); padding: 6px 12px 0; text-transform: uppercase; letter-spacing: .06em;
+}
+.code pre { margin: 0; padding: 10px 14px 14px; overflow-x: auto; font-size: 14px; line-height: 1.55; }
+.code .copy { position: absolute; top: 6px; right: 8px; font-size: 12px; padding: 2px 8px; opacity: .75; }
+.code .copy:hover { opacity: 1; }
+.code.out { border-style: dashed; }
+.code.err { background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+.tok-k { color: var(--k); font-weight: 600; }
+.tok-t { color: var(--t); }
+.tok-s { color: var(--s); }
+.tok-n { color: var(--n); }
+.tok-c { color: var(--c); font-style: italic; }
+.tok-node { color: var(--node); font-weight: 600; }
+.tok-op { color: var(--op); }
+.tok-h { color: var(--c); }
+.note {
+  border-left: 3px solid var(--accent); background: var(--accent-soft);
+  padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; font-size: 15px;
+}
+.note.good { border-color: var(--good); background: var(--good-soft); }
+.note.bad { border-color: var(--bad); background: var(--bad-soft); }
+details.quiz { border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; margin: 10px 0; }
+details.quiz summary { cursor: pointer; font-weight: 600; }
+details.quiz[open] summary { margin-bottom: 6px; }
+.done-row { display: flex; justify-content: space-between; align-items: center; margin-top: 22px; gap: 10px; flex-wrap: wrap; }
+.done-row label { display: flex; gap: 8px; align-items: center; cursor: pointer; font-size: 14px; color: var(--dim); }
+.done-row input { width: 16px; height: 16px; accent-color: var(--accent); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 10px 0; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--dim); font-weight: 600; }
+.table-wrap { overflow-x: auto; }
+.menu-btn { display: none; }
+@media (max-width: 860px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  nav.side {
+    position: fixed; z-index: 10; inset: 0 auto 0 0; width: 280px; transform: translateX(-100%);
+    transition: transform .2s; box-shadow: 0 0 30px rgba(0,0,0,.25);
+  }
+  nav.side.open { transform: none; }
+  .menu-btn {
+    display: inline-block; position: sticky; top: 10px; z-index: 5; margin: 10px 16px 0;
+    background: var(--panel);
+  }
+  main { padding: 12px 16px 60px; }
+  section.lesson { padding: 18px 16px; }
+  .goal { margin-left: 0; }
+  .hero h1 { font-size: 27px; }
+}
+@media print {
+  nav.side, .menu-btn, .copy, .done-row { display: none !important; }
+  .layout { display: block; }
+  section.lesson { break-inside: avoid-page; }
+  details.quiz { display: block; }
+}
+</style>
+</head>
+<body>
+<button class="menu-btn" id="menuBtn" aria-controls="side">☰ Lessons</button>
+<div class="layout">
+<nav class="side" id="side" aria-label="Lessons">
+  <div class="brand"><span class="dot"></span> Learn Graphene</div>
+  <div class="sub">Short lessons for <code>#!graphene 0.3</code></div>
+  <div class="progress"><span id="progText">0 of 14 lessons done</span><div class="bar"><span id="progBar"></span></div></div>
+  <ul class="toc" id="toc"></ul>
+  <div class="side-actions">
+    <button id="themeBtn" title="Switch light / dark">◐ Theme</button>
+    <button id="resetBtn" title="Clear the done marks">Reset progress</button>
+  </div>
+</nav>
+
+<main>
+<header class="hero">
+  <span class="pill">Graphene v0.3</span>
+  <h1>Learn Graphene in 14 short lessons</h1>
+  <p>Graphene (<code>.grph</code>) is a small language for business logic. A program is a graph of values and effects, and the compiler proves it safe before anything runs: every input ends in exactly one result, every failure is handled, and running in parallel gives exactly the same answer as running in order.</p>
+  <p>Each lesson takes a few minutes. Every program on this page passes <code>graphene check</code>, and every output shown is what <code>graphene run</code> really prints.</p>
+</header>
+
+<!-- ============================================================ 1 -->
+<section class="lesson" id="l1" data-part="Basics" data-title="Your first program">
+  <div class="lesson-head"><span class="n">1</span><h2>Your first program</h2></div>
+  <p class="goal">Write, check and run a program that doubles a number.</p>
+  <div class="code" data-lang="grph" data-label="hello.grph"><pre>#!graphene 0.3
+@intent "Double a number"
+
+in x: u64 -> X
+X -> f(x * 2) -> Y
+Y -> out result: u64
+
+assert total</pre></div>
+  <ul>
+    <li><code>#!graphene 0.3</code> is required on the first line. It says which version of the language the file uses.</li>
+    <li><code>@intent</code> is a one-line description for humans (and the IDE).</li>
+    <li><code>in x: u64 -> X</code> declares an input named <code>x</code> of type <code>u64</code>, and a <b>node</b> <code>X</code> where the flow starts.</li>
+    <li><code>X -> f(x * 2) -> Y</code> is a <b>flow</b>: when <code>X</code> is ready, compute <code>x * 2</code> and store it in node <code>Y</code>.</li>
+    <li><code>out result: u64</code> is the program's result. <code>assert total</code> asks the compiler to prove every input reaches exactly one result.</li>
+  </ul>
+  <h3>Try it</h3>
+  <div class="code" data-lang="sh" data-label="terminal"><pre>graphene check hello.grph
+graphene run hello.grph --arg x=21</pre></div>
+  <div class="code out" data-lang="json" data-label="output"><pre>ok: hello.grph (2 values, 2 operations)
+{ "result": { "ok": { "result": 42 } }, "effects": [] }</pre></div>
+  <div class="note">Naming rule of thumb: <b>lowercase</b> names are inputs (values you read in expressions), <b>UPPERCASE</b> names are nodes in the graph.</div>
+  <details class="quiz"><summary>Check yourself: what does <code>--arg x=21</code> refer to, <code>x</code> or <code>X</code>?</summary>
+    <p>The input's name, <code>x</code>. <code>X</code> is the node where the flow starts; you never pass values to nodes directly.</p></details>
+</section>
+
+<!-- ============================================================ 2 -->
+<section class="lesson" id="l2" data-part="Basics" data-title="Flows, branches and joins">
+  <div class="lesson-head"><span class="n">2</span><h2>Flows, branches and joins</h2></div>
+  <p class="goal">Split work into branches that run independently, then join them.</p>
+  <div class="code" data-lang="grph" data-label="total.grph"><pre>#!graphene 0.3
+@intent "Price with tax and a delivery fee"
+
+in price: dec -> P
+P -> f(price * 0.21) -> TAX
+P -> f(price + 4.99) -> WITH_FEE
+(TAX, WITH_FEE) -> f(WITH_FEE + TAX) -> TOTAL
+TOTAL -> out total: dec
+
+assert total</pre></div>
+  <ul>
+    <li>Two flows leave <code>P</code>. They don't depend on each other, so the runtime may compute them <b>in parallel</b>.</li>
+    <li><code>(TAX, WITH_FEE) -> f(...)</code> is a <b>join</b>: it waits until both are ready.</li>
+    <li>An expression can read any node that is guaranteed to have run before it, like <code>TAX</code> and <code>WITH_FEE</code> here.</li>
+  </ul>
+  <div class="code" data-lang="sh" data-label="terminal"><pre>graphene run total.grph --arg price=10.00
+graphene run total.grph --arg price=10.00 --parallel</pre></div>
+  <div class="code out" data-lang="json" data-label="output (both)"><pre>{ "result": { "ok": { "total": "17.09" } }, "effects": [] }</pre></div>
+  <p>10.00 × 0.21 = 2.10, and 10.00 + 4.99 = 14.99, so the total is 17.09. Both commands print exactly the same thing: that's a guarantee, not luck.</p>
+  <details class="quiz"><summary>Check yourself: why is <code>dec</code> output a string like <code>"17.09"</code>?</summary>
+    <p><code>dec</code> is an exact decimal (never floating point). Writing it as a string keeps every digit exact in JSON. Results are shown with 2 decimal places unless you ask for another scale (lesson 9).</p></details>
+</section>
+
+<!-- ============================================================ 3 -->
+<section class="lesson" id="l3" data-part="Basics" data-title="Types and records">
+  <div class="lesson-head"><span class="n">3</span><h2>Types and records</h2></div>
+  <p class="goal">Know the five scalar types, build records, and convert between numbers.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Type</th><th>Values</th><th>Literal</th></tr>
+    <tr><td><code>u64</code></td><td>whole numbers ≥ 0</td><td><code>42</code></td></tr>
+    <tr><td><code>i64</code></td><td>whole numbers, may be negative</td><td><code>42</code> (from context)</td></tr>
+    <tr><td><code>dec</code></td><td>exact decimals</td><td><code>0.80</code> (always with a point)</td></tr>
+    <tr><td><code>bool</code></td><td>true / false</td><td><code>true</code></td></tr>
+    <tr><td><code>str</code></td><td>text</td><td><code>"hello"</code></td></tr>
+    <tr><td><code>{a: T, ...}</code></td><td>records</td><td><code>{qty: 2, amount: 7.50}</code></td></tr>
+  </table></div>
+  <p>Numbers never mix silently. This is an error:</p>
+  <div class="code err" data-lang="grph" data-label="mistake"><pre>Q -> f(qty * unit) -> AMOUNT   // qty: u64, unit: dec</pre></div>
+  <div class="code out" data-lang="txt" data-label="graphene check"><pre>G003  × cannot apply `*` to `u64` and `dec`
+  help: Graphene has no implicit conversions: make both sides the same type</pre></div>
+  <p>Convert explicitly with <code>u64(e)</code>, <code>i64(e)</code> or <code>dec(e)</code>, and group values in a record:</p>
+  <div class="code" data-lang="grph" data-label="line.grph"><pre>#!graphene 0.3
+@intent "One order line as a record"
+
+in qty: u64 -> Q
+in unit: dec
+Q -> f({qty: qty, amount: dec(qty) * unit}) -> LINE
+LINE -> out line: {qty: u64, amount: dec}
+
+assert total</pre></div>
+  <div class="code out" data-lang="json" data-label="graphene run line.grph --arg qty=3 --arg unit=2.50"><pre>{ "result": { "ok": { "line": { "amount": "7.50", "qty": 3 } } }, "effects": [] }</pre></div>
+  <div class="note">Notice <code>in unit: dec</code> has no node. An input without <code>-> Node</code> is just a value you can read anywhere.</div>
+  <details class="quiz"><summary>Check yourself: how do you read the <code>amount</code> field of node <code>LINE</code>?</summary>
+    <p><code>LINE.amount</code>.</p></details>
+</section>
+
+<!-- ============================================================ 4 -->
+<section class="lesson" id="l4" data-part="Basics" data-title="Decisions with match">
+  <div class="lesson-head"><span class="n">4</span><h2>Decisions with <code>match</code></h2></div>
+  <p class="goal">Branch on a value, and bring the branches back together.</p>
+  <div class="code" data-lang="grph" data-label="grade.grph"><pre>#!graphene 0.3
+@intent "Grade an exam"
+
+in score: u64 -> S
+S -> match score >= 50 { true => PASSED, false => FAILED }
+PASSED -> f("pass") -> GRADE
+FAILED -> f("fail") -> GRADE
+GRADE -> out grade: str
+
+assert total</pre></div>
+  <ul>
+    <li>Exactly one arm runs. The other branch is <b>inactive</b> and does nothing.</li>
+    <li>Two flows write <code>GRADE</code>. That's a <b>merge</b>, allowed because the writers can never both run.</li>
+    <li>You can match on <code>bool</code>, <code>str</code>, <code>u64</code> and <code>i64</code>. Use <code>_ =&gt;</code> for "anything else".</li>
+  </ul>
+  <div class="code out" data-lang="json" data-label="graphene run grade.grph --arg score=72"><pre>{ "result": { "ok": { "grade": "pass" } }, "effects": [] }</pre></div>
+  <p>Every match must cover every possible value:</p>
+  <div class="code err" data-lang="grph" data-label="mistake"><pre>L -> match level { "gold" => G, "silver" => S }</pre></div>
+  <div class="code out" data-lang="txt" data-label="graphene check"><pre>G004  × match on `str` is not exhaustive
+  help: add a wildcard arm: `_ => Node`</pre></div>
+  <details class="quiz"><summary>Check yourself: fix the mistake above so bronze and everyone else pay full price.</summary>
+    <p><code>L -> match level { "gold" => G, "silver" => S, _ => OTHER }</code>, then <code>OTHER -> f(1.00) -> RATE</code>.</p></details>
+</section>
+
+<!-- ============================================================ 5 -->
+<section class="lesson" id="l5" data-part="Effects" data-title="Effects and their errors">
+  <div class="lesson-head"><span class="n">5</span><h2>Effects and their errors</h2></div>
+  <p class="goal">Call the outside world, and handle every way it can fail.</p>
+  <div class="code" data-lang="grph" data-label="greet.grph"><pre>#!graphene 0.3
+@intent "Greet a user by name"
+
+extern fx GetUser(id: u64) -> {name: str, vip: bool} ! NotFound | DbDown
+
+in id: u64 -> I
+I -> fx GetUser(id: id) -> U | err NotFound -> GUEST | err DbDown -> DOWN
+U -> f(U.name) -> NAME
+GUEST -> f("guest") -> NAME
+DOWN -> fail
+NAME -> out name: str
+
+assert total</pre></div>
+  <ul>
+    <li><code>extern fx</code> declares an effect: its arguments, its result type, and after <code>!</code> the errors it can return.</li>
+    <li><code>fx GetUser(...)</code> calls it. <code>| err NotFound -> GUEST</code> routes that error to its own node. Every declared error must be handled (G005), or caught all at once with <code>| err -> X</code>.</li>
+    <li>Here a missing user <b>recovers</b> as "guest", while a database outage <b>fails</b> (lesson 7).</li>
+  </ul>
+  <p>To run it without a real database, give fake answers in a <b>mock fixture</b>:</p>
+  <div class="code" data-lang="json" data-label="users.json"><pre>{
+  "effects": {
+    "GetUser": {
+      "cases": [
+        { "args": { "id": 1 }, "ok": { "name": "ana", "vip": true } },
+        { "args": { "id": 9 }, "err": "DbDown" }
+      ],
+      "fallback": { "err": "NotFound" }
+    }
+  }
+}</pre></div>
+  <div class="code" data-lang="sh" data-label="terminal"><pre>graphene run greet.grph --arg id=1 --mock users.json   # ana
+graphene run greet.grph --arg id=5 --mock users.json   # guest
+graphene run greet.grph --arg id=9 --mock users.json   # fails with DbDown</pre></div>
+  <div class="code out" data-lang="json" data-label="output for id=1"><pre>{
+  "result": { "ok": { "name": "ana" } },
+  "effects": [
+    { "kind": "fx", "effect": "GetUser", "args": { "id": 1 },
+      "result": { "ok": { "name": "ana", "vip": true } } }
+  ]
+}</pre></div>
+  <p>The <b>effect log</b> lists every outside call, in a fixed order, with its arguments and answer. Without <code>--mock</code>, the run stops with <code>fault[R003]: no mock response for `GetUser`</code>.</p>
+  <details class="quiz"><summary>Check yourself: what does id=9 print as its result?</summary>
+    <p><code>{"err": "DbDown"}</code>. A bare <code>fail</code> on an error node passes the effect's error through.</p></details>
+</section>
+
+<!-- ============================================================ 6 -->
+<section class="lesson" id="l6" data-part="Effects" data-title="Fire and forget">
+  <div class="lesson-head"><span class="n">6</span><h2>Fire and forget: <code>fx~</code> and sinks</h2></div>
+  <p class="goal">Log, notify and audit without any risk of changing the result.</p>
+  <div class="code" data-lang="grph" data-label="greet_log.grph (additions)"><pre>extern fx~ Log(event: str)
+
+NAME -> fx~ Log(event: "greeted " + NAME) -> sink LOGGED
+
+assert indep(LOGGED, out)</pre></div>
+  <ul>
+    <li><code>extern fx~</code> declares a fire-and-forget effect: no result, no errors.</li>
+    <li>Its target is a <code>sink</code>: nothing may read it or continue from it (G010).</li>
+    <li><code>assert indep(LOGGED, out)</code> asks the compiler to prove the log can never influence the result.</li>
+    <li>Fire-and-forget calls are delivered after the run finishes, and only if the run got that far.</li>
+  </ul>
+  <div class="code out" data-lang="json" data-label="effects for id=1"><pre>[
+  { "kind": "fx",  "effect": "GetUser", "args": { "id": 1 }, "result": { "ok": { "name": "ana", "vip": true } } },
+  { "kind": "fx~", "effect": "Log", "args": { "event": "greeted ana" } }
+]</pre></div>
+  <details class="quiz"><summary>Check yourself: when <code>DbDown</code> happens, is <code>Log</code> called?</summary>
+    <p>No. <code>NAME</code> never gets a value on that path, so everything after it stays inactive.</p></details>
+</section>
+
+<!-- ============================================================ 7 -->
+<section class="lesson" id="l7" data-part="Effects" data-title="Failing on purpose">
+  <div class="lesson-head"><span class="n">7</span><h2>Failing on purpose</h2></div>
+  <p class="goal">End a run with a named error, and let the compiler find paths you forgot.</p>
+  <div class="code" data-lang="grph" data-label="withdraw.grph"><pre>#!graphene 0.3
+@intent "Withdraw money if the balance allows it"
+
+in balance: dec -> B
+in amount: dec
+B -> match balance >= amount { true => OK, false => TOO_LOW }
+OK -> f(balance - amount) -> LEFT
+TOO_LOW -> fail InsufficientFunds
+LEFT -> out left: dec
+
+assert total</pre></div>
+  <div class="code out" data-lang="json" data-label="graphene run withdraw.grph --arg balance=50.00 --arg amount=80.00"><pre>{ "result": { "err": "InsufficientFunds" }, "effects": [] }</pre></div>
+  <ul>
+    <li><code>fail Name</code> ends the run with that error. It's a normal ending (exit code 0), not a crash.</li>
+    <li>Every run reaches <b>exactly one</b> <code>out</code> or <code>fail</code>.</li>
+  </ul>
+  <p>Delete the <code>TOO_LOW -> fail ...</code> line and the compiler notices at once:</p>
+  <div class="code out" data-lang="txt" data-label="graphene check"><pre>G008  × `TOO_LOW` never reaches an `out`, `fail`, or sink
+  help: use this value on the way to a result, or remove the statement that produces it</pre></div>
+  <div class="note">Stuck on a code? <code>graphene explain G008</code> prints what it means and how to fix it.</div>
+</section>
+
+<!-- ============================================================ 8 -->
+<section class="lesson" id="l8" data-part="Effects" data-title="The safety rules">
+  <div class="lesson-head"><span class="n">8</span><h2>The safety rules</h2></div>
+  <p class="goal">Understand the three flow rules the compiler enforces, so its errors make sense.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Rule</th><th>Meaning</th><th>Code</th></tr>
+    <tr><td>Merges are exclusive</td><td>Several flows may write one node only if they can never both run (different arms of one decision).</td><td>G006</td></tr>
+    <tr><td>Joins are together</td><td>A join waits for all its members, so they must be active together. In 0.3, a member whose condition implies the others' is fine.</td><td>G007</td></tr>
+    <tr><td>Read what surely ran</td><td>An expression may only read a node that is guaranteed to have run before it.</td><td>G009</td></tr>
+  </table></div>
+  <div class="code err" data-lang="grph" data-label="mistake"><pre>X -> f(x + 1) -> Y
+X -> f(x + 2) -> Y</pre></div>
+  <div class="code out" data-lang="txt" data-label="graphene check"><pre>G006  × merge `Y` has writers that can both run</pre></div>
+  <p>These rules are why parallel and sequential runs always agree: no node can be written twice, and nothing waits for a value that might never come.</p>
+  <details class="quiz"><summary>Check yourself: why was the merge in lesson 4 allowed?</summary>
+    <p>Its writers were the <code>true</code> and <code>false</code> arms of the same match, so exactly one of them runs.</p></details>
+</section>
+
+<!-- ============================================================ 9 -->
+<section class="lesson" id="l9" data-part="v0.3" data-title="Constants, rounding and text">
+  <div class="lesson-head"><span class="n">9</span><h2>Constants, rounding and text</h2></div>
+  <p class="goal">Name your policy numbers, round on purpose, and build messages.</p>
+  <div class="code" data-lang="grph" data-label="bill.grph"><pre>#!graphene 0.3
+@intent "Split a restaurant bill"
+
+const SERVICE: dec = 0.125
+const VAT: dec = 0.21
+
+in amount: dec -> A
+in guest: str
+A -> f({
+  service: round(amount * SERVICE, 2),
+  vat: ceil(amount * VAT, 1),
+  total: round(amount * (1.00 + SERVICE + VAT), 2),
+  note: "thanks, " + guest,
+}) -> BILL
+BILL -> out bill: {service: dec, vat: dec(1), total: dec, note: str}
+
+assert total</pre></div>
+  <ul>
+    <li><code>const</code> names a value used anywhere, including inside subgraphs. An unused constant is G008.</li>
+    <li><code>round</code>, <code>floor</code> and <code>ceil</code> take the number of decimal places.</li>
+    <li><code>dec(1)</code> in a type shows that output with 1 decimal place instead of 2.</li>
+    <li><code>+</code> joins two strings. Long statements may span lines inside brackets.</li>
+  </ul>
+  <div class="code out" data-lang="json" data-label="graphene run bill.grph --arg amount=40.00 --arg guest=ana"><pre>{ "result": { "ok": { "bill": {
+  "note": "thanks, ana", "service": "5.00", "total": "53.40", "vat": "8.4" } } }, "effects": [] }</pre></div>
+</section>
+
+<!-- ============================================================ 10 -->
+<section class="lesson" id="l10" data-part="v0.3" data-title="Lists">
+  <div class="lesson-head"><span class="n">10</span><h2>Lists</h2></div>
+  <p class="goal">Take a list as input and summarize it with built-in functions.</p>
+  <div class="code" data-lang="grph" data-label="scores.grph"><pre>#!graphene 0.3
+@intent "Summarize exam scores"
+
+in scores: [u64] -> S
+S -> f({
+  count: len(scores),
+  best: max(scores),
+  total: sum(scores),
+  has_perfect: contains(scores, 100),
+}) -> SUMMARY
+SUMMARY -> out summary: {count: u64, best: u64, total: u64, has_perfect: bool}
+
+assert total</pre></div>
+  <div class="code out" data-lang="json" data-label="graphene run scores.grph --arg 'scores=[72,100,48]'"><pre>{ "result": { "ok": { "summary": {
+  "best": 100, "count": 3, "has_perfect": true, "total": 220 } } }, "effects": [] }</pre></div>
+  <div class="table-wrap"><table>
+    <tr><th>Write</th><th>Gives</th></tr>
+    <tr><td><code>[1, 2, 3]</code>, <code>[]</code></td><td>a list literal (an empty one needs a known type)</td></tr>
+    <tr><td><code>LINES.amount</code></td><td>the <code>amount</code> of every record in the list</td></tr>
+    <tr><td><code>len</code>, <code>sum</code>, <code>min</code>, <code>max</code></td><td>count, total, smallest, largest</td></tr>
+    <tr><td><code>all</code>, <code>any</code></td><td>for lists of <code>bool</code></td></tr>
+    <tr><td><code>contains(xs, v)</code></td><td>is <code>v</code> in the list?</td></tr>
+  </table></div>
+  <div class="note bad"><code>max</code> and <code>min</code> of an empty list stop the run with <b>R006</b>. Try <code>--arg 'scores=[]'</code>. Check <code>len(xs) &gt; 0</code> with a <code>match</code> first when a list may be empty.</div>
+</section>
+
+<!-- ============================================================ 11 -->
+<section class="lesson" id="l11" data-part="v0.3" data-title="Subgraphs">
+  <div class="lesson-head"><span class="n">11</span><h2>Subgraphs: reusable pieces</h2></div>
+  <p class="goal">Write a rule once, check it once, and call it wherever you need it.</p>
+  <div class="code" data-lang="grph" data-label="discount.grph"><pre>#!graphene 0.3
+@intent "Apply one discount rule to two prices"
+
+graph Discount(price: dec -> P, vip: bool) -> dec {
+  P -> match vip { true => YES, false => NO }
+  YES -> f(round(price * 0.90, 2)) -> R
+  NO -> f(price) -> R
+  R -> out
+}
+
+in a: dec -> A
+in b: dec
+in vip: bool
+A -> call Discount(price: a, vip: vip) -> DA
+DA -> call Discount(price: b, vip: vip) -> DB
+DB -> f(DA + DB) -> TOTAL
+TOTAL -> out total: dec
+
+assert total</pre></div>
+  <ul>
+    <li><code>graph Name(params) -> Type { ... }</code> declares a subgraph. Its parameters work like inputs; its body ends in a bare <code>out</code>.</li>
+    <li>A subgraph that can fail lists its errors: <code>-> dec ! Banned</code>. Callers handle them with <code>| err ...</code>, exactly as with effects.</li>
+    <li>Each body is checked on its own, and must always be total. Subgraphs can call other subgraphs, but never themselves (G015).</li>
+  </ul>
+  <div class="code out" data-lang="json" data-label="graphene run discount.grph --arg a=10.00 --arg b=5.55 --arg vip=true"><pre>{ "result": { "ok": { "total": "14.00" } }, "effects": [] }</pre></div>
+  <p>10.00 × 0.90 = 9.00, and 5.55 × 0.90 = 4.995, which rounds to 5.00.</p>
+</section>
+
+<!-- ============================================================ 12 -->
+<section class="lesson" id="l12" data-part="v0.3" data-title="map, filter and each">
+  <div class="lesson-head"><span class="n">12</span><h2><code>map</code>, <code>filter</code> and <code>each</code></h2></div>
+  <p class="goal">Run a subgraph or an effect once per list element.</p>
+  <div class="code" data-lang="grph" data-label="cart.grph"><pre>#!graphene 0.3
+@intent "Price every cart line and count the big ones"
+
+extern fx~ Notify(amount: dec)
+
+graph LineTotal(line: {qty: u64, price: dec} -> L) -> dec {
+  L -> f(dec(line.qty) * line.price) -> T
+  T -> out
+}
+
+graph IsBig(amount: dec -> A) -> bool {
+  A -> f(amount > 100.00) -> B
+  B -> out
+}
+
+in cart: [{qty: u64, price: dec}] -> C
+C -> map LineTotal(line: each cart) -> TOTALS
+TOTALS -> filter IsBig(amount: each TOTALS) -> BIG
+BIG -> fx~ Notify(amount: each BIG) -> sink TOLD
+BIG -> f({sum: sum(TOTALS), big_lines: len(BIG)}) -> R
+R -> out result: {sum: dec, big_lines: u64}
+
+assert total
+assert indep(TOLD, out)</pre></div>
+  <ul>
+    <li><code>map</code> runs the subgraph once per element and gives a list of results, in order. Elements may run in parallel.</li>
+    <li><code>filter</code> keeps the elements whose subgraph returns <code>true</code>.</li>
+    <li><code>each</code> marks the one argument that is the list. Other arguments are passed to every element unchanged.</li>
+    <li><code>each</code> also works on effects: <code>Notify</code> is sent once per big line.</li>
+    <li>If several elements fail, every element still runs and the <b>first one in the list</b> decides the error, so results never depend on timing.</li>
+  </ul>
+  <div class="code" data-lang="sh" data-label="terminal"><pre>graphene run cart.grph --arg 'cart=[{"qty":2,"price":"30.00"},{"qty":1,"price":"150.00"},{"qty":5,"price":"25.00"}]'</pre></div>
+  <div class="code out" data-lang="json" data-label="output"><pre>{
+  "result": { "ok": { "result": { "big_lines": 2, "sum": "335.00" } } },
+  "effects": [
+    { "kind": "fx~", "effect": "Notify", "args": { "amount": "150.00" }, "at": [["Notify", 0]] },
+    { "kind": "fx~", "effect": "Notify", "args": { "amount": "125.00" }, "at": [["Notify", 1]] }
+  ]
+}</pre></div>
+  <p>The lines total 60.00, 150.00 and 125.00. The <code>"at"</code> path says which element each log entry came from.</p>
+  <details class="quiz"><summary>Check yourself: what happens with <code>map LineTotal(line: cart)</code>, without <code>each</code>?</summary>
+    <p>G016: a <code>map</code> needs exactly one argument marked <code>each</code>, and it must be a list of the parameter's type.</p></details>
+</section>
+
+<!-- ============================================================ 13 -->
+<section class="lesson" id="l13" data-part="Tools" data-title="Testing and coverage">
+  <div class="lesson-head"><span class="n">13</span><h2>Testing and coverage</h2></div>
+  <p class="goal">Save runs as test cases, and find the paths no test reaches.</p>
+  <p>Next to <code>withdraw.grph</code> (lesson 7), create <code>withdraw.cases.json</code>. Each case is the inputs, an optional mock, and exactly what <code>graphene run</code> should print:</p>
+  <div class="code" data-lang="json" data-label="withdraw.cases.json"><pre>[
+  {
+    "name": "enough money",
+    "inputs": { "balance": "100.00", "amount": "30.00" },
+    "expect": { "result": { "ok": { "left": "70.00" } }, "effects": [] }
+  }
+]</pre></div>
+  <div class="code" data-lang="sh" data-label="terminal"><pre>graphene test --parallel --coverage</pre></div>
+  <div class="code out" data-lang="txt" data-label="output"><pre>PASS withdraw.grph: enough money
+     withdraw.grph: outcomes 1/2, branches 1/2, effects 0/0
+       never reached: line 6: branch match takes `false`
+       never reached: line 8: outcome fail InsufficientFunds
+
+1 passed, 0 failed</pre></div>
+  <ul>
+    <li><code>graphene test</code> finds every <code>X.cases.json</code> next to an <code>X.grph</code>. <code>--parallel</code> also checks the parallel run gives the same output.</li>
+    <li><code>--coverage</code> lists outcomes and branches no case reaches. Add <code>--min-outcomes 80</code> to fail when coverage is too low, which is handy in CI.</li>
+  </ul>
+  <details class="quiz"><summary>Check yourself: write the case that brings coverage to 2/2.</summary>
+    <p><code>{"name": "too little", "inputs": {"balance": "50.00", "amount": "80.00"}, "expect": {"result": {"err": "InsufficientFunds"}, "effects": []}}</code></p></details>
+</section>
+
+<!-- ============================================================ 14 -->
+<section class="lesson" id="l14" data-part="Tools" data-title="Real effects and the IDE">
+  <div class="lesson-head"><span class="n">14</span><h2>Real effects, recording, and the IDE</h2></div>
+  <p class="goal">Answer effects for real, turn real runs into tests, and work visually.</p>
+  <p>Mocks are for tests. A <b>host config</b> sends each effect to an HTTP endpoint or a local command instead:</p>
+  <div class="code" data-lang="json" data-label="hosts.json"><pre>{
+  "effects": {
+    "GetUser": { "http": "https://api.example.com/users", "timeout_ms": 2000,
+                 "headers": { "Authorization": "env:USERS_TOKEN" } },
+    "Charge":  { "command": ["python", "scripts/charge.py"] }
+  },
+  "default": "mock:users.json"
+}</pre></div>
+  <div class="code" data-lang="sh" data-label="terminal"><pre>graphene run greet.grph --arg id=1 --host hosts.json --record replay.json
+graphene run greet.grph --arg id=1 --mock replay.json     # the same run, offline</pre></div>
+  <ul>
+    <li>Hosts receive <code>{"effect": ..., "args": {...}}</code> and answer <code>{"ok": value}</code> or <code>{"err": "Variant"}</code>.</li>
+    <li><code>env:NAME</code> reads secrets from the environment, so they never sit in the file.</li>
+    <li>A timeout or broken connection is <b>R007</b>: a problem with the environment, not your program.</li>
+    <li><code>--record</code> saves every answer as a mock, so a real run becomes a repeatable test.</li>
+  </ul>
+  <div class="note good"><b>Graphene IDE</b> shows the same program as text and as a live graph. Edit either one, run with mocks or real hosts, step through a run, open subgraphs, and see untested branches dashed on the graph.</div>
+  <h3>Where next</h3>
+  <ul>
+    <li><code>examples/valid/payroll_run.grph</code>: every feature in one program, with 12 test cases.</li>
+    <li><code>docs/usage.md</code>: every command and flag. <code>docs/semantics.md</code>: the exact rules.</li>
+    <li><code>graphene explain</code>: the list of every diagnostic code.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ cheat sheet -->
+<section class="lesson" id="cheat" data-part="Reference" data-title="Cheat sheet" data-nodone="1">
+  <div class="lesson-head"><span class="n">★</span><h2>Cheat sheet</h2></div>
+  <div class="table-wrap"><table>
+    <tr><th>Statement</th><th>Example</th></tr>
+    <tr><td>Header, intent</td><td><code>#!graphene 0.3</code>, <code>@intent "..."</code></td></tr>
+    <tr><td>Input (with node / without)</td><td><code>in x: u64 -> X</code>, <code>in rate: dec</code></td></tr>
+    <tr><td>Constant</td><td><code>const TAX: dec = 0.21</code></td></tr>
+    <tr><td>Compute</td><td><code>X -> f(x * 2) -> Y</code></td></tr>
+    <tr><td>Join</td><td><code>(A, B) -> f(A + B) -> C</code></td></tr>
+    <tr><td>Decide</td><td><code>X -> match x { 0 => ZERO, _ => SOME }</code></td></tr>
+    <tr><td>Effect</td><td><code>extern fx Get(id: u64) -> T ! NotFound</code><br><code>X -> fx Get(id: x) -> R | err NotFound -> MISS</code></td></tr>
+    <tr><td>Fire and forget</td><td><code>extern fx~ Log(e: str)</code>, <code>X -> fx~ Log(e: "hi") -> sink S</code></td></tr>
+    <tr><td>Result / failure</td><td><code>Y -> out name: T</code>, <code>E -> fail</code>, <code>X -> fail Name</code></td></tr>
+    <tr><td>Subgraph</td><td><code>graph G(p: T -> P) -> R ! Err { ... P -> out }</code></td></tr>
+    <tr><td>Use it</td><td><code>call G(p: x)</code>, <code>map G(p: each xs)</code>, <code>filter G(p: each xs)</code></td></tr>
+    <tr><td>Assertions</td><td><code>assert total</code>, <code>assert indep(S, out)</code></td></tr>
+  </table></div>
+  <div class="table-wrap"><table>
+    <tr><th>Command</th><th>Does</th></tr>
+    <tr><td><code>graphene check f.grph</code></td><td>prove the program safe, or explain what's wrong</td></tr>
+    <tr><td><code>graphene run f.grph --arg x=1 --mock m.json</code></td><td>run it; add <code>--parallel</code>, <code>--host</code>, <code>--record</code></td></tr>
+    <tr><td><code>graphene test --parallel --coverage</code></td><td>run every <code>.cases.json</code> and report coverage</td></tr>
+    <tr><td><code>graphene fmt --write f.grph</code></td><td>standard formatting (<code>--unicode</code> for symbols)</td></tr>
+    <tr><td><code>graphene graph f.grph | dot -Tsvg</code></td><td>draw the graph</td></tr>
+    <tr><td><code>graphene explain G007</code></td><td>what a code means and how to fix it</td></tr>
+  </table></div>
+</section>
+</main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var KEY = "graphene.learn.done";
+  var KW = ["in","extern","fx","f","match","out","fail","sink","err","assert","total","indep","graph","call","map","filter","each","const","true","false"];
+  var TY = ["u64","i64","dec","bool","str"];
+
+  function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function span(cls, s) { return '<span class="' + cls + '">' + esc(s) + "</span>"; }
+
+  // A small tokenizer: good enough to color .grph, JSON and shell text.
+  function highlight(text, lang) {
+    var out = "", i = 0, m;
+    var rules = [
+      [/^#!graphene[^\n]*/, "tok-h"],
+      [/^\/\/[^\n]*/, "tok-c"],
+      [/^#[^!\n][^\n]*/, lang === "sh" ? "tok-c" : null],
+      [/^"(?:[^"\\\n]|\\.)*"/, "tok-s"],
+      [/^'(?:[^'\n])*'/, lang === "sh" ? "tok-s" : null],
+      [/^@intent\b/, "tok-k"],
+      [/^fx~/, "tok-k"],
+      [/^(?:->|=>|➔)/, "tok-op"],
+      [/^-?\d+(?:\.\d+)?/, "tok-n"],
+      [/^[A-Za-z_][A-Za-z0-9_]*/, "word"],
+    ];
+    while (i < text.length) {
+      var rest = text.slice(i), hit = false;
+      for (var r = 0; r < rules.length; r++) {
+        if (rules[r][1] === null) continue;
+        m = rest.match(rules[r][0]);
+        if (!m) continue;
+        var tok = m[0], cls = rules[r][1];
+        if (cls === "word") {
+          if (lang === "grph" && KW.indexOf(tok) >= 0) cls = "tok-k";
+          else if (lang === "grph" && TY.indexOf(tok) >= 0) cls = "tok-t";
+          else if (lang === "grph" && /^[A-Z][A-Z0-9_]*$/.test(tok) && tok.length > 0) cls = "tok-node";
+          else if (lang === "sh" && tok === "graphene") cls = "tok-k";
+          else if ((lang === "json" || lang === "txt") && /^(true|false|null)$/.test(tok)) cls = "tok-k";
+          else if (lang === "txt" && /^[PGR]\d{3}$/.test(tok)) cls = "tok-node";
+          else cls = null;
+        }
+        out += cls ? span(cls, tok) : esc(tok);
+        i += tok.length;
+        hit = true;
+        break;
+      }
+      if (!hit) { out += esc(text[i]); i++; }
+    }
+    return out;
+  }
+
+  function store(get, val) {
+    try {
+      if (get) return JSON.parse(localStorage.getItem(KEY) || "[]");
+      localStorage.setItem(KEY, JSON.stringify(val));
+    } catch (e) { return get ? [] : undefined; }
+  }
+
+  // Code blocks: label, highlighting, copy button.
+  document.querySelectorAll(".code").forEach(function (box) {
+    var pre = box.querySelector("pre");
+    var raw = pre.textContent;
+    var lang = box.getAttribute("data-lang") || "txt";
+    pre.innerHTML = highlight(raw, lang);
+    if (box.dataset.label) {
+      var lab = document.createElement("div");
+      lab.className = "label";
+      lab.textContent = box.dataset.label;
+      box.insertBefore(lab, pre);
+    }
+    var b = document.createElement("button");
+    b.className = "copy";
+    b.type = "button";
+    b.textContent = "Copy";
+    b.addEventListener("click", function () {
+      var done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy"; }, 1200); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(raw).then(done, function () { fallbackCopy(raw); done(); });
+      } else { fallbackCopy(raw); done(); }
+    });
+    box.appendChild(b);
+  });
+  function fallbackCopy(text) {
+    var t = document.createElement("textarea");
+    t.value = text; document.body.appendChild(t); t.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    t.remove();
+  }
+
+  // Table of contents, "done" checkboxes, progress.
+  var lessons = Array.prototype.slice.call(document.querySelectorAll("section.lesson"));
+  var toc = document.getElementById("toc");
+  var done = store(true);
+  var links = {};
+  var lastPart = "";
+  lessons.forEach(function (sec, idx) {
+    var part = sec.dataset.part;
+    if (part !== lastPart) {
+      var p = document.createElement("li");
+      p.className = "part"; p.textContent = part; toc.appendChild(p); lastPart = part;
+    }
+    var li = document.createElement("li");
+    var a = document.createElement("a");
+    a.href = "#" + sec.id;
+    var counted = !sec.dataset.nodone;
+    a.innerHTML = '<span class="num">' + (counted ? idx + 1 : "★") + "</span><span></span>";
+    a.lastChild.textContent = sec.dataset.title;
+    li.appendChild(a); toc.appendChild(li);
+    links[sec.id] = a;
+    a.addEventListener("click", function () { document.getElementById("side").classList.remove("open"); });
+    if (!counted) return;
+    var row = document.createElement("div");
+    row.className = "done-row";
+    var label = document.createElement("label");
+    var box = document.createElement("input");
+    box.type = "checkbox"; box.checked = done.indexOf(sec.id) >= 0;
+    label.appendChild(box); label.appendChild(document.createTextNode(" I've done this lesson"));
+    row.appendChild(label);
+    var next = lessons[idx + 1];
+    if (next) {
+      var nb = document.createElement("a");
+      nb.href = "#" + next.id; nb.textContent = "Next: " + next.dataset.title + " →";
+      row.appendChild(nb);
+    }
+    sec.appendChild(row);
+    box.addEventListener("change", function () {
+      done = done.filter(function (x) { return x !== sec.id; });
+      if (box.checked) done.push(sec.id);
+      store(false, done); paint();
+    });
+  });
+  var total = lessons.filter(function (s) { return !s.dataset.nodone; }).length;
+  function paint() {
+    var n = 0;
+    lessons.forEach(function (s) {
+      var on = done.indexOf(s.id) >= 0;
+      links[s.id].classList.toggle("done", on);
+      if (on && !s.dataset.nodone) n++;
+    });
+    document.getElementById("progText").textContent = n + " of " + total + " lessons done";
+    document.getElementById("progBar").style.width = (100 * n / total) + "%";
+  }
+  paint();
+  document.getElementById("resetBtn").addEventListener("click", function () {
+    done = []; store(false, done);
+    document.querySelectorAll(".done-row input").forEach(function (b) { b.checked = false; });
+    paint();
+  });
+
+  // Highlight the lesson being read.
+  if ("IntersectionObserver" in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        Object.keys(links).forEach(function (k) { links[k].classList.toggle("active", k === e.target.id); });
+      });
+    }, { rootMargin: "-20% 0px -70% 0px" });
+    lessons.forEach(function (s) { io.observe(s); });
+  }
+
+  // Theme toggle and the mobile menu.
+  document.getElementById("themeBtn").addEventListener("click", function () {
+    var root = document.documentElement;
+    var dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+  });
+  document.getElementById("menuBtn").addEventListener("click", function () {
+    document.getElementById("side").classList.toggle("open");
+  });
+})();
+</script>
+</body>
+</html>

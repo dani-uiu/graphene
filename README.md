@@ -7,6 +7,8 @@ Graphene is a deterministic dataflow language meant to be written by LLMs and ch
 - background effects such as logging can never influence the output (`assert indep`);
 - parallel execution gives exactly the same result and effect log as sequential execution.
 
+**New to Graphene?** Open [`docs/learn.html`](docs/learn.html) in a browser: 14 short lessons, from a first program to subgraphs, lists, testing and real effects.
+
 This is the v0.3 reference implementation, written in Rust. It accepts `#!graphene 0.1`, `0.2` and `0.3` files; an older file means exactly what it meant in its own version.
 
 ## What's new in v0.3
