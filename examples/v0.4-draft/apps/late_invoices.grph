@@ -1,0 +1,47 @@
+#!graphene 0.4
+@intent "Chase a late invoice: total its lines, add a weekly late fee unless the customer is Gold, and pick how to remind them"
+
+import "../lib/billing.grph"
+
+enum Tier { Standard, Gold }
+enum Channel { Email, Phone, Letter }
+
+type Notice = {total: dec, days_late: i64, fee: dec, channel: Channel, remind_by: date}
+
+const FEE_PER_WEEK: dec = 2.50
+
+extern fx~ Remind(customer: str, channel: Channel, amount: dec)
+
+in customer: str
+in tier: Tier
+in due: date
+in today: date
+in lines: [Line] -> LINES
+
+// 1. Total the lines with the shared LineTotal subgraph.
+LINES -> map LineTotal(line: each lines) -> AMOUNTS
+AMOUNTS -> f(sum(AMOUNTS)) -> SUBTOTAL
+
+// 2. Not due yet: a courtesy reminder by email, the day it is due.
+SUBTOTAL -> f(days_between(due, today)) -> LATE
+LATE -> match LATE > 0 { true => OVERDUE, false => CURRENT }
+CURRENT -> f({total: SUBTOTAL, days_late: 0, fee: 0.00, channel: Channel.Email, remind_by: due}) -> NOTICE: Notice
+
+// 3. Late: Gold customers pay no fee; everyone else pays per started week.
+OVERDUE -> match tier { Gold => WAIVED, Standard => CHARGED }
+WAIVED -> f(0.00) -> FEE
+CHARGED -> f(FEE_PER_WEEK * dec((LATE + 6) / 7)) -> FEE
+FEE -> f({
+  total: SUBTOTAL + FEE,
+  days_late: LATE,
+  fee: FEE,
+  channel: if LATE > 60 then Channel.Letter else if LATE > 14 then Channel.Phone else Channel.Email,
+  remind_by: add_days(today, 3),
+}) -> NOTICE: Notice
+
+// 4. Remind, and report.
+NOTICE -> fx~ Remind(customer: customer, channel: NOTICE.channel, amount: NOTICE.total) -> sink REMINDED
+NOTICE -> out notice: Notice
+
+assert total
+assert indep(REMINDED, out)

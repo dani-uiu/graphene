@@ -1,0 +1,5 @@
+#!graphene 0.4
+// A tiny library for the import examples.
+
+enum Shape { Circle, Square }
+type Box = {shape: Shape, side: dec}

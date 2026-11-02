@@ -533,3 +533,66 @@ Division by zero therefore remains impossible at runtime.
 ### 8.4 New fault
 
 **R008:** a list index is out of range. The message shows the index and the list's length.
+
+## 9. Version 0.4
+
+v0.4 is a strict superset of v0.3. Under an older header, every construct below is **P006** ("requires `#!graphene 0.4`"), except keyword field names (§9.6), which apply to every version. `type`, `enum` and `import` are keywords only at the start of a statement, and `date` only in type position or before `(`, so older programs that use them as names keep working. Rationale: `docs/v0.4.md`, decisions D-059 to D-064.
+
+### 9.1 Type aliases (D-059)
+
+`type Name = T` declares a top-level alias.
+- An alias is **structural**: `Name` and `T` are the same type everywhere, and diagnostics print the alias name when the type came from one.
+- It may be used wherever a type may: inputs, parameters, results, `out`, target annotations, constants, `extern` signatures, and inside other types.
+- Types and enums share one namespace. A clash, or reusing a built-in type name (`u64`, `i64`, `dec`, `bool`, `str`, `date`), is **G013**.
+- An alias that refers to itself, directly or through other aliases, is **G019**.
+- An alias never used is **G008**.
+
+### 9.2 Enums (D-060)
+
+`enum Name { V1, ..., Vn }` declares a nominal type with `n ≥ 1` payload-free variants (G013 on duplicates).
+- **Values:** `Name.V` is a value of type `Name`. An unknown variant is **G002**, with a "did you mean" hint.
+- **Operations:** `==` and `!=` between two values of the same enum. Ordering, arithmetic, and mixing with any other type are **G003**. `str(e)` gives the variant name. Enum values are scalars, so `contains`, match scrutinees and list elements accept them.
+- **Match:** an arm pattern may be a bare variant `V` of the scrutinee's enum. The match is exhaustive (G004) when every variant appears or `_` is present; the help lists missing variants. A repeated variant is G014.
+- **JSON:** a variant is its name as a string. An unknown name is **R005** in an input and **R004** in a host answer.
+
+### 9.3 Imports (D-061)
+
+`import "path.grph"` makes every declaration of a library visible in the importing file.
+- **Libraries** have a `#!graphene 0.4` header and contain only `import`, `type`, `enum`, `const`, `extern` and `graph` statements. Each one is checked once, on its own; its subgraph bodies are total as always.
+- **Paths** are relative to the importing file. There are no search paths. Files are identified by their resolved path, so reaching a library twice is harmless.
+- **G018:** the file can't be read, isn't a library, or closes an import cycle; or `check` was given text without a file path.
+- **Names are flat.** A name declared in two files is **G013**, with a note in each file.
+- **G008:** an import none of whose declarations is used. Inside a library, declarations it doesn't use itself are not G008: they exist for importers.
+- Diagnostics inside a library are reported against the library's file and lines.
+- Imports are resolved before checking. The IR, the runtime and the effect log are unchanged: an imported subgraph runs exactly as if it were written in the importing file.
+
+### 9.4 Dates (D-062)
+
+`date` is a calendar date, with no time of day and no time zone, from 0001-01-01 to 9999-12-31 in the proleptic Gregorian calendar.
+
+| Expression | Typing | Value |
+|---|---|---|
+| `date("YYYY-MM-DD")` | gives `date` | the literal must be a valid date (G003) |
+| `==`, `!=`, `<`, `<=`, `>`, `>=` | two `date` | calendar order |
+| `days_between(a, b)` | two `date` give `i64` | `b - a` in days |
+| `add_days(d, n)` | `date`, `i64` give `date` | out of range is R001 |
+| `year(d)`, `month(d)`, `day(d)` | `date` gives `u64` | the parts |
+| `weekday(d)` | `date` gives `u64` | 1 = Monday … 7 = Sunday |
+| `str(d)` | gives `str` | `"YYYY-MM-DD"` |
+| `min(a, b)`, `max(a, b)`, `min(ds)`, `max(ds)`, `sort(ds)` | `date` | calendar order |
+
+In JSON a date is `"YYYY-MM-DD"`: anything else is R005 in an input and R004 in a host answer. There is no way to read the current date: it must be an input, so runs stay deterministic.
+
+### 9.5 `min` and `max` of two values (D-063)
+
+`min(a, b)` and `max(a, b)` take two values of the same numeric, `str` or `date` type and give that type. The one-list forms are unchanged.
+
+### 9.6 Keywords as field names (D-063)
+
+After `.`, and before `:` in record literals and record types, every keyword is accepted as a field name: `{f: 1, in: 2}`, `x.out`. This only accepts programs that used to be errors, so it applies under every header.
+
+### 9.7 Formatting (D-064)
+
+For 0.3 and 0.4 files, the formatter also wraps, above 100 columns:
+- `extern` signatures, one parameter per line;
+- long expressions, at the outermost function call, list or record, one item per line.

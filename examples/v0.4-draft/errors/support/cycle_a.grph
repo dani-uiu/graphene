@@ -1,0 +1,4 @@
+#!graphene 0.4
+import "cycle_b.grph"
+
+type A = {n: u64}

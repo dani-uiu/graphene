@@ -1,0 +1,8 @@
+#!graphene 0.4
+@intent "Two libraries that import each other"
+
+import "support/cycle_a.grph"
+
+in n: u64 -> N
+N -> f(n) -> R
+R -> out r: u64

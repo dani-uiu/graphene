@@ -1,0 +1,80 @@
+#!graphene 0.4
+@intent "Monthly payroll, v0.4: the payroll library's types, enums and subgraphs, with checked regions and approvers"
+
+import "../lib/payroll.grph"
+
+extern fx Ledger(account: str) -> i64 ! LedgerDown
+extern fx Pay(slip: Slip, period: str) -> str ! Rejected | BankDown
+extern fx~ SendPayslip(slip: Slip, period: str)
+extern fx~ Alert(message: str)
+
+const FROZEN: [str] = ["2026-12"]
+
+type Report = {
+  period: str,
+  approved_by: Approver,
+  paid: u64,
+  skipped: u64,
+  total: dec,
+  largest: dec,
+  transfers: [str],
+  slips: [Slip],
+}
+
+in period: str
+in approver: Approver
+in staff: [Employee] -> STAFF
+
+// 1. Frozen periods are rejected outright.
+STAFF -> match contains(FROZEN, period) { true => CLOSED, false => OPEN }
+CLOSED -> fail PeriodFrozen
+
+// 2. Price everyone in parallel. A region outside the enum can't get
+//    this far: it is rejected when the input is read.
+OPEN -> map NetPay(e: each staff) -> SLIPS | err -> TAX_DOWN
+TAX_DOWN -> fail TaxServiceDown
+
+// 3. Meanwhile, read this period's account; a ledger outage counts as empty.
+OPEN -> fx Ledger(account: "payroll-" + period) -> BAL | err -> LEDGER_DOWN
+LEDGER_DOWN -> f(i64(0)) -> BAL
+
+// 4. Only positive pay goes out.
+SLIPS -> filter Payable(slip: each SLIPS) -> PAYABLE
+PAYABLE -> match len(PAYABLE) { 0 => NOBODY, _ => SOME }
+NOBODY -> fail NothingToPay
+SOME -> f(sum(PAYABLE.net)) -> TOTAL
+
+// 5. Can the account fund it?
+(TOTAL, BAL) -> f(dec(BAL) / 100.00 - TOTAL) -> HEADROOM
+HEADROOM -> match HEADROOM >= 0.00 { true => FUNDED, false => SHORT }
+SHORT -> fx~ Alert(message: "payroll " + period + " is short by " + str(round(abs(HEADROOM), 2))) -> sink ALERT_FUNDS
+SHORT -> fail InsufficientFunds
+
+// 6. Approval: every approver is handled, so adding one makes this fail to check.
+FUNDED -> match approver { Cfo => APPROVED, Ceo => APPROVED, Intern => UNAPPROVED }
+UNAPPROVED -> fail NotApproved
+
+// 7. Pay everyone at once.
+APPROVED -> fx Pay(slip: each PAYABLE, period: period) -> TRANSFERS | err Rejected -> REJECTED | err BankDown -> BANK_DOWN
+REJECTED -> fx~ Alert(message: "a transfer was rejected in payroll " + period) -> sink ALERT_REJECTED
+REJECTED -> fail TransferRejected
+BANK_DOWN -> fail
+
+// 8. Payslips go out after the result is settled.
+TRANSFERS -> fx~ SendPayslip(slip: each PAYABLE, period: period) -> sink PAYSLIPS
+TRANSFERS -> f({
+  period: period,
+  approved_by: approver,
+  paid: len(TRANSFERS),
+  skipped: len(SLIPS) - len(PAYABLE),
+  total: TOTAL,
+  largest: max(PAYABLE.net),
+  transfers: TRANSFERS,
+  slips: PAYABLE,
+}) -> REPORT
+REPORT -> out report: Report
+
+assert total
+assert indep(ALERT_FUNDS, out)
+assert indep(ALERT_REJECTED, out)
+assert indep(PAYSLIPS, out)

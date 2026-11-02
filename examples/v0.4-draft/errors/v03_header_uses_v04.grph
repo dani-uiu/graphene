@@ -1,0 +1,8 @@
+#!graphene 0.3
+@intent "An enum in a file whose header says 0.3"
+
+enum Size { Small, Large }
+
+in n: u64 -> N
+N -> f(n) -> R
+R -> out r: u64

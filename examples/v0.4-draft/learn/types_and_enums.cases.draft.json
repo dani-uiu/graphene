@@ -1,0 +1,65 @@
+[
+  {
+    "name": "urgent tech ticket, 20 minutes open: breached and escalated",
+    "inputs": {
+      "priority": "Urgent",
+      "team": "Tech",
+      "minutes_open": 20
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "routed": {
+            "team": "Tech",
+            "sla_minutes": 15,
+            "breached": true,
+            "escalate": true,
+            "label": "Urgent for Tech"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "low sales ticket goes to Billing",
+    "inputs": {
+      "priority": "Low",
+      "team": "Sales",
+      "minutes_open": 100
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "routed": {
+            "team": "Billing",
+            "sla_minutes": 2880,
+            "breached": false,
+            "escalate": false,
+            "label": "Low for Sales"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "normal billing ticket exactly at its SLA is not breached",
+    "inputs": {
+      "priority": "Normal",
+      "team": "Billing",
+      "minutes_open": 240
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "routed": {
+            "team": "Billing",
+            "sla_minutes": 240,
+            "breached": false,
+            "escalate": false,
+            "label": "Normal for Billing"
+          }
+        }
+      }
+    }
+  }
+]

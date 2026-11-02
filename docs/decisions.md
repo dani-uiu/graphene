@@ -261,3 +261,21 @@ The new operators and functions only give meaning to programs that were errors b
 
 ## D-058 — Division by a value proven non-zero · Approved
 G012 used to accept only literal divisors. A variable divisor is now accepted when an `if` condition around the division, or the match arms leading to its op, rule out zero. This reuses the guard algebra (§4.1), so the proof is sound and structural. Runtime division by zero stays impossible, and no new fault was needed. Alternatives rejected: a runtime fault (breaks "division never fails") and a `safe_div` returning a default (hides mistakes).
+
+## D-059 — Type aliases are structural · Approved
+`type Slip = {...}` is only a name: the alias and its definition are interchangeable, so code that writes the record out keeps working and no conversions are needed. Nominal records were rejected: they would make every existing record literal need an annotation. Aliases may nest but not refer to themselves (G019), so every type stays finite.
+
+## D-060 — Enums are nominal and payload-free · Approved
+Enums give fixed value sets a checked type: a misspelled variant is G002, and a `match` that forgets one is G004. Values are written `Region.Spain`, and bare `Spain` in match arms, where the scrutinee fixes the enum. Bare names everywhere were rejected because they would clash with node names, which are also uppercase. Variants carry no data in v0.4. Payloads need optional values and a shared design with errors that carry data, deferred to v0.5.
+
+## D-061 — Imports with flat names, libraries only · Approved
+An imported file may only declare things (types, enums, constants, effects, subgraphs), so importing never adds inputs, flows or outcomes to a program. Names are flat, as if written in the importing file, with G013 on clashes naming both files. Namespaces (`as billing`) were rejected as heavier to read and write. Paths are relative with no search path, so a program means the same on every machine. Imports are resolved before checking; the runtime is untouched.
+
+## D-062 — Calendar dates, no clock · Approved
+`date` covers due dates and "days late" exactly, with integer day arithmetic. Times of day and time zones are deferred: they need rules for daylight saving and offsets. There is no "today" function, because reading the clock would break determinism; the date is an input, which tests can pin.
+
+## D-063 — Small relaxations: keyword field names, two-value min/max · Approved
+Keywords may be record field names (`{f: 1}`), under every header, because this only accepts programs that used to be errors (as D-055). `min(a, b)` and `max(a, b)` remove the `min([a, b])` workaround.
+
+## D-064 — Wider formatter wrapping for 0.3 and 0.4 files · Approved
+`extern` signatures and long expressions also wrap at 100 columns. Applying this to 0.3 files changes their canonical form once; the examples are re-formatted in the same commit, and the round-trip and determinism tests still pass byte for byte. 0.1 and 0.2 files are unchanged.

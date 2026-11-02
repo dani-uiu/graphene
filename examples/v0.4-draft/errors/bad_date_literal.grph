@@ -1,0 +1,6 @@
+#!graphene 0.4
+@intent "A date that does not exist"
+
+in today: date -> T
+T -> f(days_between(date("2026-02-30"), today)) -> R
+R -> out days: i64

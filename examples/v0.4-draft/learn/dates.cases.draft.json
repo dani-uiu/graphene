@@ -1,0 +1,86 @@
+[
+  {
+    "name": "12 days late: overdue, remind a week from today (a Thursday)",
+    "inputs": {
+      "issued": "2026-10-01",
+      "due": "2026-10-31",
+      "today": "2026-11-12"
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "report": {
+            "status": "overdue",
+            "days_late": 12,
+            "remind_on": "2026-11-19",
+            "remind_weekday": 4,
+            "term_days": 30
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "3 days late is within the grace period: remind on the due date (a Saturday)",
+    "inputs": {
+      "issued": "2026-10-01",
+      "due": "2026-10-31",
+      "today": "2026-11-03"
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "report": {
+            "status": "on time",
+            "days_late": 3,
+            "remind_on": "2026-10-31",
+            "remind_weekday": 6,
+            "term_days": 30
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "not due yet: days late is 0, not negative",
+    "inputs": {
+      "issued": "2026-10-01",
+      "due": "2026-10-31",
+      "today": "2026-10-20"
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "report": {
+            "status": "on time",
+            "days_late": 0,
+            "remind_on": "2026-10-31",
+            "remind_weekday": 6,
+            "term_days": 30
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "leap year: February 29 exists in 2024",
+    "inputs": {
+      "issued": "2024-02-28",
+      "due": "2024-03-01",
+      "today": "2024-03-01"
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "report": {
+            "status": "on time",
+            "days_late": 0,
+            "remind_on": "2024-03-01",
+            "remind_weekday": 5,
+            "term_days": 2
+          }
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,8 @@
+#!graphene 0.4
+@intent "Importing a program instead of a library"
+
+import "../learn/pricing.grph"
+
+in n: u64 -> N
+N -> f(n) -> R
+R -> out r: u64

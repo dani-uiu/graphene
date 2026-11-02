@@ -1,0 +1,8 @@
+#!graphene 0.4
+@intent "A misspelled enum variant"
+
+enum Size { Small, Medium, Large }
+
+in size: Size -> S
+S -> f(size == Size.Larg) -> R
+R -> out big: bool

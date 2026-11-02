@@ -1,0 +1,31 @@
+#!graphene 0.4
+@intent "Work out how late an invoice is, and when to send the next reminder"
+
+const GRACE_DAYS: i64 = 5
+
+type Report = {status: str, days_late: i64, remind_on: date, remind_weekday: u64, term_days: i64}
+
+in issued: date -> I
+in due: date
+in today: date
+
+// Today's date is an input: Graphene never reads the clock.
+I -> f(days_between(due, today)) -> LATE
+LATE -> match LATE > GRACE_DAYS { true => OVERDUE, false => ON_TIME }
+OVERDUE -> f({
+  status: "overdue",
+  days_late: LATE,
+  remind_on: add_days(today, 7),
+  remind_weekday: weekday(add_days(today, 7)),
+  term_days: days_between(issued, due),
+}) -> REPORT: Report
+ON_TIME -> f({
+  status: "on time",
+  days_late: max(LATE, 0),
+  remind_on: due,
+  remind_weekday: weekday(due),
+  term_days: days_between(issued, due),
+}) -> REPORT: Report
+REPORT -> out report: Report
+
+assert total

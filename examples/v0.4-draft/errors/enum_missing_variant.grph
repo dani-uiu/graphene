@@ -1,0 +1,9 @@
+#!graphene 0.4
+@intent "A match on an enum that forgets one variant"
+
+enum Size { Small, Medium, Large }
+
+in size: Size -> S
+S -> match size { Small => CHEAP, Medium => CHEAP }
+CHEAP -> f(1) -> R
+R -> out r: u64

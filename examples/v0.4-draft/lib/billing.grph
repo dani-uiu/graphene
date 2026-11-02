@@ -1,0 +1,9 @@
+#!graphene 0.4
+// Shared billing pieces: an invoice line, and its total.
+
+type Line = {sku: str, qty: u64, price: dec}
+
+graph LineTotal(line: Line -> L) -> dec {
+  L -> f(dec(line.qty) * line.price) -> T
+  T -> out
+}

@@ -1,0 +1,109 @@
+{
+  "effects": {
+    "TaxTable": {
+      "cases": [
+        {
+          "args": {
+            "region": "Spain"
+          },
+          "ok": {
+            "rate": "0.20",
+            "credit": "50.00"
+          }
+        },
+        {
+          "args": {
+            "region": "RemoteEu"
+          },
+          "ok": {
+            "rate": "0.15",
+            "credit": "0.00"
+          }
+        },
+        {
+          "args": {
+            "region": "RemoteUs"
+          },
+          "ok": {
+            "rate": "0.10",
+            "credit": "25.00"
+          }
+        }
+      ],
+      "fallback": {
+        "err": "TableDown"
+      }
+    },
+    "Ledger": {
+      "cases": [
+        {
+          "args": {
+            "account": "payroll-2026-10"
+          },
+          "ok": 1000000
+        },
+        {
+          "args": {
+            "account": "payroll-2026-11"
+          },
+          "ok": 50000
+        }
+      ],
+      "fallback": {
+        "err": "LedgerDown"
+      }
+    },
+    "Pay": {
+      "cases": [
+        {
+          "args": {
+            "period": "2026-10",
+            "slip": {
+              "id": 1,
+              "name": "ana",
+              "gross": "4450.00",
+              "tax": "890.00",
+              "net": "3610.00",
+              "overtime": true,
+              "remote": false
+            }
+          },
+          "ok": "tx-101"
+        },
+        {
+          "args": {
+            "period": "2026-10",
+            "slip": {
+              "id": 2,
+              "name": "bo",
+              "gross": "4800.00",
+              "tax": "720.00",
+              "net": "4080.00",
+              "overtime": false,
+              "remote": true
+            }
+          },
+          "ok": "tx-102"
+        },
+        {
+          "args": {
+            "period": "2026-10",
+            "slip": {
+              "id": 3,
+              "name": "cy",
+              "gross": "800.00",
+              "tax": "80.00",
+              "net": "745.00",
+              "overtime": false,
+              "remote": true
+            }
+          },
+          "ok": "tx-103"
+        }
+      ],
+      "fallback": {
+        "err": "Rejected"
+      }
+    }
+  }
+}

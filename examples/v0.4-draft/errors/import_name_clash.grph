@@ -1,0 +1,10 @@
+#!graphene 0.4
+@intent "A name declared both here and in an imported library"
+
+import "support/shapes.grph"
+
+enum Shape { Circle, Triangle }
+
+in shape: Shape -> S
+S -> f(shape == Shape.Circle) -> R
+R -> out round: bool

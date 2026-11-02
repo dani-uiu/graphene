@@ -1,0 +1,44 @@
+#!graphene 0.4
+// Payroll building blocks: who can be paid, how, and where.
+
+enum Region { Spain, RemoteEu, RemoteUs }
+enum Approver { Cfo, Ceo, Intern }
+
+type Employee = {id: u64, name: str, hours: u64, rate: dec, region: Region}
+type Slip = {id: u64, name: str, gross: dec, tax: dec, net: dec, overtime: bool, remote: bool}
+
+const STD_HOURS: u64 = 160
+const OT_MULT: dec = 1.50
+
+extern fx TaxTable(region: Region) -> {rate: dec, credit: dec} ! TableDown
+
+// Standard hours at the base rate, overtime at 1.5x.
+graph Gross(e: Employee -> E) -> dec {
+  E -> f(dec(min(e.hours, STD_HOURS)) * e.rate) -> BASE
+  BASE -> match e.hours > STD_HOURS { true => OT, false => REG }
+  OT -> f(BASE + dec(e.hours - STD_HOURS) * e.rate * OT_MULT) -> PAY
+  REG -> f(BASE) -> PAY
+  PAY -> out
+}
+
+// One payslip: gross pay joined with the region's tax rule. Tax rounds up.
+graph NetPay(e: Employee -> E) -> Slip ! TableDown {
+  E -> call Gross(e: e) -> GROSS
+  E -> fx TaxTable(region: e.region) -> TAX | err -> NO_TABLE
+  NO_TABLE -> fail
+  (GROSS, TAX) -> f({
+    id: e.id,
+    name: e.name,
+    gross: GROSS,
+    tax: ceil(GROSS * TAX.rate, 2),
+    net: GROSS - ceil(GROSS * TAX.rate, 2) + TAX.credit,
+    overtime: e.hours > STD_HOURS,
+    remote: e.region != Region.Spain,
+  }) -> SLIP
+  SLIP -> out
+}
+
+graph Payable(slip: Slip -> S) -> bool {
+  S -> f(slip.net > 0.00) -> YES
+  YES -> out
+}

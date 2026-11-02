@@ -1,0 +1,29 @@
+{
+  "effects": {
+    "TaxTable": {
+      "cases": [],
+      "fallback": {
+        "err": "TableDown"
+      }
+    },
+    "Ledger": {
+      "cases": [
+        {
+          "args": {
+            "account": "payroll-2026-10"
+          },
+          "ok": 1000000
+        },
+        {
+          "args": {
+            "account": "payroll-2026-11"
+          },
+          "ok": 50000
+        }
+      ],
+      "fallback": {
+        "err": "LedgerDown"
+      }
+    }
+  }
+}

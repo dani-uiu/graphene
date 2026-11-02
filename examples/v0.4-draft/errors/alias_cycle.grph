@@ -1,0 +1,9 @@
+#!graphene 0.4
+@intent "Two type aliases that refer to each other, so neither has an end"
+
+type Order = {id: u64, customer: Customer}
+type Customer = {name: str, last_order: Order}
+
+in id: u64 -> I
+I -> f(id) -> R
+R -> out r: u64

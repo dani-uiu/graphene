@@ -1,5 +1,5 @@
 (* ===================================================================== *)
-(*  Graphene v0.3 — grammar                                               *)
+(*  Graphene v0.4 — grammar                                               *)
 (*                                                                        *)
 (*  Notation: ISO 14977-style EBNF.                                       *)
 (*    { x }  zero or more     [ x ]  optional     ( a | b )  choice       *)
@@ -31,7 +31,7 @@ COMMENT     = "//" , { any character except NL } ;
 (*     not appear anywhere else (P005).                                   *)
 
 HEADER      = "#!graphene" , " " , VERSION ;
-VERSION     = DIGITS , "." , DIGITS ;           (* "0.1", "0.2" or "0.3"; else P003 *)
+VERSION     = DIGITS , "." , DIGITS ;           (* "0.1" to "0.4"; else P003 *)
 (* Under a "0.1" header, every construct marked "v0.2" or "v0.3" below is *)
 (* P006; under "0.2", every construct marked "v0.3" is P006.             *)
 
@@ -61,6 +61,8 @@ DIGITS      = DIGIT , { DIGIT } ;
 (*     v0.3 adds contextual words, like total/indep: graph call map    *)
 (*     filter each const. They act as keywords only where a statement,  *)
 (*     operation or argument starts, so they remain usable as names.    *)
+(*     v0.4 adds the statement words type enum import, and date in type  *)
+(*     position and before "(" in expressions.                          *)
 (*                                                                        *)
 (*     Maximal munch: "fx~" before "fx", "->" before "-", "||" before    *)
 (*     "|", "==" "!=" "<=" ">=" "=>" before their one-char prefixes.      *)
@@ -74,6 +76,9 @@ program     = HEADER , NL , { line } , [ stmt ] , [ COMMENT ] ;   (* final NL op
 line        = [ stmt ] , [ COMMENT ] , NL ;
 
 stmt        = meta
+            | import_decl                                      (* v0.4 *)
+            | type_decl                                        (* v0.4 *)
+            | enum_decl                                        (* v0.4 *)
             | extern_decl
             | const_decl                                       (* v0.3 *)
             | graph_decl                                       (* v0.3 *)
@@ -82,6 +87,22 @@ stmt        = meta
             | flow
             | match_stmt
             | output ;
+
+import_decl = "import" , STRING ;                             (* v0.4 *)
+              (* STRING is a path relative to this file, ending in .grph. *)
+              (* checked (G018): the file exists, is a library (only      *)
+              (*   import/type/enum/const/extern/graph statements), and    *)
+              (*   no import cycle; (G008) something from it is used.      *)
+              (* Names are flat: everything the library declares is        *)
+              (* visible here; a clash with a local name is G013.          *)
+
+type_decl   = "type" , IDENT , "=" , type ;                    (* v0.4 *)
+              (* checked (G019): no alias refers to itself, directly or    *)
+              (*   through other aliases; (G013) unique among types and    *)
+              (*   not a built-in type name; (G008) used somewhere.        *)
+
+enum_decl   = "enum" , IDENT , "{" , IDENT , { "," , IDENT } , [ "," ] , "}" ;   (* v0.4 *)
+              (* checked (G013): variant names unique within the enum.     *)
 
 const_decl  = "const" , IDENT , ":" , type , "=" , expr ;      (* v0.3 *)
               (* checked: expr is a literal, or a record/list of literals *)
@@ -148,7 +169,9 @@ err_edge    = "|" , "err" , [ IDENT ] , "->" , IDENT ;   (* v0.2: variant name *
               (*                 after "fx~".                             *)
 
 match_stmt  = IDENT , "->" , "match" , expr , "{" , arm , { "," , arm } , [ "," ] , "}" ;
-arm         = ( literal | "_" ) , "=>" , IDENT ;
+arm         = ( literal | "_" | IDENT ) , "=>" , IDENT ;     (* IDENT: v0.4 enum variant *)
+              (* a bare IDENT pattern names a variant of the scrutinee's   *)
+              (* enum (G002 if it has no such variant).                    *)
               (* checked (G004): exhaustive.                               *)
               (* checked (G014): no duplicate literal, nothing after "_".  *)
 
@@ -165,10 +188,15 @@ assertion   = "assert" , ( "total"
 (* --------------------------------------------------------------------- *)
 
 type        = "u64" | "i64" | "dec" | "bool" | "str"
+            | "date"                                           (* v0.4 *)
+            | IDENT                                            (* v0.4: alias or enum *)
             | "dec" , "(" , INT , ")"                          (* v0.3: output scale 0..28 *)
             | "[" , type , "]"                                 (* v0.3: list *)
             | "{" , field_ty , { "," , field_ty } , [ "," ] , "}" ;
-field_ty    = IDENT , ":" , type ;
+field_ty    = name , ":" , type ;
+name        = IDENT | keyword ;                                (* any version *)
+              (* Keywords (f, in, out, match, ...) are accepted as field   *)
+              (* names after "." and before ":" in records (D-063).        *)
               (* u64 i64 dec bool str are matched as IDENT text in type   *)
               (* position, so they stay usable as field names.            *)
               (* checked (G013): field names unique within a record.      *)
@@ -195,12 +223,15 @@ cmp_expr    = sum , [ ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) , sum ] ;  (* no
 sum         = prod , { ( "+" | "-" | "++" ) , prod } ;         (* left-assoc; ++ v0.3.1 *)
 prod        = unary , { ( "*" | "/" | "%" ) , unary } ;        (* left-assoc; % v0.3.1 *)
 unary       = [ "!" | "-" ] , postfix ;                        (* at most one prefix *)
-postfix     = atom , { "." , IDENT | "[" , expr , "]" } ;      (* [i]: v0.3.1 *)
+postfix     = atom , { "." , name | "[" , expr , "]" } ;       (* [i]: v0.3.1 *)
+              (* `Enum.Variant` (v0.4) is this same shape: an atom naming  *)
+              (* an enum, then "." and the variant.                         *)
 atom        = literal | IDENT | "(" , expr , ")"
             | record_lit                                     (* v0.2 *)
             | conversion                                     (* v0.2 *)
             | list_lit                                       (* v0.3 *)
-            | builtin ;                                      (* v0.3 *)
+            | builtin                                        (* v0.3 *)
+            | date_lit ;                                     (* v0.4 *)
 list_lit    = "[" , [ expr , { "," , expr } , [ "," ] ] , "]" ;
               (* checked (G003): one element type; `[]` needs an expected  *)
               (*                 type from an annotation or parameter.     *)
@@ -208,12 +239,16 @@ builtin     = ( "len" | "sum" | "min" | "max" | "all" | "any" | "contains"
               | "round" | "floor" | "ceil"
               | "str" | "abs" | "pow" | "avg" | "first" | "last"        (* v0.3.1 *)
               | "sort" | "reverse" | "upper" | "lower"
-              | "starts_with" | "ends_with" ) , "(" , expr , { "," , expr } , ")" ;
+              | "starts_with" | "ends_with"
+            | "days_between" | "add_days" | "year" | "month"       (* v0.4 *)
+            | "day" | "weekday" ) , "(" , expr , { "," , expr } , ")" ;
+date_lit    = "date" , "(" , STRING , ")" ;                    (* v0.4 *)
+              (* checked (G003): STRING is a valid YYYY-MM-DD date.        *)
               (* names stay identifiers: IDENT "(" only ever means a call. *)
               (* round/floor/ceil take an INT literal scale as 2nd arg;    *)
               (* pow takes an INT literal exponent (0 to 1000).            *)
 record_lit  = "{" , field_init , { "," , field_init } , [ "," ] , "}" ;
-field_init  = IDENT , ":" , expr ;
+field_init  = name , ":" , expr ;
               (* checked (G013): field names unique within the literal.   *)
 conversion  = ( "u64" | "i64" | "dec" ) , "(" , expr , ")" ;
               (* the type names stay ordinary identifiers: IDENT "(" never *)

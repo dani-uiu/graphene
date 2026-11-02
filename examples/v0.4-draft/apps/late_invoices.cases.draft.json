@@ -1,0 +1,138 @@
+[
+  {
+    "name": "standard customer 23 days late: 4 started weeks of fees, by phone",
+    "inputs": {
+      "customer": "acme",
+      "tier": "Standard",
+      "due": "2026-10-01",
+      "today": "2026-10-24",
+      "lines": [
+        {
+          "sku": "desk",
+          "qty": 1,
+          "price": "150.00"
+        },
+        {
+          "sku": "mug",
+          "qty": 4,
+          "price": "4.00"
+        }
+      ]
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "notice": {
+            "total": "176.00",
+            "days_late": 23,
+            "fee": "10.00",
+            "channel": "Phone",
+            "remind_by": "2026-10-27"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "gold customer 23 days late: the fee is waived",
+    "inputs": {
+      "customer": "acme",
+      "tier": "Gold",
+      "due": "2026-10-01",
+      "today": "2026-10-24",
+      "lines": [
+        {
+          "sku": "desk",
+          "qty": 1,
+          "price": "150.00"
+        },
+        {
+          "sku": "mug",
+          "qty": 4,
+          "price": "4.00"
+        }
+      ]
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "notice": {
+            "total": "166.00",
+            "days_late": 23,
+            "fee": "0.00",
+            "channel": "Phone",
+            "remind_by": "2026-10-27"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "not due yet: a courtesy email on the due date",
+    "inputs": {
+      "customer": "acme",
+      "tier": "Standard",
+      "due": "2026-10-01",
+      "today": "2026-09-30",
+      "lines": [
+        {
+          "sku": "desk",
+          "qty": 1,
+          "price": "150.00"
+        },
+        {
+          "sku": "mug",
+          "qty": 4,
+          "price": "4.00"
+        }
+      ]
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "notice": {
+            "total": "166.00",
+            "days_late": 0,
+            "fee": "0.00",
+            "channel": "Email",
+            "remind_by": "2026-10-01"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "70 days late: 10 weeks of fees, by letter",
+    "inputs": {
+      "customer": "acme",
+      "tier": "Standard",
+      "due": "2026-08-01",
+      "today": "2026-10-10",
+      "lines": [
+        {
+          "sku": "desk",
+          "qty": 1,
+          "price": "150.00"
+        },
+        {
+          "sku": "mug",
+          "qty": 4,
+          "price": "4.00"
+        }
+      ]
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "notice": {
+            "total": "191.00",
+            "days_late": 70,
+            "fee": "25.00",
+            "channel": "Letter",
+            "remind_by": "2026-10-13"
+          }
+        }
+      }
+    }
+  }
+]

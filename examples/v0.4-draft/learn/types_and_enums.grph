@@ -1,0 +1,28 @@
+#!graphene 0.4
+@intent "Route a support ticket: enums for priority and team, a type alias for the result"
+
+enum Priority { Low, Normal, Urgent }
+enum Team { Billing, Tech, Sales }
+type Routing = {team: Team, sla_minutes: u64, breached: bool, escalate: bool, label: str}
+
+in priority: Priority -> P
+in team: Team
+in minutes_open: u64
+
+// Every priority must be handled: adding one to the enum makes this fail to check.
+P -> match priority { Urgent => NOW, Normal => SOON, Low => LATER }
+NOW -> f(15) -> SLA
+SOON -> f(240) -> SLA
+LATER -> f(2880) -> SLA
+
+// Sales doesn't take support tickets: they go to Billing.
+SLA -> f({
+  team: if team == Team.Sales then Team.Billing else team,
+  sla_minutes: SLA,
+  breached: minutes_open > SLA,
+  escalate: priority == Priority.Urgent && minutes_open > SLA,
+  label: str(priority) + " for " + str(team),
+}) -> ROUTED
+ROUTED -> out routed: Routing
+
+assert total
