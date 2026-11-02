@@ -1,0 +1,14 @@
+#!graphene 0.4
+// Shipping speeds and prices, shared by every program that ships things.
+
+enum Speed { Standard, Express, Overnight }
+
+const FREE_OVER: dec = 50.00
+
+graph Price(speed: Speed -> S) -> dec {
+  S -> match speed { Standard => SLOW, Express => FAST, Overnight => FASTEST }
+  SLOW -> f(4.99) -> P
+  FAST -> f(9.99) -> P
+  FASTEST -> f(19.99) -> P
+  P -> out
+}

@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G002
+
+  × unknown type `Ordr`
+   ╭─[unknown_type.grph:6:13]
+ 5 │ 
+ 6 │ in orders: [Ordr] -> O
+   ·             ──┬─
+   ·               ╰── did you mean `Order`?
+ 7 │ O -> f(len(orders)) -> N
+   ╰────
+  help: declare it with `type Name = ...` or `enum Name { ... }`, or import the library that
+        declares it

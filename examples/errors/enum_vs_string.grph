@@ -1,0 +1,8 @@
+#!graphene 0.4
+@intent "Comparing an enum with text: enums are not strings"
+
+enum Size { Small, Large }
+
+in size: Size -> S
+S -> f(size == "Large") -> R
+R -> out big: bool

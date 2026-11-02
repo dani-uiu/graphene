@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G003
+
+  × cannot apply `==` to `Size` and `str`
+   ╭─[enum_vs_string.grph:7:8]
+ 6 │ in size: Size -> S
+ 7 │ S -> f(size == "Large") -> R
+   ·        ───────┬───────
+   ·               ╰── mismatched operands
+ 8 │ R -> out big: bool
+   ╰────
+  help: enums are not text or numbers: compare with a variant, such as `Size.Large`, or turn the
+        enum into text with `str(...)`

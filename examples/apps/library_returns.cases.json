@@ -1,0 +1,469 @@
+[
+  {
+    "name": "adult, three books (one early): 1.75 + 0.00 + 7.75 = 9.50, warned",
+    "inputs": {
+      "member_id": 1,
+      "member": "Adult",
+      "today": "2026-11-02",
+      "loans": [
+        {
+          "isbn": "A",
+          "due": "2026-10-26"
+        },
+        {
+          "isbn": "B",
+          "due": "2026-11-05"
+        },
+        {
+          "isbn": "C",
+          "due": "2026-10-02"
+        }
+      ]
+    },
+    "mock": "../mocks/lending.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "receipt": {
+            "in": 3,
+            "fines": [
+              {
+                "isbn": "A",
+                "days_late": 7,
+                "fine": "1.75"
+              },
+              {
+                "isbn": "B",
+                "days_late": 0,
+                "fine": "0.00"
+              },
+              {
+                "isbn": "C",
+                "days_late": 31,
+                "fine": "7.75"
+              }
+            ],
+            "owed": "9.50",
+            "oldest_due": "2026-10-02",
+            "standing": "Warned",
+            "limit": 3,
+            "review_on": "2026-12-02"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "History",
+          "args": {
+            "member_id": 1
+          },
+          "result": {
+            "ok": {
+              "since": "2020-01-15",
+              "standing": "Good"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Notify",
+          "args": {
+            "member_id": 1,
+            "owed": "9.50",
+            "standing": "Warned"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "child: the same fines are capped at 2.00",
+    "inputs": {
+      "member_id": 1,
+      "member": "Child",
+      "today": "2026-11-02",
+      "loans": [
+        {
+          "isbn": "A",
+          "due": "2026-10-26"
+        },
+        {
+          "isbn": "B",
+          "due": "2026-11-05"
+        },
+        {
+          "isbn": "C",
+          "due": "2026-10-02"
+        }
+      ]
+    },
+    "mock": "../mocks/lending.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "receipt": {
+            "in": 3,
+            "fines": [
+              {
+                "isbn": "A",
+                "days_late": 7,
+                "fine": "1.75"
+              },
+              {
+                "isbn": "B",
+                "days_late": 0,
+                "fine": "0.00"
+              },
+              {
+                "isbn": "C",
+                "days_late": 31,
+                "fine": "7.75"
+              }
+            ],
+            "owed": "2.00",
+            "oldest_due": "2026-10-02",
+            "standing": "Warned",
+            "limit": 3,
+            "review_on": "2026-12-02"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "History",
+          "args": {
+            "member_id": 1
+          },
+          "result": {
+            "ok": {
+              "since": "2020-01-15",
+              "standing": "Good"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Notify",
+          "args": {
+            "member_id": 1,
+            "owed": "2.00",
+            "standing": "Warned"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "senior: capped at 5.00",
+    "inputs": {
+      "member_id": 1,
+      "member": "Senior",
+      "today": "2026-11-02",
+      "loans": [
+        {
+          "isbn": "A",
+          "due": "2026-10-26"
+        },
+        {
+          "isbn": "B",
+          "due": "2026-11-05"
+        },
+        {
+          "isbn": "C",
+          "due": "2026-10-02"
+        }
+      ]
+    },
+    "mock": "../mocks/lending.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "receipt": {
+            "in": 3,
+            "fines": [
+              {
+                "isbn": "A",
+                "days_late": 7,
+                "fine": "1.75"
+              },
+              {
+                "isbn": "B",
+                "days_late": 0,
+                "fine": "0.00"
+              },
+              {
+                "isbn": "C",
+                "days_late": 31,
+                "fine": "7.75"
+              }
+            ],
+            "owed": "5.00",
+            "oldest_due": "2026-10-02",
+            "standing": "Warned",
+            "limit": 3,
+            "review_on": "2026-12-02"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "History",
+          "args": {
+            "member_id": 1
+          },
+          "result": {
+            "ok": {
+              "since": "2020-01-15",
+              "standing": "Good"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Notify",
+          "args": {
+            "member_id": 1,
+            "owed": "5.00",
+            "standing": "Warned"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "a blocked member stays blocked, even owing nothing",
+    "inputs": {
+      "member_id": 2,
+      "member": "Adult",
+      "today": "2026-11-02",
+      "loans": [
+        {
+          "isbn": "D",
+          "due": "2026-11-10"
+        }
+      ]
+    },
+    "mock": "../mocks/lending.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "receipt": {
+            "in": 1,
+            "fines": [
+              {
+                "isbn": "D",
+                "days_late": 0,
+                "fine": "0.00"
+              }
+            ],
+            "owed": "0.00",
+            "oldest_due": "2026-11-10",
+            "standing": "Blocked",
+            "limit": 0,
+            "review_on": "2026-11-09"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "History",
+          "args": {
+            "member_id": 2
+          },
+          "result": {
+            "ok": {
+              "since": "2025-06-01",
+              "standing": "Blocked"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Notify",
+          "args": {
+            "member_id": 2,
+            "owed": "0",
+            "standing": "Blocked"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "a new member 50 days late owes 12.50 and is blocked",
+    "inputs": {
+      "member_id": 3,
+      "member": "Adult",
+      "today": "2026-11-02",
+      "loans": [
+        {
+          "isbn": "E",
+          "due": "2026-09-13"
+        }
+      ]
+    },
+    "mock": "../mocks/lending.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "receipt": {
+            "in": 1,
+            "fines": [
+              {
+                "isbn": "E",
+                "days_late": 50,
+                "fine": "12.50"
+              }
+            ],
+            "owed": "12.50",
+            "oldest_due": "2026-09-13",
+            "standing": "Blocked",
+            "limit": 0,
+            "review_on": "2026-11-09"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "History",
+          "args": {
+            "member_id": 3
+          },
+          "result": {
+            "err": "Unknown"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Notify",
+          "args": {
+            "member_id": 3,
+            "owed": "12.50",
+            "standing": "Blocked"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "everything on time: good standing, limit 10 for a year",
+    "inputs": {
+      "member_id": 1,
+      "member": "Adult",
+      "today": "2026-11-02",
+      "loans": [
+        {
+          "isbn": "F",
+          "due": "2026-11-02"
+        }
+      ]
+    },
+    "mock": "../mocks/lending.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "receipt": {
+            "in": 1,
+            "fines": [
+              {
+                "isbn": "F",
+                "days_late": 0,
+                "fine": "0.00"
+              }
+            ],
+            "owed": "0.00",
+            "oldest_due": "2026-11-02",
+            "standing": "Good",
+            "limit": 10,
+            "review_on": "2027-11-02"
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "History",
+          "args": {
+            "member_id": 1
+          },
+          "result": {
+            "ok": {
+              "since": "2020-01-15",
+              "standing": "Good"
+            }
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Notify",
+          "args": {
+            "member_id": 1,
+            "owed": "0",
+            "standing": "Good"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "history service down",
+    "inputs": {
+      "member_id": 4,
+      "member": "Adult",
+      "today": "2026-11-02",
+      "loans": [
+        {
+          "isbn": "A",
+          "due": "2026-10-26"
+        },
+        {
+          "isbn": "B",
+          "due": "2026-11-05"
+        },
+        {
+          "isbn": "C",
+          "due": "2026-10-02"
+        }
+      ]
+    },
+    "mock": "../mocks/lending.json",
+    "expect": {
+      "result": {
+        "err": "HistoryDown"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "History",
+          "args": {
+            "member_id": 4
+          },
+          "result": {
+            "err": "Down"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "nothing returned fails before any effect",
+    "inputs": {
+      "member_id": 1,
+      "member": "Adult",
+      "today": "2026-11-02",
+      "loans": []
+    },
+    "mock": "../mocks/lending.json",
+    "expect": {
+      "result": {
+        "err": "NothingReturned"
+      },
+      "effects": []
+    }
+  }
+]

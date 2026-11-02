@@ -921,9 +921,16 @@ impl Checker<'_> {
             return Ok(Type::Str);
         }
         if lt != rt {
-            return Err(g003(span, format!("cannot apply `{}` to `{lt}` and `{rt}`", op.ascii()),
+            let help = enum_help(l, &lt, r, &rt).unwrap_or_else(|| {
+                "Graphene has no implicit conversions: make both sides the same type (e.g. write `2.00` for a dec)".to_string()
+            });
+            return Err(g003(
+                span,
+                format!("cannot apply `{}` to `{lt}` and `{rt}`", op.ascii()),
                 "mismatched operands",
-                "Graphene has no implicit conversions: make both sides the same type (e.g. write `2.00` for a dec)").into());
+                help,
+            )
+            .into());
         }
         if op == BinOp::Rem && lt == Type::Dec {
             return Err(g003(span, "`%` is not defined for `dec`", "not a whole number",
@@ -956,6 +963,23 @@ impl Checker<'_> {
         }
         Ok(if op.is_cmp() { Type::Bool } else { lt })
     }
+}
+
+/// Help for comparing an enum with something else (D-060): name the
+/// variant a text literal was probably meant to be.
+fn enum_help(l: &IExpr, lt: &Type, r: &IExpr, rt: &Type) -> Option<String> {
+    let (name, variants, other) = match (lt, rt) {
+        (Type::Enum(n, vs), _) => (n, vs, r),
+        (_, Type::Enum(n, vs)) => (n, vs, l),
+        _ => return None,
+    };
+    let example = match &other.kind {
+        IKind::Lit(Lit::Str(s)) if variants.contains(s) => format!("`{name}.{s}`"),
+        _ => format!("`{name}.{}`", variants.first()?),
+    };
+    Some(format!(
+        "enums are not text or numbers: compare with a variant, such as {example}, or turn the enum into text with `str(...)`"
+    ))
 }
 
 fn lit_type(l: &Lit, hint: Option<&Type>, span: Span) -> R<Type> {

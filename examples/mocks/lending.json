@@ -1,0 +1,41 @@
+{
+  "effects": {
+    "History": {
+      "cases": [
+        {
+          "args": {
+            "member_id": 1
+          },
+          "ok": {
+            "standing": "Good",
+            "since": "2020-01-15"
+          }
+        },
+        {
+          "args": {
+            "member_id": 2
+          },
+          "ok": {
+            "standing": "Blocked",
+            "since": "2025-06-01"
+          }
+        },
+        {
+          "args": {
+            "member_id": 3
+          },
+          "err": "Unknown"
+        },
+        {
+          "args": {
+            "member_id": 4
+          },
+          "err": "Down"
+        }
+      ],
+      "fallback": {
+        "err": "Down"
+      }
+    }
+  }
+}

@@ -26,6 +26,7 @@ New to the language? Read `docs/learn.html` first, then the `learn/` programs in
 | `relaxed_join` | 0.3 | Joining a branch that can fail with one that can't, legal because one condition implies the other |
 | `types_and_enums` | 0.4 | Enums for priority and team, an exhaustive `match` on an enum, a type alias for the result |
 | `dates` | 0.4 | `date` inputs, `days_between`, `add_days`, `weekday`, two-value `max`, a leap year |
+| `imports` | 0.4 | Importing `lib/shipping.grph`: its enum, constant and subgraph used as if written here |
 
 ## apps/
 
@@ -40,6 +41,7 @@ New to the language? Read `docs/learn.html` first, then the `learn/` programs in
 | `invoice_split` | 0.3 | v0.3.1: `if`, `%`, `++`, indexing, `str`, `pow`, `avg`, `sort`, text functions, a division proven safe by a `match` |
 | **`payroll_run`** | 0.3 | The v0.3 flagship: nested subgraphs, every list function, `each` on effects, a join by implication |
 | `late_invoices` | 0.4 | Imports `lib/billing.grph`; enum inputs, dates and a weekly late fee |
+| `library_returns` | 0.4 | Imports `lib/lending.grph`; enums in an effect's answer and arguments, a subgraph with a `date` parameter mapped over a list, caps per membership with two-value `min`, a keyword field name (`in`) |
 | **`payroll`** | 0.4 | The v0.4 flagship: `payroll_run` split into `lib/payroll.grph` plus a short program, with enums for regions and approvers |
 
 ## lib/
@@ -47,6 +49,8 @@ New to the language? Read `docs/learn.html` first, then the `learn/` programs in
 | Library | Declares | Used by |
 |---|---|---|
 | `billing` | the `Line` type and the `LineTotal` subgraph | `late_invoices` |
+| `lending` | `Member` and `Standing` enums, `Loan` and `Fine` types, the `LateFine` subgraph | `library_returns` |
+| `shipping` | the `Speed` enum, the `FREE_OVER` constant, the `Price` subgraph | `imports` |
 | `payroll` | `Region` and `Approver` enums, `Employee` and `Slip` types, `TaxTable`, and the `Gross`, `NetPay`, `Payable` subgraphs | `payroll` |
 
 ## errors/

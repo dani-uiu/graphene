@@ -1,0 +1,17 @@
+#!graphene 0.4
+// Library loans: what a loan is, and what returning it late costs.
+
+enum Member { Child, Adult, Senior }
+enum Standing { Good, Warned, Blocked }
+
+type Loan = {isbn: str, due: date}
+type Fine = {isbn: str, days_late: i64, fine: dec}
+
+const PER_DAY: dec = 0.25
+
+// One returned book: days late (never negative) and its fine.
+graph LateFine(loan: Loan -> L, today: date) -> Fine {
+  L -> f(max(days_between(loan.due, today), 0)) -> LATE
+  LATE -> f({isbn: loan.isbn, days_late: LATE, fine: dec(LATE) * PER_DAY}) -> F
+  F -> out
+}

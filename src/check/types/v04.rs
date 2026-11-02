@@ -142,7 +142,10 @@ impl Checker<'_> {
         }
         Err(g003(
             x.span,
-            format!("`{}` needs a `{t}` here, not `{got}`", b.name()),
+            format!(
+                "`{}` needs a value of type `{t}` here, not `{got}`",
+                b.name()
+            ),
             "wrong type",
             super::builtin_help(b),
         )

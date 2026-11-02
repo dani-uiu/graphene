@@ -1,0 +1,62 @@
+[
+  {
+    "name": "standard shipping is free over 50.00",
+    "inputs": {
+      "items": "60.00",
+      "speed": "Standard"
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "total": "60.00"
+        }
+      },
+      "effects": []
+    }
+  },
+  {
+    "name": "express is never free: 60.00 + 9.99",
+    "inputs": {
+      "items": "60.00",
+      "speed": "Express"
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "total": "69.99"
+        }
+      },
+      "effects": []
+    }
+  },
+  {
+    "name": "small order, standard: 20.00 + 4.99",
+    "inputs": {
+      "items": "20.00",
+      "speed": "Standard"
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "total": "24.99"
+        }
+      },
+      "effects": []
+    }
+  },
+  {
+    "name": "overnight: 20.00 + 19.99",
+    "inputs": {
+      "items": "20.00",
+      "speed": "Overnight"
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "total": "39.99"
+        }
+      },
+      "effects": []
+    }
+  }
+]

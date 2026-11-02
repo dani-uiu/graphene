@@ -1,0 +1,12 @@
+#!graphene 0.4
+@intent "Add shipping to an order, using the shared shipping library"
+
+import "../lib/shipping.grph"
+
+in items: dec -> I
+in speed: Speed
+I -> call Price(speed: speed) -> SHIP
+SHIP -> f(if items >= FREE_OVER && speed == Speed.Standard then items else items + SHIP) -> TOTAL
+TOTAL -> out total: dec
+
+assert total

@@ -1,0 +1,65 @@
+#!graphene 0.4
+@intent "Return a batch of library books: fine each late book, cap the total by membership, and update the member's standing"
+
+import "../lib/lending.grph"
+
+type Receipt = {
+  in: u64,
+  fines: [Fine],
+  owed: dec,
+  oldest_due: date,
+  standing: Standing,
+  limit: u64,
+  review_on: date,
+}
+
+type Rules = {standing: Standing, limit: u64, days: i64}
+
+extern fx History(member_id: u64) -> {standing: Standing, since: date} ! Unknown | Down
+extern fx~ Notify(member_id: u64, standing: Standing, owed: dec)
+
+in member_id: u64
+in member: Member
+in today: date
+in loans: [Loan] -> LOANS
+
+// 1. Nothing returned is a mistake at the desk.
+LOANS -> match len(loans) { 0 => NONE, _ => SOME }
+NONE -> fail NothingReturned
+
+// 2. Fine every book in parallel; children and seniors pay at most a cap.
+SOME -> map LateFine(loan: each loans, today: today) -> FINES
+FINES -> f(sum(FINES.fine)) -> RAW
+RAW -> match member { Child => CHILD, Senior => SENIOR, Adult => ADULT }
+CHILD -> f(min(RAW, 2.00)) -> OWED
+SENIOR -> f(min(RAW, 5.00)) -> OWED
+ADULT -> f(RAW) -> OWED
+
+// 3. Meanwhile, the member's history; a new member starts in good standing.
+SOME -> fx History(member_id: member_id) -> HIST | err Unknown -> NEW | err Down -> DOWN
+NEW -> f({standing: Standing.Good, since: today}) -> HIST
+DOWN -> fail HistoryDown
+
+// 4. The new standing: a block never lifts here; a large debt blocks.
+(OWED, HIST) -> f(HIST.standing == Standing.Blocked || OWED > 10.00) -> BAD
+BAD -> match BAD { true => BLOCKED, false => CLEAR }
+CLEAR -> match OWED > 0.00 { true => WARNED, false => GOOD }
+GOOD -> f({standing: Standing.Good, limit: 10, days: 365}) -> RULES: Rules
+WARNED -> f({standing: Standing.Warned, limit: 3, days: 30}) -> RULES: Rules
+BLOCKED -> f({standing: Standing.Blocked, limit: 0, days: 7}) -> RULES: Rules
+
+// 5. Tell the member, and hand over the receipt.
+RULES -> fx~ Notify(member_id: member_id, standing: RULES.standing, owed: OWED) -> sink NOTIFIED
+RULES -> f({
+  in: len(FINES),
+  fines: FINES,
+  owed: OWED,
+  oldest_due: min(loans.due),
+  standing: RULES.standing,
+  limit: RULES.limit,
+  review_on: add_days(today, RULES.days),
+}) -> RECEIPT: Receipt
+RECEIPT -> out receipt: Receipt
+
+assert total
+assert indep(NOTIFIED, out)

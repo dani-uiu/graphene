@@ -1,0 +1,8 @@
+#!graphene 0.4
+@intent "A misspelled type name"
+
+type Order = {id: u64, total: dec}
+
+in orders: [Ordr] -> O
+O -> f(len(orders)) -> N
+N -> out count: u64
