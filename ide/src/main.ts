@@ -29,6 +29,7 @@ function build() {
   const editor = new Editor(editorHost, {
     onChange: (text) => app.changed(text),
     onCursorLine: (line) => app.cursorLine(line),
+    onDefinition: (offset) => void app.goToDefinition(offset),
     completions: () => {
       const a = store.analysis;
       if (!a) return [];
@@ -166,6 +167,15 @@ function settingsPanel(): HTMLElement {
 // ---------------------------------------------------------------- menus
 
 function nodeMenu(n: NodeView, x: number, y: number) {
+  if (store.imported(n.group)) {
+    // Imported from a library: read-only here, edit it in its own file.
+    const g = store.analysis?.groups.find((x) => x.name === n.group);
+    return menu(x, y, [
+      { label: `${n.detail || n.name} (from ${g?.file})`, action: null },
+      { label: `Open ${g?.file}`, action: () => g?.path && app.openFile(g.path) },
+      { label: "Show local graph", action: () => { app.selectNodes([n.id], false); store.settings.local = true; store.saveSettings(); app.graph.setSettings(store.settings); } },
+    ]);
+  }
   const name = app.nameOf(n);
   const items: Parameters<typeof menu>[2] = [{ label: n.detail || n.name, action: null }];
   if (name && n.kind !== "sink") {
@@ -241,6 +251,8 @@ function commands(): Cmd[] {
     { label: "Toggle local graph", run: () => { store.settings.local = !store.settings.local; store.saveSettings(); app.graph.setSettings(store.settings); } },
     { label: "Add input…", run: () => addInput() },
     { label: "Add subgraph…", run: () => addSubgraph() },
+    { label: "Extract selected lines into subgraph…", run: extractSubgraph },
+    { label: "Go to definition", key: "F12", run: () => app.goToDefinition(app.editor.view.state.selection.main.head) },
     ...(store.analysis?.groups ?? []).map((g) => ({ label: `Open subgraph ${g.name}`, run: () => focusGroup(g.name) })),
     { label: "Show the whole program", run: () => focusGroup(null) },
     { label: "Token count", run: async () => { try { const t = await api.tokens(app.editor.text); toast(`ASCII ${t.ascii} tokens, Unicode ${t.unicode} tokens (${t.method})`); } catch (e) { toast(String(e), "error"); } } },
@@ -253,6 +265,7 @@ function commands(): Cmd[] {
     { label: `Format on save: ${localStorage.getItem("graphene.formatOnSave") === "false" ? "off" : "on"} (toggle)`, run: () => localStorage.setItem("graphene.formatOnSave", localStorage.getItem("graphene.formatOnSave") === "false" ? "true" : "false") },
     { label: "Header: #!graphene 0.2", run: () => app.command({ cmd: "set_header", version: "0.2" }) },
     { label: "Header: #!graphene 0.3", run: () => app.command({ cmd: "set_header", version: "0.3" }) },
+    { label: "Header: #!graphene 0.4", run: () => app.command({ cmd: "set_header", version: "0.4" }) },
   ];
   if (sel.length === 1) {
     list.push({ label: `Rename ${sel[0]}…`, run: () => rename(sel[0]) });
@@ -293,6 +306,12 @@ function palette() {
   document.body.append(overlay);
   render();
   input.focus();
+}
+
+/** Ask for a name, then move the selected statements into a subgraph. */
+async function extractSubgraph() {
+  const name = await ask("Extract into subgraph", "Step", "name of the new subgraph");
+  if (name) await app.extractSubgraph(name.trim());
 }
 
 async function formatDoc(unicode: boolean) {
@@ -417,10 +436,12 @@ async function deleteSelection() {
   if (!a || !store.selection.size) return;
   const sel = a.nodes.filter((n) => store.selection.has(n.id));
   // Delete statements bottom-up so earlier line numbers stay valid.
-  for (const n of sel.filter((n) => n.id.startsWith("s:")).sort((x, y) => y.line - x.line)) {
+  const own = sel.filter((n) => !store.imported(n.group));
+  if (own.length < sel.length) toast("imported nodes are read-only here; edit them in their library", "error");
+  for (const n of own.filter((n) => n.id.startsWith("s:")).sort((x, y) => y.line - x.line)) {
     await app.command({ cmd: "delete_line", line: n.line });
   }
-  for (const n of sel.filter((n) => n.id.startsWith("v:"))) await app.command({ cmd: "delete_node", name: n.name });
+  for (const n of own.filter((n) => n.id.startsWith("v:"))) await app.command({ cmd: "delete_node", name: n.name });
   app.selectNodes([], false);
 }
 

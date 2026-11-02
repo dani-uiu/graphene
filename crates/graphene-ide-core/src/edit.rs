@@ -18,6 +18,7 @@ use serde::Deserialize;
 
 use crate::text::{self, ByteEdit, TextEdit};
 use crate::view::uses_unicode;
+use crate::workspace::Workspace;
 
 /// One editing action. Node arguments are node names (`B`, `usr_id`).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -83,11 +84,25 @@ pub enum Command {
         name: String,
         ty: String,
     },
+    /// v0.4: move the top-level statements starting on lines
+    /// `first..=last` into subgraph `name`, replaced by one `call`.
+    ExtractSubgraph {
+        first: usize,
+        last: usize,
+        name: String,
+    },
 }
 
 /// Turn a command into edits against `src` (UTF-16 offsets).
 pub fn apply(src: &str, cmd: &Command) -> Result<Vec<TextEdit>, String> {
-    let ctx = Ctx::new(src);
+    apply_in(src, &Workspace::default(), cmd)
+}
+
+/// Like `apply`, for the file the workspace points at (commands that
+/// need types check it with its imports).
+pub fn apply_in(src: &str, ws: &Workspace, cmd: &Command) -> Result<Vec<TextEdit>, String> {
+    let mut ctx = Ctx::new(src);
+    ctx.ws = ws.clone();
     let edits = match cmd {
         Command::SetLine { line, text } => {
             ctx.check_line(*line)?;
@@ -118,8 +133,9 @@ pub fn apply(src: &str, cmd: &Command) -> Result<Vec<TextEdit>, String> {
         Command::Rename { old, new } => ctx.rename(old, new)?,
         Command::DeleteNode { name } => ctx.delete_node(name)?,
         Command::AddSubgraph { name, ty } => ctx.add_subgraph(name, ty)?,
+        Command::ExtractSubgraph { first, last, name } => ctx.extract(*first, *last, name)?,
         Command::SetHeader { version } => {
-            if !["0.1", "0.2", "0.3"].contains(&version.as_str()) {
+            if !["0.1", "0.2", "0.3", "0.4"].contains(&version.as_str()) {
                 return Err(format!("unsupported version `{version}`"));
             }
             vec![text::replace_line(src, 1, &format!("#!graphene {version}"))]
@@ -141,6 +157,8 @@ pub(crate) struct Ctx<'a> {
     pub last: usize,
     /// First line of each statement -> its last line (D-050).
     pub ends: std::collections::HashMap<usize, usize>,
+    /// Where the file lives, for commands that check it (v0.4 imports).
+    pub ws: Workspace,
 }
 
 const RESERVED: &[&str] = &[
@@ -176,6 +194,7 @@ impl<'a> Ctx<'a> {
             },
             last: text::line_count(src),
             ends,
+            ws: Workspace::default(),
         }
     }
 
@@ -243,7 +262,7 @@ impl<'a> Ctx<'a> {
 
     /// Parse an ASCII statement and render it in the file's style.
     pub fn render(&self, ascii: &str) -> Result<String, String> {
-        let probe = format!("#!graphene 0.3\n{ascii}\n");
+        let probe = format!("#!graphene 0.4\n{ascii}\n");
         let (p, diags) = graphene::parse(&probe);
         if let Some(d) = diags.first() {
             return Err(format!("`{ascii}` is not a valid statement: {}", d.message));
@@ -566,8 +585,8 @@ impl Ctx<'_> {
     }
 
     /// The checked type of node `name`, when the program checks.
-    fn type_of(&self, name: &str) -> Option<String> {
-        let c = graphene::check(self.src).ok()?;
+    pub(crate) fn type_of(&self, name: &str) -> Option<String> {
+        let c = self.ws.check(self.src).ok()?;
         let v = c.graph.g.node_indices().find(|v| {
             let vx = c.graph.v(*v);
             !vx.kind.is_op() && vx.name == name

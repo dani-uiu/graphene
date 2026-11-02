@@ -122,7 +122,9 @@ export class App {
   cursorLine(line: number) {
     const a = store.analysis;
     if (!a) return;
-    const ids = a.nodes.filter((n) => n.line === line && (n.id.startsWith("s:") || n.defined)).map((n) => n.id);
+    const ids = a.nodes
+      .filter((n) => n.line === line && !store.imported(n.group) && (n.id.startsWith("s:") || n.defined))
+      .map((n) => n.id);
     store.select(ids);
     this.graph.setSelection(store.selection);
     this.editor.mark([], false);
@@ -134,9 +136,34 @@ export class App {
     const out: number[] = [];
     for (const id of ids) {
       const n = a.nodes.find((x) => x.id === id);
-      if (n) out.push(...(n.id.startsWith("s:") ? [n.line] : n.lines));
+      if (n && !store.imported(n.group)) out.push(...(n.id.startsWith("s:") ? [n.line] : n.lines));
     }
     return out;
+  }
+
+  // ------------------------------------------------------------ multi-file (v0.4)
+
+  /** Open `path` (if needed) and select a UTF-16 range in it. */
+  async openAt(path: string, from: number, to: number) {
+    if (path && path !== store.tab?.path) await this.openFile(path);
+    this.editor.reveal(from, to);
+  }
+
+  /** F12: jump to where the name at `offset` is declared. */
+  async goToDefinition(offset: number) {
+    try {
+      const loc = await api.definition(this.editor.text, offset);
+      if (!loc) return toast("no declaration found for this name");
+      await this.openAt(loc.path, loc.from, loc.to);
+    } catch (e) {
+      toast(String(e), "error");
+    }
+  }
+
+  /** Move the selected statements into a new subgraph. */
+  async extractSubgraph(name: string) {
+    const [first, last] = this.editor.selectedLines();
+    return this.command({ cmd: "extract_subgraph", first, last, name });
   }
 
   // ------------------------------------------------------------ tabs and files
@@ -249,6 +276,9 @@ export class App {
       store.emit("tabs", undefined);
       await this.saveLayout();
       if (store.folder && path.startsWith(store.folder.path)) await this.refreshFolder();
+      // A saved library changes what the programs importing it mean; the
+      // other tabs are re-checked when shown, this one now.
+      await this.analyze();
     } catch (e) {
       toast(String(e), "error");
     }

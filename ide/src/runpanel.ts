@@ -56,14 +56,27 @@ class RunPanel {
     }
     const form = h("div", { class: "form" });
     for (const i of a.inputs) {
-      const input = h("input", {
-        type: "text",
-        value: this.inputs[i.name] ?? "",
-        placeholder: i.ty,
-        spellcheck: "false",
-        oninput: (e: Event) => (this.inputs[i.name] = (e.target as HTMLInputElement).value),
-        onkeydown: (e: Event) => (e as KeyboardEvent).key === "Enter" && this.run(),
-      });
+      const set = (e: Event) => (this.inputs[i.name] = (e.target as HTMLInputElement | HTMLSelectElement).value);
+      let input: HTMLElement;
+      if (i.variants.length) {
+        // v0.4 enum: a dropdown of its variants.
+        if (!i.variants.includes(this.inputs[i.name] ?? "")) this.inputs[i.name] = i.variants[0];
+        input = h(
+          "select",
+          { onchange: set },
+          ...i.variants.map((v) => h("option", { value: v, selected: this.inputs[i.name] === v }, v)),
+        );
+      } else {
+        input = h("input", {
+          // v0.4 date: a date picker, which gives `YYYY-MM-DD`.
+          type: i.ty === "date" ? "date" : "text",
+          value: this.inputs[i.name] ?? "",
+          placeholder: i.ty,
+          spellcheck: "false",
+          oninput: set,
+          onkeydown: (e: Event) => (e as KeyboardEvent).key === "Enter" && this.run(),
+        });
+      }
       form.append(h("label", { class: "field" }, h("span", { class: "mono" }, `${i.name}: ${i.ty}`), input));
     }
     if (!a.inputs.length) form.append(h("p", { class: "hint" }, "This program has no inputs."));

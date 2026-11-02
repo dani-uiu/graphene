@@ -19,8 +19,11 @@ use graphene::runtime::effects::MockHost;
 use graphene::runtime::step::{Ctx, Done, State, Trace};
 use graphene::runtime::value::Value;
 use graphene::runtime::{bind_inputs, run, seq, Outcome, RawInputs};
+use graphene::source::SourceMap;
 use graphene::Checked;
 use serde::Serialize;
+
+use crate::workspace::{op_id, Workspace};
 use serde_json::{json, Value as Json};
 
 #[derive(Debug, Clone, Serialize)]
@@ -94,12 +97,24 @@ pub fn run_view_with(
     host: &dyn EffectHost,
     parallel: bool,
 ) -> RunView {
-    let checked = match graphene::check(src) {
+    run_view_in(src, &Workspace::default(), args, host, parallel)
+}
+
+/// Like `run_view_with`, for the file the workspace points at (v0.4
+/// imports).
+pub fn run_view_in(
+    src: &str,
+    ws: &Workspace,
+    args: &[(String, String)],
+    host: &dyn EffectHost,
+    parallel: bool,
+) -> RunView {
+    let checked = match ws.check(src) {
         Ok(c) => c,
-        Err(d) => {
+        Err(f) => {
             return failed_view(format!(
                 "the program does not check ({} problem(s))",
-                d.len()
+                f.diags.len()
             ))
         }
     };
@@ -130,13 +145,14 @@ pub fn run_view_with(
         par == output
     });
     let fault_line = result.as_ref().err().map(|e| e.fault.span);
+    let sources = &checked.sources;
     let fault_node = fault_line
         .filter(|s| e_code_ok(&result) && s.end > 0)
-        .map(|s| format!("s:{}", graphene::diag::line_col(src, s.start).0));
+        .map(|s| op_id(sources, s, sources.line(s.start)));
     RunView {
         output: Some(output),
         error: None,
-        nodes: node_states(&checked, &states, fault_node.as_deref(), &None),
+        nodes: node_states(&checked, sources, &states, fault_node.as_deref(), &None),
         fault_node,
         parallel_matches,
         elements: elements(&checked, trace),
@@ -153,7 +169,7 @@ fn elements(c: &Checked, trace: Trace) -> Vec<ElementView> {
             let group = c.graph.subs.get(t.sub)?.name.clone();
             Some(ElementView {
                 at: t.at,
-                nodes: node_states(sub, &t.states, None, &Some(group.clone())),
+                nodes: node_states(sub, &c.sources, &t.states, None, &Some(group.clone())),
                 group,
             })
         })
@@ -167,6 +183,7 @@ fn e_code_ok<T>(r: &Result<T, graphene::runtime::RunError>) -> bool {
 
 fn node_states(
     c: &Checked,
+    sources: &SourceMap,
     states: &[State],
     fault: Option<&str>,
     group: &Option<String>,
@@ -179,7 +196,7 @@ fn node_states(
             continue;
         }
         let id = if vx.kind.is_op() {
-            format!("s:{}", vx.line)
+            op_id(sources, vx.span, vx.line)
         } else {
             match group {
                 Some(g) => format!("v:{g}/{}", vx.name),

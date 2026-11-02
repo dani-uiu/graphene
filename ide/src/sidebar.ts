@@ -192,7 +192,7 @@ function problemsView(a: Analysis | null): HTMLElement {
         { class: "problem" },
         h(
           "div",
-          { class: "problem-head", onclick: () => app.editor.reveal(d.from, d.to) },
+          { class: "problem-head", onclick: () => (d.path ? app.openAt(d.path, d.from, d.to) : app.editor.reveal(d.from, d.to)) },
           h("span", { class: "code" }, d.code),
           h("span", { class: "msg" }, d.message),
           h("span", { class: "line" }, `line ${d.line}`),

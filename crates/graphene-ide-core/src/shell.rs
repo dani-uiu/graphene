@@ -20,7 +20,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 
 use crate::edit::Command;
-use crate::trace::{failed_view, run_view_with, RunView};
+use crate::trace::{failed_view, run_view_in, RunView};
+use crate::workspace::Workspace;
 use graphene::runtime::effects::{EffectHost, MockHost};
 use graphene::runtime::hosts::{RealHost, RecordingHost};
 
@@ -48,6 +49,7 @@ pub struct HostChoice {
 
 pub fn run_program(
     text: &str,
+    ws: &Workspace,
     args: &[(String, String)],
     hosts: &HostChoice,
     parallel: bool,
@@ -65,7 +67,7 @@ pub fn run_program(
         (None, None) => Box::new(MockHost::empty()),
     };
     let recorder = RecordingHost::new(host.as_ref());
-    let view = run_view_with(text, args, &recorder, parallel);
+    let view = run_view_in(text, ws, args, &recorder, parallel);
     if let Some(out) = some(&hosts.record_path) {
         let fixture = serde_json::to_string_pretty(&recorder.fixture()).unwrap_or_default() + "\n";
         if let Err(e) = std::fs::write(&out, fixture) {
@@ -76,15 +78,20 @@ pub fn run_program(
 }
 
 /// Coverage of the `.cases.json` next to `program_path`, against `text`.
-pub fn coverage(text: &str, program_path: &str) -> Result<Vec<graphene::cases::CoverItem>, String> {
+pub fn coverage(
+    text: &str,
+    ws: &Workspace,
+    program_path: &str,
+) -> Result<Vec<graphene::cases::CoverItem>, String> {
     let file = graphene::cases::cases_path(Path::new(program_path));
     let cases = if file.is_file() {
         graphene::cases::load(&file)?
     } else {
         Vec::new()
     };
-    let checked = graphene::check(text)
-        .map_err(|d| format!("the program does not check ({} problem(s))", d.len()))?;
+    let checked = in_program(ws, program_path)
+        .check(text)
+        .map_err(|f| format!("the program does not check ({} problem(s))", f.diags.len()))?;
     graphene::cases::coverage(&checked, &cases)
 }
 
@@ -103,6 +110,7 @@ pub struct CaseResult {
 /// Run the `.cases.json` next to `program_path` against `text`.
 pub fn run_cases(
     text: &str,
+    ws: &Workspace,
     program_path: &str,
     parallel: bool,
 ) -> Result<Vec<CaseResult>, String> {
@@ -111,8 +119,9 @@ pub fn run_cases(
         return Ok(Vec::new());
     }
     let cases = graphene::cases::load(&cases_file)?;
-    let checked = graphene::check(text)
-        .map_err(|d| format!("the program does not check ({} problem(s))", d.len()))?;
+    let checked = in_program(ws, program_path)
+        .check(text)
+        .map_err(|f| format!("the program does not check ({} problem(s))", f.diags.len()))?;
     Ok(cases
         .into_iter()
         .map(|case| {
@@ -208,10 +217,19 @@ pub fn tokens(text: &str) -> Result<Tokens, String> {
     })
 }
 
-pub fn export_dot(text: &str) -> Result<String, String> {
-    graphene::check(text)
+pub fn export_dot(text: &str, ws: &Workspace) -> Result<String, String> {
+    ws.check(text)
         .map(|c| graphene::dot::to_dot(&c))
-        .map_err(|d| format!("the program does not check ({} problem(s))", d.len()))
+        .map_err(|f| format!("the program does not check ({} problem(s))", f.diags.len()))
+}
+
+/// The workspace, pointed at `program_path` when it has no path yet.
+fn in_program(ws: &Workspace, program_path: &str) -> Workspace {
+    let mut ws = ws.clone();
+    if ws.path.as_deref().is_none_or(str::is_empty) {
+        ws.path = Some(program_path.to_string());
+    }
+    ws
 }
 
 pub fn read_file(path: &str) -> Result<String, String> {
@@ -303,18 +321,37 @@ fn to_json<T: Serialize>(v: T) -> Result<Json, String> {
 pub fn dispatch(cmd: &str, args: &Json) -> Result<Json, String> {
     let text = || arg::<String>(args, "text");
     let path = || arg::<String>(args, "path");
+    let ws = || -> Result<Workspace, String> {
+        Ok(arg::<Option<Workspace>>(args, "workspace")?.unwrap_or_default())
+    };
     match cmd {
-        "analyze" => to_json(crate::analyze(&text()?)),
-        "apply_command" => to_json(crate::apply(&text()?, &arg::<Command>(args, "command")?)?),
+        "analyze" => to_json(crate::analyze_in(&text()?, &ws()?)),
+        "definition" => to_json(crate::definition(&text()?, &ws()?, arg(args, "offset")?)),
+        "apply_command" => to_json(crate::apply_in(
+            &text()?,
+            &ws()?,
+            &arg::<Command>(args, "command")?,
+        )?),
         "format_text" => to_json(format_text(&text()?, arg(args, "unicode")?)?),
         "run_program" => {
             let a: Vec<(String, String)> = arg(args, "args")?;
             let hosts: HostChoice = arg(args, "hosts")?;
-            to_json(run_program(&text()?, &a, &hosts, arg(args, "parallel")?))
+            to_json(run_program(
+                &text()?,
+                &ws()?,
+                &a,
+                &hosts,
+                arg(args, "parallel")?,
+            ))
         }
-        "coverage" => to_json(coverage(&text()?, &arg::<String>(args, "programPath")?)?),
+        "coverage" => to_json(coverage(
+            &text()?,
+            &ws()?,
+            &arg::<String>(args, "programPath")?,
+        )?),
         "run_cases" => to_json(run_cases(
             &text()?,
+            &ws()?,
             &arg::<String>(args, "programPath")?,
             arg(args, "parallel")?,
         )?),
@@ -329,7 +366,7 @@ pub fn dispatch(cmd: &str, args: &Json) -> Result<Json, String> {
             )?)
         }
         "tokens" => to_json(tokens(&text()?)?),
-        "export_dot" => to_json(export_dot(&text()?)?),
+        "export_dot" => to_json(export_dot(&text()?, &ws()?)?),
         "read_file" => to_json(read_file(&path()?)?),
         "write_file" => to_json(write_file(&path()?, &text()?)?),
         "file_mtime" => to_json(file_mtime(&path()?)),

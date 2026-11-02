@@ -17,13 +17,16 @@
 #![forbid(unsafe_code)]
 
 pub mod edit;
+mod extract;
 pub mod fixes;
 pub mod shell;
 pub mod text;
 pub mod trace;
 pub mod view;
+pub mod workspace;
 
-pub use edit::{apply, Command};
+pub use edit::{apply, apply_in, Command};
 pub use text::TextEdit;
 pub use trace::{run_view, RunView};
-pub use view::{analyze, Analysis};
+pub use view::{analyze, analyze_in, Analysis};
+pub use workspace::{definition, Location, Workspace};

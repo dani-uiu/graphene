@@ -89,6 +89,21 @@ class Store {
     return this.tabs[this.active] ?? null;
   }
 
+  /** The active file's path and every other tab's unsaved text, for
+   *  resolving imports (v0.4). */
+  workspace(): { path: string | null; buffers: Record<string, string> } {
+    const buffers: Record<string, string> = {};
+    this.tabs.forEach((t, i) => {
+      if (i !== this.active && t.path && t.text !== t.saved) buffers[t.path] = t.text;
+    });
+    return { path: this.tab?.path ?? null, buffers };
+  }
+
+  /** True for a node drawn from an imported library (read-only here). */
+  imported(group: string | null): boolean {
+    return !!group && !!this.analysis?.groups.some((g) => g.name === group && g.file);
+  }
+
   select(ids: Iterable<string>) {
     this.selection = new Set(ids);
     this.emit("selection", undefined);

@@ -6,7 +6,9 @@
 //! Invariants:
 //! - commands never panic: failures come back to the UI as `Err(String)`;
 //! - the `.grph` text in the editor is the only source of truth, so every
-//!   command takes the current text rather than reading the file.
+//!   command takes the current text rather than reading the file; since
+//!   v0.4 commands that check also take the `workspace` (the file's path
+//!   and the other tabs' unsaved text), so imports resolve.
 
 #![forbid(unsafe_code)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -14,17 +16,22 @@
 use graphene_ide_core::edit::Command;
 use graphene_ide_core::shell::{self, CaseResult, Entry, Tokens};
 use graphene_ide_core::view::Analysis;
-use graphene_ide_core::{RunView, TextEdit};
+use graphene_ide_core::{Location, RunView, TextEdit, Workspace};
 use serde_json::Value as Json;
 
 #[tauri::command]
-fn analyze(text: String) -> Analysis {
-    graphene_ide_core::analyze(&text)
+fn analyze(text: String, workspace: Option<Workspace>) -> Analysis {
+    graphene_ide_core::analyze_in(&text, &workspace.unwrap_or_default())
 }
 
 #[tauri::command]
-fn apply_command(text: String, command: Command) -> Result<Vec<TextEdit>, String> {
-    graphene_ide_core::apply(&text, &command)
+fn definition(text: String, workspace: Option<Workspace>, offset: usize) -> Option<Location> {
+    graphene_ide_core::definition(&text, &workspace.unwrap_or_default(), offset)
+}
+
+#[tauri::command]
+fn apply_command(text: String, workspace: Option<Workspace>, command: Command) -> Result<Vec<TextEdit>, String> {
+    graphene_ide_core::apply_in(&text, &workspace.unwrap_or_default(), &command)
 }
 
 #[tauri::command]
@@ -33,18 +40,33 @@ fn format_text(text: String, unicode: bool) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn run_program(text: String, args: Vec<(String, String)>, hosts: shell::HostChoice, parallel: bool) -> RunView {
-    shell::run_program(&text, &args, &hosts, parallel)
+fn run_program(
+    text: String,
+    workspace: Option<Workspace>,
+    args: Vec<(String, String)>,
+    hosts: shell::HostChoice,
+    parallel: bool,
+) -> RunView {
+    shell::run_program(&text, &workspace.unwrap_or_default(), &args, &hosts, parallel)
 }
 
 #[tauri::command]
-fn coverage(text: String, program_path: String) -> Result<Vec<graphene::cases::CoverItem>, String> {
-    shell::coverage(&text, &program_path)
+fn coverage(
+    text: String,
+    workspace: Option<Workspace>,
+    program_path: String,
+) -> Result<Vec<graphene::cases::CoverItem>, String> {
+    shell::coverage(&text, &workspace.unwrap_or_default(), &program_path)
 }
 
 #[tauri::command]
-fn run_cases(text: String, program_path: String, parallel: bool) -> Result<Vec<CaseResult>, String> {
-    shell::run_cases(&text, &program_path, parallel)
+fn run_cases(
+    text: String,
+    workspace: Option<Workspace>,
+    program_path: String,
+    parallel: bool,
+) -> Result<Vec<CaseResult>, String> {
+    shell::run_cases(&text, &workspace.unwrap_or_default(), &program_path, parallel)
 }
 
 #[tauri::command]
@@ -64,8 +86,8 @@ fn tokens(text: String) -> Result<Tokens, String> {
 }
 
 #[tauri::command]
-fn export_dot(text: String) -> Result<String, String> {
-    shell::export_dot(&text)
+fn export_dot(text: String, workspace: Option<Workspace>) -> Result<String, String> {
+    shell::export_dot(&text, &workspace.unwrap_or_default())
 }
 
 #[tauri::command]
@@ -93,6 +115,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             analyze,
+            definition,
             apply_command,
             format_text,
             run_program,

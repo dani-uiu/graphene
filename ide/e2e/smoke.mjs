@@ -195,6 +195,40 @@ for (const [mode, editor, graph] of [["text", true, false], ["graph", false, tru
     (await area(".cm-editor") > 0) === editor && (await area(".graph-canvas") > 0) === graph);
 }
 
+// 7e. v0.4: a program with imports, enum and date inputs, extract.
+await open("examples/apps/late_invoices.grph");
+a = await g(() => window.__graphene.store.analysis);
+check("late_invoices (imports) checks", a.checked === true, JSON.stringify(a.diags));
+const lineTotal = a.groups.find((x) => x.name === "LineTotal");
+check("imported subgraph is a group marked with its library", lineTotal?.file === "../lib/billing.grph", JSON.stringify(a.groups));
+await page.click(".side-tabs button:nth-child(4)");
+await settle(300);
+check("enum input is a dropdown of its variants", (await page.$$eval(".run-panel select option", (os) => os.map((o) => o.value))).join(",").includes("Standard,Gold"));
+check("date inputs get a date picker", (await page.$$(".run-panel input[type=date]")).length === 2);
+const invoicePath = join(REPO, "examples/apps/late_invoices.grph");
+const invoiceCases = await g((p) => window.__graphene.api.runCases(window.__graphene.app.editor.text, p, true), invoicePath);
+check("late_invoices cases all pass in the IDE", invoiceCases.length === 4 && invoiceCases.every((c) => c.pass), JSON.stringify(invoiceCases.filter((c) => !c.pass)));
+await g((c) => (window.__graphene.store.run = null, window.__graphene.runPanel.loadCase(c)), invoiceCases[1]);
+await page.waitForFunction(() => window.__graphene.store.run !== null);
+await settle(800);
+const invoiceRun = await g(() => window.__graphene.store.run);
+check("run with an enum input (Gold) waives the fee", invoiceRun.output?.result?.ok?.notice?.fee === "0.00", JSON.stringify(invoiceRun.output ?? invoiceRun.error));
+check("the imported subgraph's run is painted", invoiceRun.elements.some((e) => e.group === "LineTotal"));
+await shot("12-imports");
+await g(() => window.__graphene.app.newTab("#!graphene 0.4\nin price: dec -> P\nP -> f(price * 1.21) -> GROSS\nGROSS -> f(round(GROSS, 2)) -> R\nR -> out total: dec\n"));
+await settle(900);
+await g(() => {
+  const v = window.__graphene.app.editor.view;
+  v.dispatch({ selection: { anchor: v.state.doc.line(3).from, head: v.state.doc.line(4).to } });
+});
+await g(() => window.__graphene.app.extractSubgraph("Tax"));
+await settle(900);
+a = await g(() => window.__graphene.store.analysis);
+text = await g(() => window.__graphene.app.editor.text);
+check("extract into subgraph adds a group and a call", a.groups.some((x) => x.name === "Tax") && text.includes("P -> call Tax(price: price) -> R"), text);
+check("the extracted program checks", a.checked === true, JSON.stringify(a.diags));
+await shot("13-extract");
+
 // 8. Local graph, settings, light theme, palette.
 await g(() => window.__graphene.app.selectNodes(["v:RATE"], false));
 await page.click(".graph-toolbar button:last-child");

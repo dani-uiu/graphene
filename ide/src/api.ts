@@ -3,6 +3,18 @@
 // only moves data.
 
 import { invoke } from "@tauri-apps/api/core";
+import { store } from "./store";
+
+/** Where the edited file lives and the other tabs' unsaved text, so
+ *  imports (v0.4) resolve against what the user sees. */
+export interface Workspace {
+  path: string | null;
+  buffers: Record<string, string>;
+}
+
+function workspace(): Workspace {
+  return store.workspace();
+}
 
 export interface NodeView {
   id: string;
@@ -32,6 +44,9 @@ export interface GroupView {
   params: [string, string][];
   ret: string;
   errors: string[];
+  /** v0.4: the library this subgraph is imported from (read-only here). */
+  file: string | null;
+  path: string | null;
 }
 
 export interface EdgeView {
@@ -54,6 +69,9 @@ export interface Fix {
 }
 
 export interface DiagView {
+  /** v0.4: the library the problem is in (null: the edited file). */
+  file: string | null;
+  path: string | null;
   code: string;
   message: string;
   label: string;
@@ -79,6 +97,17 @@ export interface InputView {
   ty: string;
   node: string | null;
   line: number;
+  /** v0.4: the variants of an enum input. */
+  variants: string[];
+}
+
+/** Where a name is declared (go to definition). */
+export interface Location {
+  path: string;
+  file: string;
+  line: number;
+  from: number;
+  to: number;
 }
 
 export interface Analysis {
@@ -108,7 +137,8 @@ export type Command =
   | { cmd: "rename"; old: string; new: string }
   | { cmd: "delete_node"; name: string }
   | { cmd: "set_header"; version: string }
-  | { cmd: "add_subgraph"; name: string; ty: string };
+  | { cmd: "add_subgraph"; name: string; ty: string }
+  | { cmd: "extract_subgraph"; first: number; last: number; name: string };
 
 export interface NodeState {
   id: string;
@@ -127,6 +157,8 @@ export interface ElementView {
 export interface CoverItem {
   kind: "outcome" | "branch" | "effect";
   graph: string | null;
+  /** v0.4: the library the item is written in, when imported. */
+  file: string | null;
   line: number;
   label: string;
   target: string | null;
@@ -166,18 +198,22 @@ export interface Entry {
 }
 
 export const api = {
-  analyze: (text: string) => invoke<Analysis>("analyze", { text }),
-  apply: (text: string, command: Command) => invoke<TextEdit[]>("apply_command", { text, command }),
+  analyze: (text: string) => invoke<Analysis>("analyze", { text, workspace: workspace() }),
+  definition: (text: string, offset: number) =>
+    invoke<Location | null>("definition", { text, workspace: workspace(), offset }),
+  apply: (text: string, command: Command) =>
+    invoke<TextEdit[]>("apply_command", { text, workspace: workspace(), command }),
   format: (text: string, unicode: boolean) => invoke<string>("format_text", { text, unicode }),
   run: (text: string, args: [string, string][], hosts: HostChoice, parallel: boolean) =>
-    invoke<RunView>("run_program", { text, args, hosts, parallel }),
-  coverage: (text: string, programPath: string) => invoke<CoverItem[]>("coverage", { text, programPath }),
+    invoke<RunView>("run_program", { text, workspace: workspace(), args, hosts, parallel }),
+  coverage: (text: string, programPath: string) =>
+    invoke<CoverItem[]>("coverage", { text, workspace: workspace(), programPath }),
   runCases: (text: string, programPath: string, parallel: boolean) =>
-    invoke<CaseResult[]>("run_cases", { text, programPath, parallel }),
+    invoke<CaseResult[]>("run_cases", { text, workspace: workspace(), programPath, parallel }),
   saveCase: (programPath: string, name: string, inputsJson: string, mock: string | null, expect: unknown) =>
     invoke<void>("save_case", { programPath, name, inputsJson, mock, expect }),
   tokens: (text: string) => invoke<{ method: string; ascii: number; unicode: number }>("tokens", { text }),
-  exportDot: (text: string) => invoke<string>("export_dot", { text }),
+  exportDot: (text: string) => invoke<string>("export_dot", { text, workspace: workspace() }),
   readFile: (path: string) => invoke<string>("read_file", { path }),
   writeFile: (path: string, text: string) => invoke<void>("write_file", { path, text }),
   mtime: (path: string) => invoke<number | null>("file_mtime", { path }),

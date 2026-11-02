@@ -149,12 +149,22 @@ button.icon {
 
 input[type="text"],
 input[type="search"],
+input[type="date"],
 select {
   background: var(--bg);
+  color: inherit;
   border: 1px solid var(--border);
   border-radius: 5px;
   padding: 4px 7px;
   min-width: 0;
+}
+/* The native date picker follows the theme (v0.4 date inputs). */
+input[type="date"] {
+  color-scheme: dark;
+  font: inherit;
+}
+:root[data-theme="light"] input[type="date"] {
+  color-scheme: light;
 }
 input:focus,
 select:focus {

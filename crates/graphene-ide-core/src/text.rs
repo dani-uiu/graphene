@@ -29,6 +29,18 @@ pub fn utf16(src: &str, byte: usize) -> usize {
     src[..byte].encode_utf16().count()
 }
 
+/// Byte offset of UTF-16 position `units` (the inverse of `utf16`).
+pub fn byte_offset(src: &str, units: usize) -> usize {
+    let mut seen = 0;
+    for (i, c) in src.char_indices() {
+        if seen >= units {
+            return i;
+        }
+        seen += c.len_utf16();
+    }
+    src.len()
+}
+
 fn floor_char(src: &str, mut i: usize) -> usize {
     while i > 0 && !src.is_char_boundary(i) {
         i -= 1;

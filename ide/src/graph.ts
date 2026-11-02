@@ -113,7 +113,11 @@ export class GraphView {
 
   // ---------------------------------------------------------------- data
 
+  /** v0.4: the library each imported group comes from. */
+  private groupFiles = new Map<string, string>();
+
   update(a: Analysis) {
+    this.groupFiles = new Map(a.groups.filter((g) => g.file).map((g) => [g.name, g.file!]));
     const old = this.all;
     const bySig = new Map<string, GNode>();
     for (const n of old.values()) bySig.set(signature(n.data, a), n);
@@ -627,7 +631,8 @@ export class GraphView {
       ctx.fillStyle = color;
       ctx.textAlign = "center";
       ctx.font = `600 ${12 / this.view.k}px Inter, "Segoe UI", sans-serif`;
-      ctx.fillText(name, cx, cy - r - 6 / this.view.k);
+      const file = this.groupFiles.get(name);
+      ctx.fillText(file ? `${name} · ${file} (read-only)` : name, cx, cy - r - 6 / this.view.k);
       ctx.globalAlpha = 1;
     }
   }

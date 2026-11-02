@@ -11,7 +11,10 @@
 //!   from the checker are laid over the same nodes;
 //! - node ids are stable across edits that do not touch them: value nodes
 //!   are `v:<name>` (`v:<Subgraph>/<name>` inside a subgraph body),
-//!   statements are `s:<first line>`.
+//!   statements are `s:<first line>` (`s:<file>:<line>` in a library);
+//! - v0.4: the program is checked with its imports (`Workspace`); the
+//!   imported subgraphs it calls are drawn as groups marked with their
+//!   file, and problems inside a library name that file.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -23,6 +26,8 @@ use serde::Serialize;
 
 use crate::fixes::{fixes_for, Fix};
 use crate::text::utf16;
+use crate::workspace::{op_id, Workspace};
+use graphene::source::SourceMap;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Analysis {
@@ -80,6 +85,10 @@ pub struct GroupView {
     pub params: Vec<(String, String)>,
     pub ret: String,
     pub errors: Vec<String>,
+    /// v0.4: the library the subgraph is imported from (read-only here).
+    pub file: Option<String>,
+    /// Path of that library on disk.
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -108,6 +117,8 @@ pub struct InputView {
     pub ty: String,
     pub node: Option<String>,
     pub line: usize,
+    /// v0.4: the variants of an enum input (a dropdown in the run form).
+    pub variants: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -118,6 +129,10 @@ pub struct AssertView {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DiagView {
+    /// v0.4: the library the problem is in (`None`: the edited file).
+    pub file: Option<String>,
+    /// Path of that library on disk.
+    pub path: Option<String>,
     pub code: String,
     pub message: String,
     pub label: String,
@@ -130,7 +145,13 @@ pub struct DiagView {
     pub fixes: Vec<Fix>,
 }
 
+/// Analyze text that is not (yet) saved anywhere.
 pub fn analyze(src: &str) -> Analysis {
+    analyze_in(src, &Workspace::default())
+}
+
+/// Analyze the file the workspace points at, with its imports.
+pub fn analyze_in(src: &str, ws: &Workspace) -> Analysis {
     let (program, parse_diags) = graphene::parse(src);
     let mut b = Builder::new(src, &program);
     for line in &program.lines {
@@ -138,19 +159,35 @@ pub fn analyze(src: &str) -> Analysis {
             b.stmt(line.at.first, stmt);
         }
     }
-    let (diags, checked) = if parse_diags.is_empty() {
-        match graphene::check(src) {
+    let (diags, sources, checked) = if parse_diags.is_empty() {
+        match ws.check(src) {
             Ok(c) => {
+                b.imported(&program, &c.sources);
                 b.overlay(&c);
-                (Vec::new(), true)
+                b.enum_inputs(&c);
+                (Vec::new(), c.sources, true)
             }
-            Err(d) => (d, false),
+            Err(f) => {
+                b.imported(&program, &f.sources);
+                (f.diags, f.sources, false)
+            }
         }
     } else {
-        (parse_diags, false)
+        (parse_diags, SourceMap::single("", src), false)
     };
-    b.mark(&diags);
-    let diags = diags.iter().map(|d| diag_view(src, d)).collect();
+    if !checked {
+        b.enum_inputs_from(&program);
+    }
+    let here: Vec<Diag> = diags
+        .iter()
+        .filter(|d| sources.file_at(d.span.start) == 0)
+        .cloned()
+        .collect();
+    b.mark(&here);
+    let diags = diags
+        .iter()
+        .map(|d| diag_view_in(src, &sources, d))
+        .collect();
     let (major, minor) = program.version;
     Analysis {
         version: format!("{major}.{minor}"),
@@ -172,8 +209,26 @@ pub fn uses_unicode(src: &str) -> bool {
     src.contains('➔')
 }
 
+/// A diagnostic of a multi-file program: one in the edited file keeps its
+/// fixes; one in a library names that file, with offsets in it.
+pub fn diag_view_in(src: &str, sources: &SourceMap, d: &Diag) -> DiagView {
+    let i = sources.file_at(d.span.start);
+    if i == 0 || sources.files.len() <= 1 {
+        let (_, local) = sources.localize(d);
+        return diag_view(src, &local);
+    }
+    let (file, local) = sources.localize(d);
+    let mut v = diag_view(&file.text, &local);
+    v.fixes.clear();
+    v.file = Some(file.name.clone());
+    v.path = Some(file.path.display().to_string());
+    v
+}
+
 pub fn diag_view(src: &str, d: &Diag) -> DiagView {
     DiagView {
+        file: None,
+        path: None,
         code: d.code.to_string(),
         message: d.message.clone(),
         label: d.label.clone(),
@@ -206,6 +261,8 @@ struct Builder<'a> {
     inputs: Vec<InputView>,
     asserts: Vec<AssertView>,
     intent: Option<String>,
+    /// Prefix of op ids (`<file>:` while drawing a library's subgraph).
+    prefix: String,
 }
 
 fn blank(id: String, kind: &'static str, name: &str, line: usize) -> NodeView {
@@ -270,6 +327,103 @@ impl<'a> Builder<'a> {
             asserts: Vec::new(),
             inputs: Vec::new(),
             intent: None,
+            prefix: String::new(),
+        }
+    }
+
+    /// v0.4: draw the imported subgraphs this file calls, as groups
+    /// marked with their library.
+    fn imported(&mut self, program: &Program, sources: &SourceMap) {
+        let local: BTreeSet<String> = program
+            .lines
+            .iter()
+            .filter_map(|l| match &l.stmt {
+                Some(Stmt::GraphHeader(h)) => Some(h.name.name.clone()),
+                _ => None,
+            })
+            .collect();
+        // Imported subgraphs may call others: draw until nothing new.
+        let mut drawn: BTreeSet<String> = BTreeSet::new();
+        loop {
+            let called: BTreeSet<String> = self
+                .nodes
+                .iter()
+                .filter_map(|n| n.calls.clone())
+                .filter(|g| !local.contains(g) && !drawn.contains(g))
+                .collect();
+            if called.is_empty() {
+                break;
+            }
+            drawn.extend(called.iter().cloned());
+            self.draw_imported(called, sources);
+        }
+    }
+
+    fn draw_imported(&mut self, mut called: BTreeSet<String>, sources: &SourceMap) {
+        for file in sources.files.iter().skip(1) {
+            let (lib, diags) = graphene::parse(&file.text);
+            if !diags.is_empty() {
+                continue;
+            }
+            self.prefix = format!("{}:", file.name);
+            let mut inside = false;
+            for line in &lib.lines {
+                let Some(stmt) = &line.stmt else { continue };
+                match stmt {
+                    Stmt::GraphHeader(h) if called.remove(&h.name.name) => {
+                        for p in &h.params {
+                            let scope = Some(h.name.name.clone());
+                            let handle = p.node.as_ref().unwrap_or(&p.name);
+                            self.input_ids.insert(
+                                (scope.clone(), p.name.name.clone()),
+                                value_id(&scope, &handle.name),
+                            );
+                        }
+                        inside = true;
+                        self.stmt(line.at.first, stmt);
+                        if let Some(g) = self.groups.last_mut() {
+                            g.file = Some(file.name.clone());
+                            g.path = Some(file.path.display().to_string());
+                        }
+                    }
+                    Stmt::GraphEnd(_) if inside => {
+                        self.stmt(line.at.first, stmt);
+                        inside = false;
+                    }
+                    _ if inside => self.stmt(line.at.first, stmt),
+                    _ => {}
+                }
+            }
+        }
+        self.prefix.clear();
+    }
+
+    /// The variants of every enum input, from the checked program.
+    fn enum_inputs(&mut self, c: &Checked) {
+        for &v in &c.graph.inputs {
+            if let graphene::ir::graph::VKind::Input {
+                input,
+                ty: graphene::ir::graph::Type::Enum(_, vs),
+                ..
+            } = &c.graph.v(v).kind
+            {
+                if let Some(i) = self.inputs.iter_mut().find(|i| &i.name == input) {
+                    i.variants.clone_from(vs);
+                }
+            }
+        }
+    }
+
+    /// The variants of enum inputs declared in this file, when the
+    /// program does not check yet.
+    fn enum_inputs_from(&mut self, program: &Program) {
+        for s in program.lines.iter().filter_map(|l| l.stmt.as_ref()) {
+            if let Stmt::Enum(e) = s {
+                let vs: Vec<String> = e.variants.iter().map(|v| v.name.clone()).collect();
+                for i in self.inputs.iter_mut().filter(|i| i.ty == e.name.name) {
+                    i.variants.clone_from(&vs);
+                }
+            }
         }
     }
 
@@ -396,7 +550,7 @@ impl<'a> Builder<'a> {
         detail: String,
         op: Option<&'static str>,
     ) -> String {
-        let id = format!("s:{line}");
+        let id = format!("s:{}{line}", self.prefix);
         let n = self.node(id.clone(), kind, name, line);
         n.detail = detail;
         n.op = op;
@@ -432,6 +586,8 @@ impl<'a> Builder<'a> {
                 .collect(),
             ret: format_ty(&h.ret),
             errors: h.errors.iter().map(|e| e.name.clone()).collect(),
+            file: None,
+            path: None,
         });
         self.scope = Some(h.name.name.clone());
         for p in &h.params {
@@ -449,6 +605,7 @@ impl<'a> Builder<'a> {
                 ty: ty.clone(),
                 node: i.node.as_ref().map(|n| n.name.clone()),
                 line,
+                variants: Vec::new(),
             });
         }
         let (handle, kind) = match &i.node {
@@ -551,20 +708,20 @@ impl<'a> Builder<'a> {
 
     /// Lay checker results over the syntax-built nodes.
     fn overlay(&mut self, c: &Checked) {
-        self.overlay_graph(c, &None);
+        self.overlay_graph(c, &None, &c.sources);
         for (i, sub) in c.subs.iter().enumerate() {
             let scope = c.graph.subs.get(i).map(|s| s.name.clone());
-            self.overlay_graph(sub, &scope);
+            self.overlay_graph(sub, &scope, &c.sources);
         }
     }
 
-    fn overlay_graph(&mut self, c: &Checked, scope: &Option<String>) {
+    fn overlay_graph(&mut self, c: &Checked, scope: &Option<String>, sources: &SourceMap) {
         let g = &c.graph;
         let deps = graphene::dot::dependency_vectors(g);
         for v in g.g.node_indices() {
             let vx = g.v(v);
             let id = if vx.kind.is_op() {
-                format!("s:{}", vx.line)
+                op_id(sources, vx.span, vx.line)
             } else {
                 value_id(scope, &vx.name)
             };
