@@ -1,0 +1,46 @@
+{
+  "effects": {
+    "TaxTable": {
+      "cases": [
+        { "args": { "region": "es" }, "ok": { "rate": "0.20", "credit": "50.00" } },
+        { "args": { "region": "remote-eu" }, "ok": { "rate": "0.15", "credit": "0.00" } },
+        { "args": { "region": "remote-us" }, "ok": { "rate": "0.10", "credit": "25.00" } },
+        { "args": { "region": "offline" }, "err": "TableDown" }
+      ],
+      "fallback": { "err": "UnknownRegion" }
+    },
+    "Ledger": {
+      "cases": [
+        { "args": { "account": "payroll-2026-10" }, "ok": 1000000 },
+        { "args": { "account": "payroll-2026-11" }, "ok": 50000 },
+        { "args": { "account": "payroll-2026-08" }, "ok": -2500 }
+      ],
+      "fallback": { "err": "LedgerDown" }
+    },
+    "Pay": {
+      "cases": [
+        {
+          "args": { "period": "2026-10", "slip": { "id": 1, "name": "ana", "gross": "4450.0000", "tax": "890.00", "net": "3610.0000", "overtime": true, "remote": false } },
+          "ok": "tx-101"
+        },
+        {
+          "args": { "period": "2026-10", "slip": { "id": 2, "name": "bo", "gross": "4800.00", "tax": "720.00", "net": "4080.00", "overtime": false, "remote": true } },
+          "ok": "tx-102"
+        },
+        {
+          "args": { "period": "2026-10", "slip": { "id": 3, "name": "cy", "gross": "800.00", "tax": "80.00", "net": "745.00", "overtime": false, "remote": true } },
+          "ok": "tx-103"
+        },
+        {
+          "args": { "period": "2026-10", "slip": { "id": 4, "name": "dee", "gross": "2000.00", "tax": "400.00", "net": "1650.00", "overtime": false, "remote": false } },
+          "err": "Rejected"
+        },
+        {
+          "args": { "period": "2026-10", "slip": { "id": 5, "name": "eve", "gross": "500.00", "tax": "50.00", "net": "475.00", "overtime": false, "remote": true } },
+          "err": "BankDown"
+        }
+      ],
+      "fallback": { "ok": "tx-other" }
+    }
+  }
+}

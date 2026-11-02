@@ -1,0 +1,149 @@
+#!graphene 0.3
+@intent "Monthly payroll: price every employee in parallel through nested subgraphs, check the ledger can fund it, get approval, pay everyone at once, then send payslips and an audit entry that can never change the result"
+
+// Policy.
+const STD_HOURS: u64 = 160
+const OT_MULT: dec = 1.50
+const REMOTE: [str] = ["remote-eu", "remote-us"]
+const FROZEN: [str] = ["2026-12"]
+
+// Outside systems. Ledger balances are whole cents and can be negative.
+extern fx TaxTable(region: str) -> {rate: dec, credit: dec} ! UnknownRegion | TableDown
+extern fx Ledger(account: str) -> i64 ! LedgerDown
+extern fx Pay(slip: {id: u64, name: str, gross: dec, tax: dec, net: dec, overtime: bool, remote: bool}, period: str) -> str ! Rejected | BankDown
+extern fx~ SendPayslip(slip: {id: u64, name: str, gross: dec, tax: dec, net: dec, overtime: bool, remote: bool}, period: str)
+extern fx~ Alert(message: str)
+extern fx~ Audit(event: str, count: u64, total: dec)
+
+// Gross pay for one employee: standard hours at the base rate, overtime at
+// 1.5x. `min` over a list literal caps the standard hours.
+graph Gross(e: {id: u64, name: str, hours: u64, rate: dec, region: str} -> E) -> dec {
+  E -> f(dec(min([e.hours, STD_HOURS])) * e.rate) -> BASE
+  BASE -> match e.hours > STD_HOURS { true => OT, false => REG }
+  OT -> f(BASE + dec(e.hours - STD_HOURS) * e.rate * OT_MULT) -> PAY
+  REG -> f(BASE) -> PAY
+  PAY -> out
+}
+
+// One payslip: gross pay (a nested subgraph) joined with the region's tax
+// rule, fetched at the same time. Tax rounds up to the cent.
+graph NetPay(
+  e: {id: u64, name: str, hours: u64, rate: dec, region: str} -> E,
+) -> {id: u64, name: str, gross: dec, tax: dec, net: dec, overtime: bool, remote: bool} ! UnknownRegion | TableDown {
+  E -> call Gross(e: e) -> GROSS
+  E -> fx TaxTable(
+    region: e.region,
+  ) -> TAX | err UnknownRegion -> NO_REGION | err TableDown -> NO_TABLE
+  NO_REGION -> fail
+  NO_TABLE -> fail
+  (GROSS, TAX) -> f({
+    id: e.id,
+    name: e.name,
+    gross: GROSS,
+    tax: ceil(GROSS * TAX.rate, 2),
+    net: GROSS - ceil(GROSS * TAX.rate, 2) + TAX.credit,
+    overtime: e.hours > STD_HOURS,
+    remote: contains(REMOTE, e.region),
+  }) -> SLIP
+  SLIP -> out
+}
+
+graph Payable(
+  slip: {id: u64, name: str, gross: dec, tax: dec, net: dec, overtime: bool, remote: bool} -> S,
+) -> bool {
+  S -> f(slip.net > 0.00) -> YES
+  YES -> out
+}
+
+in period: str
+in approver: str
+in staff: [{id: u64, name: str, hours: u64, rate: dec, region: str}] -> STAFF
+
+// 1. Periods closed by the auditors are rejected outright.
+STAFF -> match contains(FROZEN, period) { true => CLOSED, false => OPEN }
+CLOSED -> fail PeriodFrozen
+
+// 2. Price every employee in parallel. If several fail, the first one in
+//    the list decides the error.
+OPEN -> map NetPay(
+  e: each staff,
+) -> SLIPS | err UnknownRegion -> BAD_REGION | err TableDown -> TAX_DOWN
+BAD_REGION -> fx~ Alert(message: "unknown tax region in payroll " + period) -> sink ALERT_REGION
+BAD_REGION -> fail
+TAX_DOWN -> fail TaxServiceDown
+
+// 3. Meanwhile, read this period's account. If the ledger is down, assume
+//    it is empty, so we never pay out money we cannot see.
+OPEN -> fx Ledger(account: "payroll-" + period) -> BAL | err -> LEDGER_DOWN
+LEDGER_DOWN -> f(i64(0)) -> BAL
+
+// 4. Only positive pay goes out; stop if nobody is owed anything.
+SLIPS -> filter Payable(slip: each SLIPS) -> PAYABLE
+PAYABLE -> match len(PAYABLE) { 0 => NOBODY, _ => SOME }
+NOBODY -> fail NothingToPay
+SOME -> f(sum(PAYABLE.net)) -> TOTAL
+
+// 5. Can the account fund it? TOTAL exists only if pricing worked; BAL
+//    always does. TOTAL's condition implies BAL's, so they can be joined.
+(TOTAL, BAL) -> f(dec(BAL) / 100.00 - TOTAL) -> HEADROOM
+HEADROOM -> match HEADROOM >= 0.00 { true => FUNDED, false => SHORT }
+SHORT -> fx~ Alert(message: "payroll " + period + " is not funded") -> sink ALERT_FUNDS
+SHORT -> fail InsufficientFunds
+
+// 6. Two people may approve; both arms lead to the same node.
+FUNDED -> match approver { "cfo" => APPROVED, "ceo" => APPROVED, _ => UNAPPROVED }
+UNAPPROVED -> fail NotApproved
+
+// 7. Pay everyone at once: one transfer per payslip.
+APPROVED -> fx Pay(
+  slip: each PAYABLE,
+  period: period,
+) -> TRANSFERS | err Rejected -> REJECTED | err BankDown -> BANK_DOWN
+REJECTED -> fx~ Alert(
+  message: "a transfer was rejected in payroll " + period,
+) -> sink ALERT_REJECTED
+REJECTED -> fail TransferRejected
+BANK_DOWN -> fail
+
+// 8. Payslips and the audit entry go out after the result is settled.
+TRANSFERS -> fx~ SendPayslip(slip: each PAYABLE, period: period) -> sink PAYSLIPS
+TRANSFERS -> fx~ Audit(
+  event: "payroll " + period + " approved by " + approver,
+  count: len(TRANSFERS),
+  total: TOTAL,
+) -> sink AUDITED
+
+// 9. The report.
+TRANSFERS -> f({
+  period: period,
+  paid: len(TRANSFERS),
+  skipped: len(SLIPS) - len(PAYABLE),
+  total: TOTAL,
+  largest: max(PAYABLE.net),
+  smallest: min(PAYABLE.net),
+  any_overtime: any(SLIPS.overtime),
+  all_remote: all(SLIPS.remote),
+  funds_left: round(HEADROOM, 0),
+  transfers: TRANSFERS,
+  slips: PAYABLE,
+}) -> REPORT
+REPORT -> out report: {
+  period: str,
+  paid: u64,
+  skipped: u64,
+  total: dec(2),
+  largest: dec,
+  smallest: dec,
+  any_overtime: bool,
+  all_remote: bool,
+  funds_left: dec(0),
+  transfers: [str],
+  slips: [{id: u64, name: str, gross: dec, tax: dec, net: dec, overtime: bool, remote: bool}],
+}
+
+assert total
+assert indep(ALERT_REGION, out)
+assert indep(ALERT_FUNDS, out)
+assert indep(ALERT_REJECTED, out)
+assert indep(PAYSLIPS, out)
+assert indep(AUDITED, out)

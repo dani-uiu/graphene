@@ -1,0 +1,1260 @@
+[
+  {
+    "name": "three employees, ana with 12h overtime: 3610.00 + 4080.00 + 745.00 = 8435.00, 1565 left",
+    "inputs": {
+      "period": "2026-10",
+      "approver": "cfo",
+      "staff": [
+        {
+          "id": 1,
+          "name": "ana",
+          "hours": 172,
+          "rate": "25.00",
+          "region": "es"
+        },
+        {
+          "id": 2,
+          "name": "bo",
+          "hours": 160,
+          "rate": "30.00",
+          "region": "remote-eu"
+        },
+        {
+          "id": 3,
+          "name": "cy",
+          "hours": 40,
+          "rate": "20.00",
+          "region": "remote-us"
+        }
+      ]
+    },
+    "mock": "../../fixtures/payroll.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "report": {
+            "all_remote": false,
+            "any_overtime": true,
+            "funds_left": "1565",
+            "largest": "4080.00",
+            "paid": 3,
+            "period": "2026-10",
+            "skipped": 0,
+            "slips": [
+              {
+                "gross": "4450.00",
+                "id": 1,
+                "name": "ana",
+                "net": "3610.00",
+                "overtime": true,
+                "remote": false,
+                "tax": "890.00"
+              },
+              {
+                "gross": "4800.00",
+                "id": 2,
+                "name": "bo",
+                "net": "4080.00",
+                "overtime": false,
+                "remote": true,
+                "tax": "720.00"
+              },
+              {
+                "gross": "800.00",
+                "id": 3,
+                "name": "cy",
+                "net": "745.00",
+                "overtime": false,
+                "remote": true,
+                "tax": "80.00"
+              }
+            ],
+            "smallest": "745.00",
+            "total": "8435.00",
+            "transfers": [
+              "tx-101",
+              "tx-102",
+              "tx-103"
+            ]
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "es"
+          },
+          "result": {
+            "ok": {
+              "credit": "50.00",
+              "rate": "0.20"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "remote-eu"
+          },
+          "result": {
+            "ok": {
+              "credit": "0.00",
+              "rate": "0.15"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "remote-us"
+          },
+          "result": {
+            "ok": {
+              "credit": "25.00",
+              "rate": "0.10"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              2
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Ledger",
+          "args": {
+            "account": "payroll-2026-10"
+          },
+          "result": {
+            "ok": 1000000
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Pay",
+          "args": {
+            "period": "2026-10",
+            "slip": {
+              "gross": "4450.0000",
+              "id": 1,
+              "name": "ana",
+              "net": "3610.0000",
+              "overtime": true,
+              "remote": false,
+              "tax": "890.00"
+            }
+          },
+          "result": {
+            "ok": "tx-101"
+          },
+          "at": [
+            [
+              "Pay",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Pay",
+          "args": {
+            "period": "2026-10",
+            "slip": {
+              "gross": "4800.00",
+              "id": 2,
+              "name": "bo",
+              "net": "4080.00",
+              "overtime": false,
+              "remote": true,
+              "tax": "720.00"
+            }
+          },
+          "result": {
+            "ok": "tx-102"
+          },
+          "at": [
+            [
+              "Pay",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Pay",
+          "args": {
+            "period": "2026-10",
+            "slip": {
+              "gross": "800.00",
+              "id": 3,
+              "name": "cy",
+              "net": "745.00",
+              "overtime": false,
+              "remote": true,
+              "tax": "80.00"
+            }
+          },
+          "result": {
+            "ok": "tx-103"
+          },
+          "at": [
+            [
+              "Pay",
+              2
+            ]
+          ]
+        },
+        {
+          "kind": "fx~",
+          "effect": "SendPayslip",
+          "args": {
+            "period": "2026-10",
+            "slip": {
+              "gross": "4450.0000",
+              "id": 1,
+              "name": "ana",
+              "net": "3610.0000",
+              "overtime": true,
+              "remote": false,
+              "tax": "890.00"
+            }
+          },
+          "at": [
+            [
+              "SendPayslip",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx~",
+          "effect": "SendPayslip",
+          "args": {
+            "period": "2026-10",
+            "slip": {
+              "gross": "4800.00",
+              "id": 2,
+              "name": "bo",
+              "net": "4080.00",
+              "overtime": false,
+              "remote": true,
+              "tax": "720.00"
+            }
+          },
+          "at": [
+            [
+              "SendPayslip",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx~",
+          "effect": "SendPayslip",
+          "args": {
+            "period": "2026-10",
+            "slip": {
+              "gross": "800.00",
+              "id": 3,
+              "name": "cy",
+              "net": "745.00",
+              "overtime": false,
+              "remote": true,
+              "tax": "80.00"
+            }
+          },
+          "at": [
+            [
+              "SendPayslip",
+              2
+            ]
+          ]
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "count": 3,
+            "event": "payroll 2026-10 approved by cfo",
+            "total": "8435.0000"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "zero pay is skipped: bo worked 0h (net 0.00), cy nets 200.00 - 20.00 + 25.00 = 205.00",
+    "inputs": {
+      "period": "2026-11",
+      "approver": "ceo",
+      "staff": [
+        {
+          "id": 2,
+          "name": "bo",
+          "hours": 0,
+          "rate": "30.00",
+          "region": "remote-eu"
+        },
+        {
+          "id": 3,
+          "name": "cy",
+          "hours": 10,
+          "rate": "20.00",
+          "region": "remote-us"
+        }
+      ]
+    },
+    "mock": "../../fixtures/payroll.json",
+    "expect": {
+      "result": {
+        "ok": {
+          "report": {
+            "all_remote": true,
+            "any_overtime": false,
+            "funds_left": "295",
+            "largest": "205.00",
+            "paid": 1,
+            "period": "2026-11",
+            "skipped": 1,
+            "slips": [
+              {
+                "gross": "200.00",
+                "id": 3,
+                "name": "cy",
+                "net": "205.00",
+                "overtime": false,
+                "remote": true,
+                "tax": "20.00"
+              }
+            ],
+            "smallest": "205.00",
+            "total": "205.00",
+            "transfers": [
+              "tx-other"
+            ]
+          }
+        }
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "remote-eu"
+          },
+          "result": {
+            "ok": {
+              "credit": "0.00",
+              "rate": "0.15"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "remote-us"
+          },
+          "result": {
+            "ok": {
+              "credit": "25.00",
+              "rate": "0.10"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Ledger",
+          "args": {
+            "account": "payroll-2026-11"
+          },
+          "result": {
+            "ok": 50000
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Pay",
+          "args": {
+            "period": "2026-11",
+            "slip": {
+              "gross": "200.00",
+              "id": 3,
+              "name": "cy",
+              "net": "205.00",
+              "overtime": false,
+              "remote": true,
+              "tax": "20.00"
+            }
+          },
+          "result": {
+            "ok": "tx-other"
+          },
+          "at": [
+            [
+              "Pay",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx~",
+          "effect": "SendPayslip",
+          "args": {
+            "period": "2026-11",
+            "slip": {
+              "gross": "200.00",
+              "id": 3,
+              "name": "cy",
+              "net": "205.00",
+              "overtime": false,
+              "remote": true,
+              "tax": "20.00"
+            }
+          },
+          "at": [
+            [
+              "SendPayslip",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx~",
+          "effect": "Audit",
+          "args": {
+            "count": 1,
+            "event": "payroll 2026-11 approved by ceo",
+            "total": "205.00"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "not enough money: 8435.00 needed, 500.00 in the account",
+    "inputs": {
+      "period": "2026-11",
+      "approver": "cfo",
+      "staff": [
+        {
+          "id": 1,
+          "name": "ana",
+          "hours": 172,
+          "rate": "25.00",
+          "region": "es"
+        },
+        {
+          "id": 2,
+          "name": "bo",
+          "hours": 160,
+          "rate": "30.00",
+          "region": "remote-eu"
+        },
+        {
+          "id": 3,
+          "name": "cy",
+          "hours": 40,
+          "rate": "20.00",
+          "region": "remote-us"
+        }
+      ]
+    },
+    "mock": "../../fixtures/payroll.json",
+    "expect": {
+      "result": {
+        "err": "InsufficientFunds"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "es"
+          },
+          "result": {
+            "ok": {
+              "credit": "50.00",
+              "rate": "0.20"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "remote-eu"
+          },
+          "result": {
+            "ok": {
+              "credit": "0.00",
+              "rate": "0.15"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "remote-us"
+          },
+          "result": {
+            "ok": {
+              "credit": "25.00",
+              "rate": "0.10"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              2
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Ledger",
+          "args": {
+            "account": "payroll-2026-11"
+          },
+          "result": {
+            "ok": 50000
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Alert",
+          "args": {
+            "message": "payroll 2026-11 is not funded"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "overdrawn account (-25.00, negative i64 cents) cannot fund 205.00",
+    "inputs": {
+      "period": "2026-08",
+      "approver": "cfo",
+      "staff": [
+        {
+          "id": 3,
+          "name": "cy",
+          "hours": 10,
+          "rate": "20.00",
+          "region": "remote-us"
+        }
+      ]
+    },
+    "mock": "../../fixtures/payroll.json",
+    "expect": {
+      "result": {
+        "err": "InsufficientFunds"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "remote-us"
+          },
+          "result": {
+            "ok": {
+              "credit": "25.00",
+              "rate": "0.10"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Ledger",
+          "args": {
+            "account": "payroll-2026-08"
+          },
+          "result": {
+            "ok": -2500
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Alert",
+          "args": {
+            "message": "payroll 2026-08 is not funded"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "ledger down counts as an empty account",
+    "inputs": {
+      "period": "2026-09",
+      "approver": "cfo",
+      "staff": [
+        {
+          "id": 3,
+          "name": "cy",
+          "hours": 10,
+          "rate": "20.00",
+          "region": "remote-us"
+        }
+      ]
+    },
+    "mock": "../../fixtures/payroll.json",
+    "expect": {
+      "result": {
+        "err": "InsufficientFunds"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "remote-us"
+          },
+          "result": {
+            "ok": {
+              "credit": "25.00",
+              "rate": "0.10"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Ledger",
+          "args": {
+            "account": "payroll-2026-09"
+          },
+          "result": {
+            "err": "LedgerDown"
+          }
+        },
+        {
+          "kind": "fx~",
+          "effect": "Alert",
+          "args": {
+            "message": "payroll 2026-09 is not funded"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "frozen period fails before any effect",
+    "inputs": {
+      "period": "2026-12",
+      "approver": "cfo",
+      "staff": [
+        {
+          "id": 1,
+          "name": "ana",
+          "hours": 172,
+          "rate": "25.00",
+          "region": "es"
+        },
+        {
+          "id": 2,
+          "name": "bo",
+          "hours": 160,
+          "rate": "30.00",
+          "region": "remote-eu"
+        },
+        {
+          "id": 3,
+          "name": "cy",
+          "hours": 40,
+          "rate": "20.00",
+          "region": "remote-us"
+        }
+      ]
+    },
+    "mock": "../../fixtures/payroll.json",
+    "expect": {
+      "result": {
+        "err": "PeriodFrozen"
+      },
+      "effects": []
+    }
+  },
+  {
+    "name": "unknown region propagates UnknownRegion and alerts",
+    "inputs": {
+      "period": "2026-10",
+      "approver": "cfo",
+      "staff": [
+        {
+          "id": 1,
+          "name": "ana",
+          "hours": 172,
+          "rate": "25.00",
+          "region": "es"
+        },
+        {
+          "id": 6,
+          "name": "fay",
+          "hours": 80,
+          "rate": "15.00",
+          "region": "mars"
+        }
+      ]
+    },
+    "mock": "../../fixtures/payroll.json",
+    "expect": {
+      "result": {
+        "err": "UnknownRegion"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "es"
+          },
+          "result": {
+            "ok": {
+              "credit": "50.00",
+              "rate": "0.20"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "mars"
+          },
+          "result": {
+            "err": "UnknownRegion"
+          },
+          "at": [
+            [
+              "NetPay",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx~",
+          "effect": "Alert",
+          "args": {
+            "message": "unknown tax region in payroll 2026-10"
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Ledger",
+          "args": {
+            "account": "payroll-2026-10"
+          },
+          "result": {
+            "ok": 1000000
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "every element runs; the first failure (TableDown at index 1) wins over UnknownRegion at index 2",
+    "inputs": {
+      "period": "2026-10",
+      "approver": "cfo",
+      "staff": [
+        {
+          "id": 1,
+          "name": "ana",
+          "hours": 172,
+          "rate": "25.00",
+          "region": "es"
+        },
+        {
+          "id": 7,
+          "name": "gus",
+          "hours": 80,
+          "rate": "15.00",
+          "region": "offline"
+        },
+        {
+          "id": 6,
+          "name": "fay",
+          "hours": 80,
+          "rate": "15.00",
+          "region": "mars"
+        }
+      ]
+    },
+    "mock": "../../fixtures/payroll.json",
+    "expect": {
+      "result": {
+        "err": "TaxServiceDown"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "es"
+          },
+          "result": {
+            "ok": {
+              "credit": "50.00",
+              "rate": "0.20"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "offline"
+          },
+          "result": {
+            "err": "TableDown"
+          },
+          "at": [
+            [
+              "NetPay",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "mars"
+          },
+          "result": {
+            "err": "UnknownRegion"
+          },
+          "at": [
+            [
+              "NetPay",
+              2
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Ledger",
+          "args": {
+            "account": "payroll-2026-10"
+          },
+          "result": {
+            "ok": 1000000
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "empty staff list: nobody to pay",
+    "inputs": {
+      "period": "2026-10",
+      "approver": "cfo",
+      "staff": []
+    },
+    "mock": "../../fixtures/payroll.json",
+    "expect": {
+      "result": {
+        "err": "NothingToPay"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "Ledger",
+          "args": {
+            "account": "payroll-2026-10"
+          },
+          "result": {
+            "ok": 1000000
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "only cfo or ceo may approve",
+    "inputs": {
+      "period": "2026-10",
+      "approver": "intern",
+      "staff": [
+        {
+          "id": 1,
+          "name": "ana",
+          "hours": 172,
+          "rate": "25.00",
+          "region": "es"
+        },
+        {
+          "id": 2,
+          "name": "bo",
+          "hours": 160,
+          "rate": "30.00",
+          "region": "remote-eu"
+        },
+        {
+          "id": 3,
+          "name": "cy",
+          "hours": 40,
+          "rate": "20.00",
+          "region": "remote-us"
+        }
+      ]
+    },
+    "mock": "../../fixtures/payroll.json",
+    "expect": {
+      "result": {
+        "err": "NotApproved"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "es"
+          },
+          "result": {
+            "ok": {
+              "credit": "50.00",
+              "rate": "0.20"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "remote-eu"
+          },
+          "result": {
+            "ok": {
+              "credit": "0.00",
+              "rate": "0.15"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "remote-us"
+          },
+          "result": {
+            "ok": {
+              "credit": "25.00",
+              "rate": "0.10"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              2
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Ledger",
+          "args": {
+            "account": "payroll-2026-10"
+          },
+          "result": {
+            "ok": 1000000
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "a rejected transfer alerts and fails; ana's transfer still ran",
+    "inputs": {
+      "period": "2026-10",
+      "approver": "ceo",
+      "staff": [
+        {
+          "id": 1,
+          "name": "ana",
+          "hours": 172,
+          "rate": "25.00",
+          "region": "es"
+        },
+        {
+          "id": 4,
+          "name": "dee",
+          "hours": 100,
+          "rate": "20.00",
+          "region": "es"
+        }
+      ]
+    },
+    "mock": "../../fixtures/payroll.json",
+    "expect": {
+      "result": {
+        "err": "TransferRejected"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "es"
+          },
+          "result": {
+            "ok": {
+              "credit": "50.00",
+              "rate": "0.20"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "es"
+          },
+          "result": {
+            "ok": {
+              "credit": "50.00",
+              "rate": "0.20"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Ledger",
+          "args": {
+            "account": "payroll-2026-10"
+          },
+          "result": {
+            "ok": 1000000
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Pay",
+          "args": {
+            "period": "2026-10",
+            "slip": {
+              "gross": "4450.0000",
+              "id": 1,
+              "name": "ana",
+              "net": "3610.0000",
+              "overtime": true,
+              "remote": false,
+              "tax": "890.00"
+            }
+          },
+          "result": {
+            "ok": "tx-101"
+          },
+          "at": [
+            [
+              "Pay",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Pay",
+          "args": {
+            "period": "2026-10",
+            "slip": {
+              "gross": "2000.00",
+              "id": 4,
+              "name": "dee",
+              "net": "1650.00",
+              "overtime": false,
+              "remote": false,
+              "tax": "400.00"
+            }
+          },
+          "result": {
+            "err": "Rejected"
+          },
+          "at": [
+            [
+              "Pay",
+              1
+            ]
+          ]
+        },
+        {
+          "kind": "fx~",
+          "effect": "Alert",
+          "args": {
+            "message": "a transfer was rejected in payroll 2026-10"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "bank outage propagates BankDown",
+    "inputs": {
+      "period": "2026-10",
+      "approver": "cfo",
+      "staff": [
+        {
+          "id": 5,
+          "name": "eve",
+          "hours": 50,
+          "rate": "10.00",
+          "region": "remote-us"
+        }
+      ]
+    },
+    "mock": "../../fixtures/payroll.json",
+    "expect": {
+      "result": {
+        "err": "BankDown"
+      },
+      "effects": [
+        {
+          "kind": "fx",
+          "effect": "TaxTable",
+          "args": {
+            "region": "remote-us"
+          },
+          "result": {
+            "ok": {
+              "credit": "25.00",
+              "rate": "0.10"
+            }
+          },
+          "at": [
+            [
+              "NetPay",
+              0
+            ]
+          ]
+        },
+        {
+          "kind": "fx",
+          "effect": "Ledger",
+          "args": {
+            "account": "payroll-2026-10"
+          },
+          "result": {
+            "ok": 1000000
+          }
+        },
+        {
+          "kind": "fx",
+          "effect": "Pay",
+          "args": {
+            "period": "2026-10",
+            "slip": {
+              "gross": "500.00",
+              "id": 5,
+              "name": "eve",
+              "net": "475.00",
+              "overtime": false,
+              "remote": true,
+              "tax": "50.00"
+            }
+          },
+          "result": {
+            "err": "BankDown"
+          },
+          "at": [
+            [
+              "Pay",
+              0
+            ]
+          ]
+        }
+      ]
+    }
+  }
+]

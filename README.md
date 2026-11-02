@@ -165,7 +165,22 @@ Every program in `examples/valid/` has a `.cases.json` file next to it. `graphen
 | `loan_approval` | Error routing per variant with a default record, nested decision tiers, an affordability rule with `&&` |
 | `sensor_alerts` | Negative `i64` math, `\|\|` conditions, target annotations that type literals inside records |
 | `subscription_renewal` | Proration with exact decimals, credit-first logic, three payment errors routed separately, `u64()` truncation |
-| **`marketplace_checkout`** | The flagship, below |
+| **`marketplace_checkout`** | The v0.2 flagship, below |
+| `subgraph_basics` | v0.3: one subgraph called twice with `call`; its declared error propagates |
+| `lists_and_aggregates` | v0.3: list inputs, `filter`, `len`, `sum`, `min`, `max`, `contains` |
+| `constants_and_rounding` | v0.3: `const`, `round` / `floor` / `ceil`, a `dec(4)` output, string `+` |
+| `relaxed_join` | v0.3: the v0.2 join that was illegal, now accepted because one branch's condition implies the other's |
+| `cart_checkout` | v0.3: `map` and `filter` over a cart, `each` on effects, releasing partial holds |
+| **`payroll_run`** | **Everything in v0.3 in one program**, below |
+
+**`payroll_run.grph`** is the v0.3 flagship: a monthly payroll in about 150 lines, with 14 possible outcomes and 6 effects. Its 12 cases reach every outcome, branch and effect (`graphene test --coverage`). It uses every feature of the language:
+- **subgraphs, nested:** `map NetPay` runs once per employee, and each run makes a `call Gross` and a tax lookup at the same time, then joins them; `filter Payable` drops zero pay;
+- **lists:** a list-of-records input, a list literal in `min([e.hours, STD_HOURS])`, projection (`PAYABLE.net`), and `len`, `sum`, `min`, `max`, `any`, `all`, `contains`;
+- **`each` on effects:** one `fx Pay` per payslip (the first failing transfer decides the error), and one `fx~ SendPayslip` per payslip;
+- **constants**, including list constants; `ceil` for tax, `round` plus a `dec(0)` output for the funds left; string `+` in messages;
+- **v0.2 and v0.1 features:** error edges per variant, recovery into a merge (ledger down counts as 0), a match whose two arms lead to one node, conversions (`dec(BAL)` from `i64` cents, which can be negative), record literals, `match` on `bool`, `str` and `u64`;
+- **a join by implication:** the total (which exists only if pricing worked) joined with the balance (which always exists);
+- `assert total` and five `assert indep` side effects: alerts, payslips and the audit entry.
 
 **`marketplace_checkout.grph`** is about 100 lines. It has 11 effects, 53 values and 51 operations, and 11 possible outcomes (10 kinds of failure plus the receipt). The checker proves exactly one of them is reached on every run. It covers:
 - loading the order and buyer, with routing per error;
