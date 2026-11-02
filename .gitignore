@@ -2,3 +2,9 @@
 **/*.rs.bk
 *.pending-snap
 *.snap.new
+
+# Prompts and plans (kept locally, not published)
+graphene_prompt.md
+*prompt*.md
+docs/plan.md
+docs/*-plan.md

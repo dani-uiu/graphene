@@ -33,7 +33,7 @@ impl Span {
     }
 }
 
-/// Stable diagnostic codes. See `docs/plan.md` §3 for the full table.
+/// Stable diagnostic codes. See `codes.rs` for the full table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Code {
     P001,

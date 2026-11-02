@@ -67,7 +67,7 @@ The analysis is structural, so it is sound but incomplete, and it can produce a 
 - **P001–P005** cover syntax and lexing.
 - **R001–R005** cover runtime faults.
 
-The full table is in `plan.md` §3.
+The full table is in the README and `src/codes.rs` (`graphene explain`).
 
 ## D-011 — Expression references are not graph edges · Proposed
 **Choice.** Only flow edges form the DAG. Because of the dominance rule, a referenced value is always an ancestor anyway, so ordering is unaffected. Keeping references out of the graph keeps the merge and join analysis clean. A stray reference is reported only as G009 and never as a spurious G006 or G007. The indep check (G021) does add references as edges.

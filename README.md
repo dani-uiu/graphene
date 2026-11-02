@@ -95,7 +95,7 @@ npm run tauri dev            # run the app
 npm run tauri build          # Windows installers in ide/src-tauri/target/release/bundle/
 ```
 
-See `ide/README.md` for details, `docs/ide-plan.md` for the design.
+See `ide/README.md` for details.
 
 ## Quickstart
 
@@ -230,7 +230,7 @@ src/
   runtime/  values, effect host and mock, step function, seq and par executors
   dot.rs    Graphviz export        tokens.rs  token counts        main.rs  CLI
   cases.rs  .cases.json loading, running, and diffing (graphene test)
-docs/       plan, grammar (EBNF), semantics, decision log, v0.2 design, usage guide, IDE plan
+docs/       grammar (EBNF), semantics, decision log, v0.2 and v0.3 designs, usage guide
 examples/   valid/*.grph with *.cases.json; invalid/*.grph with *.expected
 ```
 

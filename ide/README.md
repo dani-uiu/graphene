@@ -1,6 +1,6 @@
 # Graphene IDE
 
-A desktop app for writing, viewing, and running Graphene programs. The text editor and an Obsidian-style graph view show the same program, and the text is always the source of truth (see `docs/ide-plan.md`).
+A desktop app for writing, viewing, and running Graphene programs. The text editor and an Obsidian-style graph view show the same program, and the text is always the source of truth.
 
 ## Using it
 

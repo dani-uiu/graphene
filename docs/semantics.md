@@ -1,6 +1,6 @@
 # Graphene v0.3 — Semantics
 
-This document is normative. Sections 1–5 describe v0.1; section 6 lists what changes under a `#!graphene 0.2` header, and section 7 what changes under `#!graphene 0.3`. A `0.1` file is checked and run exactly as sections 1–5 say. Where it is more precise than `graphene_prompt.md`, it wins; every such refinement is also listed in `decisions.md` with its rationale.
+This document is normative. Sections 1–5 describe v0.1; section 6 lists what changes under a `#!graphene 0.2` header, and section 7 what changes under `#!graphene 0.3`. A `0.1` file is checked and run exactly as sections 1–5 say. Every refinement of the original design is listed in `decisions.md` with its rationale.
 
 Syntax lives in `grammar.ebnf`. This file covers names, the graph, types, static checks, and execution.
 
@@ -305,7 +305,7 @@ pub trait EffectHost: Sync {
 }
 ```
 
-`MockHost` loads a JSON fixture, described in `plan.md` §5. Its responses must be a pure function of `(effect, args)`. That is what makes the determinism guarantee hold.
+`MockHost` loads a JSON fixture, described in `usage.md` ("Mock files"). Its responses must be a pure function of `(effect, args)`. That is what makes the determinism guarantee hold.
 
 ## 6. Version 0.2
 

@@ -98,7 +98,7 @@ struct MockEffect {
     fallback: Option<Response>,
 }
 
-/// Effect host backed by a JSON fixture (`docs/plan.md` §5).
+/// Effect host backed by a JSON fixture (format in `docs/usage.md`).
 #[derive(Debug, Clone, Default)]
 pub struct MockHost {
     effects: BTreeMap<String, MockEffect>,
