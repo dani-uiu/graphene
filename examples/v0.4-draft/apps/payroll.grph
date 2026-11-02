@@ -47,7 +47,9 @@ SOME -> f(sum(PAYABLE.net)) -> TOTAL
 // 5. Can the account fund it?
 (TOTAL, BAL) -> f(dec(BAL) / 100.00 - TOTAL) -> HEADROOM
 HEADROOM -> match HEADROOM >= 0.00 { true => FUNDED, false => SHORT }
-SHORT -> fx~ Alert(message: "payroll " + period + " is short by " + str(round(abs(HEADROOM), 2))) -> sink ALERT_FUNDS
+SHORT -> fx~ Alert(
+  message: "payroll " + period + " is short by " + str(round(abs(HEADROOM), 2)),
+) -> sink ALERT_FUNDS
 SHORT -> fail InsufficientFunds
 
 // 6. Approval: every approver is handled, so adding one makes this fail to check.
@@ -55,8 +57,13 @@ FUNDED -> match approver { Cfo => APPROVED, Ceo => APPROVED, Intern => UNAPPROVE
 UNAPPROVED -> fail NotApproved
 
 // 7. Pay everyone at once.
-APPROVED -> fx Pay(slip: each PAYABLE, period: period) -> TRANSFERS | err Rejected -> REJECTED | err BankDown -> BANK_DOWN
-REJECTED -> fx~ Alert(message: "a transfer was rejected in payroll " + period) -> sink ALERT_REJECTED
+APPROVED -> fx Pay(
+  slip: each PAYABLE,
+  period: period,
+) -> TRANSFERS | err Rejected -> REJECTED | err BankDown -> BANK_DOWN
+REJECTED -> fx~ Alert(
+  message: "a transfer was rejected in payroll " + period,
+) -> sink ALERT_REJECTED
 REJECTED -> fail TransferRejected
 BANK_DOWN -> fail
 

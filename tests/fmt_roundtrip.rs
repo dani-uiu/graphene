@@ -56,7 +56,7 @@ fn canonical_example_is_already_formatted() {
 }
 
 // ---------------------------------------------------------------------
-// Random program generation
+// Random program generation (v0.4 constructs included)
 // ---------------------------------------------------------------------
 
 fn id(name: &str) -> Ident {
@@ -71,6 +71,14 @@ fn ident() -> impl Strategy<Value = Ident> {
         "A", "B", "C1", "x", "usr_id", "total", "indep", "_t", "N9",
     ])
     .prop_map(id)
+}
+
+/// A record field name: an identifier or, since v0.4, a keyword (D-063).
+fn field_name() -> impl Strategy<Value = Ident> {
+    prop_oneof![
+        ident(),
+        prop::sample::select(vec!["f", "in", "out", "match", "err", "true", "sink"]).prop_map(id),
+    ]
 }
 
 fn lit() -> impl Strategy<Value = Lit> {
@@ -103,7 +111,7 @@ fn expr() -> impl Strategy<Value = Expr> {
     ];
     leaf.prop_recursive(4, 24, 2, |inner| {
         prop_oneof![
-            (inner.clone(), ident()).prop_map(|(e, f)| ex(ExprKind::Field(Box::new(e), f))),
+            (inner.clone(), field_name()).prop_map(|(e, f)| ex(ExprKind::Field(Box::new(e), f))),
             (any::<bool>(), inner.clone()).prop_map(|(not, e)| {
                 let op = if not { UnOp::Not } else { UnOp::Neg };
                 ex(ExprKind::Unary(op, Box::new(e)))
@@ -113,7 +121,7 @@ fn expr() -> impl Strategy<Value = Expr> {
                 Box::new(l),
                 Box::new(r)
             ))),
-            prop::collection::vec((ident(), inner.clone()), 1..3)
+            prop::collection::vec((field_name(), inner.clone()), 1..3)
                 .prop_map(|fs| ex(ExprKind::Record(fs))),
             (
                 prop::sample::select(vec![NumTy::U64, NumTy::I64, NumTy::Dec]),
@@ -144,6 +152,9 @@ fn ty() -> impl Strategy<Value = Ty> {
         TyKind::Dec,
         TyKind::Bool,
         TyKind::Str,
+        TyKind::Date,
+        TyKind::Named("Region".into()),
+        TyKind::Named("total".into()),
     ])
     .prop_map(|kind| Ty {
         kind,
@@ -155,7 +166,7 @@ fn ty() -> impl Strategy<Value = Ty> {
     });
     prop_oneof![scalar, scaled].prop_recursive(2, 8, 3, |inner| {
         prop_oneof![
-            prop::collection::vec((ident(), inner.clone()), 1..3).prop_map(|fs| Ty {
+            prop::collection::vec((field_name(), inner.clone()), 1..3).prop_map(|fs| Ty {
                 kind: TyKind::Record(
                     fs.into_iter()
                         .map(|(name, ty)| Field { name, ty })
@@ -221,6 +232,7 @@ fn arm() -> impl Strategy<Value = Arm> {
     let pat = prop_oneof![
         lit().prop_map(|l| Pat::Lit(l, Pos::default())),
         Just(Pat::Wild(Pos::default())),
+        ident().prop_map(Pat::Variant),
     ];
     (pat, ident()).prop_map(|(pat, target)| Arm { pat, target })
 }
@@ -317,6 +329,19 @@ fn stmt() -> impl Strategy<Value = Stmt> {
         })),
         Just(Stmt::AssertTotal(p())),
         ident().prop_map(move |s| Stmt::AssertIndep(s, p())),
+        "[a-z/._]{0,12}".prop_map(move |path| Stmt::Import(Import { path, pos: p() })),
+        (ident(), ty()).prop_map(move |(name, ty)| Stmt::TypeAlias(TypeAlias {
+            name,
+            ty,
+            pos: p()
+        })),
+        (ident(), prop::collection::vec(ident(), 1..4)).prop_map(move |(name, variants)| {
+            Stmt::Enum(EnumDecl {
+                name,
+                variants,
+                pos: p(),
+            })
+        }),
     ]
 }
 
@@ -329,10 +354,10 @@ fn program() -> impl Strategy<Value = Program> {
                 at: LineSpan::default(),
             }
         });
-    // v0.3 is a superset of older versions, so 0.3 programs cover every
+    // v0.4 is a superset of older versions, so 0.4 programs cover every
     // construct.
     prop::collection::vec(line, 0..12).prop_map(|lines| Program {
-        version: (0, 3),
+        version: (0, 4),
         lines,
     })
 }
@@ -344,3 +369,4 @@ proptest! {
         assert_roundtrip(&prog);
     }
 }
+// Covers v0.4.

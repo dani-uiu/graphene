@@ -373,7 +373,7 @@ impl<'a> Builder<'a> {
                 let s = self.value(&f.source, line, None);
                 self.edge(&s, &id, "flow", None, line);
             }
-            Stmt::Const(_) => {}
+            Stmt::Const(_) | Stmt::Import(_) | Stmt::TypeAlias(_) | Stmt::Enum(_) => {}
             Stmt::AssertTotal(_) => self.asserts.push(AssertView {
                 text: "assert total".into(),
                 line,
@@ -517,6 +517,7 @@ impl<'a> Builder<'a> {
         for arm in &m.arms {
             let pat = match &arm.pat {
                 Pat::Wild(_) => "_".to_string(),
+                Pat::Variant(v) => v.name.clone(),
                 Pat::Lit(l, _) => format_expr(
                     &Expr {
                         kind: ExprKind::Lit(l.clone()),

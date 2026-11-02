@@ -982,6 +982,11 @@ fn builtin_help(b: Builtin) -> String {
         Builtin::StartsWith | Builtin::EndsWith => {
             format!("`{}(s, part)` takes two strs", b.name())
         }
+        Builtin::Date => "`date(\"2026-11-02\")` is a calendar date, written as a literal `YYYY-MM-DD`".into(),
+        Builtin::DaysBetween => "`days_between(a, b)` takes two dates and gives `b - a` in days, as an i64".into(),
+        Builtin::AddDays => "`add_days(d, n)` takes a date and an i64 number of days".into(),
+        Builtin::Year | Builtin::Month | Builtin::Day => format!("`{}(d)` takes a date and gives a u64", b.name()),
+        Builtin::Weekday => "`weekday(d)` takes a date and gives 1 (Monday) to 7 (Sunday)".into(),
     }
 }
 

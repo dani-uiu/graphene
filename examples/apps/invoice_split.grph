@@ -24,7 +24,10 @@ EMPTY -> fail EmptyOrder
 // 2. Big orders get a handling line, VIPs get 10% off, and late bills
 //    earn three months of 1% interest.
 PRICED -> f(if len(AMOUNTS) > 3 then AMOUNTS ++ [HANDLING] else AMOUNTS) -> CHARGES
-CHARGES -> f(round(sum(CHARGES) * (if starts_with(upper(customer), "VIP") then 0.90 else 1.00) * (if late then pow(INTEREST, 3) else 1.00), 2)) -> TOTAL
+CHARGES -> f(round(
+  sum(CHARGES) * (if starts_with(upper(customer), "VIP") then 0.90 else 1.00) * (if late then pow(INTEREST, 3) else 1.00),
+  2,
+)) -> TOTAL
 
 // 3. Split between payers. Ruling out zero payers first is what makes
 //    the division legal.

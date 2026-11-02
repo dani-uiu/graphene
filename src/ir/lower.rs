@@ -434,6 +434,15 @@ impl Lower<'_> {
             TyKind::List(inner) => Type::List(Box::new(self.ty(inner))),
             TyKind::Bool => Type::Bool,
             TyKind::Str => Type::Str,
+            // Placeholder until the checker knows v0.4 types (phase C).
+            TyKind::Date | TyKind::Named(_) => {
+                self.diags.push(Diag::new(
+                    Code::G002,
+                    t.pos.0,
+                    "v0.4 types are not checked yet",
+                ));
+                Type::U64
+            }
             TyKind::Record(fields) => {
                 let mut map = BTreeMap::new();
                 for f in fields {
@@ -774,7 +783,7 @@ impl Lower<'_> {
             .map(|a| IArm {
                 pat: match &a.pat {
                     Pat::Lit(l, _) => Some(l.clone()),
-                    Pat::Wild(_) => None,
+                    Pat::Wild(_) | Pat::Variant(_) => None,
                 },
                 span: a.pat.span(),
                 text: self.src[a.pat.span().start..a.pat.span().end].to_string(),

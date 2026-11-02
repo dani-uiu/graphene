@@ -208,3 +208,60 @@ fn v03_words_stay_names_in_older_files() {
     assert!(diags.is_empty(), "{diags:#?}");
     assert!(graphene::check(src).is_ok());
 }
+
+#[test]
+fn v04_syntax_parses() {
+    let src = "#!graphene 0.4\n\
+        import \"lib/billing.grph\"\n\
+        enum Region { Spain, RemoteEu }\n\
+        type Slip = {\n  in: u64,\n  out: date,\n  region: Region,\n}\n\
+        in r: Region -> R\n\
+        R -> match r { Spain => A, RemoteEu => B }\n\
+        A -> f({f: date(\"2026-11-02\"), match: min(1, 2)}) -> C\n\
+        C -> f(C.f) -> D\n";
+    let (prog, diags) = parse(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let stmts: Vec<_> = prog.lines.iter().filter_map(|l| l.stmt.as_ref()).collect();
+    use graphene::syntax::ast::*;
+    assert!(matches!(stmts[0], Stmt::Import(i) if i.path == "lib/billing.grph"));
+    assert!(matches!(stmts[1], Stmt::Enum(e) if e.variants.len() == 2));
+    assert!(
+        matches!(stmts[2], Stmt::TypeAlias(a) if matches!(&a.ty.kind, TyKind::Record(f) if f[0].name.name == "in"))
+    );
+    assert!(
+        matches!(stmts[4], Stmt::Match(m) if matches!(&m.arms[0].pat, Pat::Variant(v) if v.name == "Spain"))
+    );
+}
+
+#[test]
+fn v04_constructs_need_the_v04_header() {
+    let cases = [
+        "#!graphene 0.3\nimport \"a.grph\"\n",
+        "#!graphene 0.3\ntype T = {a: u64}\n",
+        "#!graphene 0.3\nenum E { A }\n",
+        "#!graphene 0.3\nin d: date -> D\n",
+        "#!graphene 0.3\nin x: u64 -> X\nX -> f(min(x, 1)) -> Y\n",
+        "#!graphene 0.3\nin x: u64 -> X\nX -> f(days_between(x, x)) -> Y\n",
+    ];
+    for src in cases {
+        let (_, diags) = parse(src);
+        let got: Vec<(Code, bool)> = diags
+            .iter()
+            .map(|d| (d.code, d.message.contains("#!graphene 0.4")))
+            .collect();
+        assert_eq!(got, vec![(Code::P006, true)], "{src}");
+    }
+}
+
+#[test]
+fn v04_words_stay_names_and_keyword_fields_work_everywhere() {
+    // `type`, `enum`, `import` and `date` are contextual (D-036), and
+    // keyword field names apply to every version (D-063).
+    let src = "#!graphene 0.3\nin type: u64 -> enum\nenum -> f({in: type, out: 1}) -> import\nimport -> f(import.out) -> date\ndate -> out r: u64\n";
+    let (_, diags) = parse(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    // Older files keep the old message for an unknown type.
+    let (_, diags) = parse("#!graphene 0.3\nin x: Region -> X\n");
+    assert_eq!(diags.len(), 1);
+    assert_eq!(diags[0].code, Code::P001);
+}

@@ -25,7 +25,13 @@ AMOUNTS -> f(sum(AMOUNTS)) -> SUBTOTAL
 // 2. Not due yet: a courtesy reminder by email, the day it is due.
 SUBTOTAL -> f(days_between(due, today)) -> LATE
 LATE -> match LATE > 0 { true => OVERDUE, false => CURRENT }
-CURRENT -> f({total: SUBTOTAL, days_late: 0, fee: 0.00, channel: Channel.Email, remind_by: due}) -> NOTICE: Notice
+CURRENT -> f({
+  total: SUBTOTAL,
+  days_late: 0,
+  fee: 0.00,
+  channel: Channel.Email,
+  remind_by: due,
+}) -> NOTICE: Notice
 
 // 3. Late: Gold customers pay no fee; everyone else pays per started week.
 OVERDUE -> match tier { Gold => WAIVED, Standard => CHARGED }
@@ -40,7 +46,11 @@ FEE -> f({
 }) -> NOTICE: Notice
 
 // 4. Remind, and report.
-NOTICE -> fx~ Remind(customer: customer, channel: NOTICE.channel, amount: NOTICE.total) -> sink REMINDED
+NOTICE -> fx~ Remind(
+  customer: customer,
+  channel: NOTICE.channel,
+  amount: NOTICE.total,
+) -> sink REMINDED
 NOTICE -> out notice: Notice
 
 assert total

@@ -12,7 +12,9 @@
 //! - statements inside a `graph` block are indented two spaces;
 //! - a statement whose ASCII form is wider than `WIDTH` columns is wrapped
 //!   at its outermost record or argument list, one item per line with a
-//!   trailing comma (D-050). The decision uses the ASCII width, so both
+//!   trailing comma (D-050). Since v0.4 (D-064) `extern` signatures,
+//!   type aliases, enums and long expressions (at their outermost call,
+//!   list or record) wrap too. The decision uses the ASCII width, so both
 //!   styles wrap identically. Only `0.3`+ files wrap: older headers do not
 //!   allow statements over several lines, so their output stays one line
 //!   per statement, byte-for-byte as before.
@@ -164,6 +166,12 @@ impl Writer {
             Stmt::AssertIndep(s, _) => {
                 format!("assert {}({}, out)", self.pick("indep", "⫫"), s.name)
             }
+            Stmt::Import(i) => format!("import {}", quote(&i.path)),
+            Stmt::TypeAlias(a) => format!("type {} = {}", a.name.name, self.ty(&a.ty)),
+            Stmt::Enum(e) => {
+                let vs: Vec<&str> = e.variants.iter().map(|v| v.name.as_str()).collect();
+                format!("enum {} {{ {} }}", e.name.name, vs.join(", "))
+            }
         }
     }
 
@@ -197,13 +205,18 @@ impl Writer {
     }
 
     fn extern_decl(&self, e: &Extern) -> String {
+        let params: Vec<String> = e.params.iter().map(|p| self.field(p)).collect();
+        self.extern_with(e, &params.join(", "))
+    }
+
+    /// An `extern` with its parameter list already rendered.
+    fn extern_with(&self, e: &Extern, params: &str) -> String {
         let kw = if e.is_async {
             self.pick("fx~", "⊗")
         } else {
             self.pick("fx", "⚙")
         };
-        let params: Vec<String> = e.params.iter().map(|p| self.field(p)).collect();
-        let mut s = format!("extern {kw} {}({})", e.name.name, params.join(", "));
+        let mut s = format!("extern {kw} {}({params})", e.name.name);
         if let Some(ret) = &e.ret {
             s.push_str(&format!(" {} {}", self.arrow(), self.ty(ret)));
         }
@@ -290,6 +303,7 @@ impl Writer {
                 let pat = match &arm.pat {
                     Pat::Lit(l, _) => lit(l),
                     Pat::Wild(_) => "_".to_string(),
+                    Pat::Variant(v) => v.name.clone(),
                 };
                 format!("{pat} => {}", arm.target.name)
             })
@@ -316,6 +330,8 @@ impl Writer {
             TyKind::DecScale(n) => format!("dec({n})"),
             TyKind::Bool => "bool".into(),
             TyKind::Str => "str".into(),
+            TyKind::Date => "date".into(),
+            TyKind::Named(n) => n.clone(),
             TyKind::List(inner) => format!("[{}]", self.ty(inner)),
             TyKind::Record(fields) => {
                 let parts: Vec<String> = fields.iter().map(|f| self.field(f)).collect();
@@ -442,28 +458,130 @@ impl Writer {
                 let params = format!("\n{}\n{indent}", Self::items(&parts, indent));
                 Some(self.graph_header(g, &params))
             }
+            Stmt::Extern(e) if !e.params.is_empty() => {
+                let parts: Vec<String> = e.params.iter().map(|p| self.field(p)).collect();
+                let params = format!("\n{}\n{indent}", Self::items(&parts, indent));
+                Some(self.extern_with(e, &params))
+            }
+            Stmt::TypeAlias(a) => {
+                let TyKind::Record(fields) = &a.ty.kind else {
+                    return None;
+                };
+                let parts: Vec<String> = fields.iter().map(|f| self.field(f)).collect();
+                Some(format!(
+                    "type {} = {{\n{}\n{indent}}}",
+                    a.name.name,
+                    Self::items(&parts, indent)
+                ))
+            }
+            Stmt::Enum(e) => {
+                let parts: Vec<String> = e.variants.iter().map(|v| v.name.clone()).collect();
+                Some(format!(
+                    "enum {} {{\n{}\n{indent}}}",
+                    e.name.name,
+                    Self::items(&parts, indent)
+                ))
+            }
+            Stmt::Const(c) => Some(format!(
+                "const {}: {} = {}",
+                c.name.name,
+                self.ty(&c.ty),
+                self.expr_wrapped(&c.value, indent)?
+            )),
             _ => None,
         }
     }
 
-    fn wrap_flow(&self, f: &Flow, indent: &str) -> Option<String> {
-        let op = match (&f.op, self.op_head(&f.op)) {
-            (
-                Op::Pure(Expr {
-                    kind: ExprKind::Record(fields),
-                    ..
-                }),
-                _,
-            ) => {
+    /// An expression with its outermost call, list or record written one
+    /// item per line (D-064); `None` if it has none.
+    fn expr_wrapped(&self, e: &Expr, indent: &str) -> Option<String> {
+        match &e.kind {
+            ExprKind::Record(fields) if !fields.is_empty() => {
                 let parts: Vec<String> = fields
                     .iter()
                     .map(|(n, e)| format!("{}: {}", n.name, self.expr(e)))
                     .collect();
-                format!(
-                    "{}({{\n{}\n{indent}}})",
-                    self.pick("f", "𝑓"),
+                Some(format!("{{\n{}\n{indent}}}", Self::items(&parts, indent)))
+            }
+            ExprKind::List(items) if !items.is_empty() => {
+                let parts: Vec<String> = items.iter().map(|x| self.expr(x)).collect();
+                Some(format!("[\n{}\n{indent}]", Self::items(&parts, indent)))
+            }
+            ExprKind::Builtin(b, args) if !args.is_empty() => {
+                let parts: Vec<String> = args.iter().map(|x| self.expr(x)).collect();
+                Some(format!(
+                    "{}(\n{}\n{indent})",
+                    b.name(),
                     Self::items(&parts, indent)
-                )
+                ))
+            }
+            ExprKind::Binary(op, l, r) => {
+                let p = op.prec();
+                let lp = prec(l) < p || (op.is_cmp() && prec(l) == p);
+                let rp = prec(r) <= p;
+                let sym = if *op == BinOp::Mul {
+                    self.pick("*", "×")
+                } else {
+                    op.ascii()
+                };
+                if let Some(lw) = self.paren_wrapped(l, lp, indent) {
+                    return Some(format!("{lw} {sym} {}", self.paren(r, rp)));
+                }
+                let rw = self.paren_wrapped(r, rp, indent)?;
+                Some(format!("{} {sym} {rw}", self.paren(l, lp)))
+            }
+            ExprKind::If(c, a, b) => {
+                if let Some(cw) = self.expr_wrapped(c, indent) {
+                    return Some(format!(
+                        "if {cw} then {} else {}",
+                        self.expr(a),
+                        self.expr(b)
+                    ));
+                }
+                if let Some(aw) = self.expr_wrapped(a, indent) {
+                    return Some(format!(
+                        "if {} then {aw} else {}",
+                        self.expr(c),
+                        self.expr(b)
+                    ));
+                }
+                let bw = self.expr_wrapped(b, indent)?;
+                Some(format!(
+                    "if {} then {} else {bw}",
+                    self.expr(c),
+                    self.expr(a)
+                ))
+            }
+            ExprKind::Field(base, f) => Some(format!(
+                "{}.{}",
+                self.paren_wrapped(base, prec(base) < POSTFIX, indent)?,
+                f.name
+            )),
+            ExprKind::Index(base, i) => Some(format!(
+                "{}[{}]",
+                self.paren_wrapped(base, prec(base) < POSTFIX, indent)?,
+                self.expr(i)
+            )),
+            ExprKind::Unary(op, inner) => {
+                let sym = if *op == UnOp::Not { "!" } else { "-" };
+                Some(format!(
+                    "{sym}{}",
+                    self.paren_wrapped(inner, prec(inner) < POSTFIX, indent)?
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn paren_wrapped(&self, e: &Expr, parens: bool, indent: &str) -> Option<String> {
+        let w = self.expr_wrapped(e, indent)?;
+        Some(if parens { format!("({w})") } else { w })
+    }
+
+    fn wrap_flow(&self, f: &Flow, indent: &str) -> Option<String> {
+        let op = match (&f.op, self.op_head(&f.op)) {
+            (Op::Pure(e), _) => {
+                format!("{}({})", self.pick("f", "𝑓"), self.expr_wrapped(e, indent)?)
             }
             (_, Some((head, args))) if !args.is_empty() => {
                 let parts: Vec<String> = args.iter().map(|a| self.arg(a)).collect();

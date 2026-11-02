@@ -35,6 +35,9 @@ const HELP_GRAPH: &str =
     "a subgraph starts with `graph Name(param: type -> Node) -> type ! Errors {` and ends with `}` on its own line";
 const HELP_STMT: &str =
     "statements start with `in`, `extern`, `assert`, `@intent`, `(`, or a node name";
+const HELP_IMPORT: &str = "an import looks like `import \"lib/billing.grph\"`";
+const HELP_TYPE: &str = "a type alias looks like `type Name = {field: type, ...}`";
+const HELP_ENUM: &str = "an enum looks like `enum Name { First, Second }`";
 
 /// Parse a whole file. Always returns a `Program`; check `diags` for errors.
 pub fn parse(src: &str) -> (Program, Vec<Diag>) {
@@ -43,7 +46,7 @@ pub fn parse(src: &str) -> (Program, Vec<Diag>) {
     let mut lines = Vec::new();
     let starts = LineStarts::new(src);
     for raw in split_lines(&lexed.tokens, &starts) {
-        lines.push(parse_line(raw, &mut diags));
+        lines.push(parse_line(raw, lexed.version, &mut diags));
     }
     // Drop the phantom empty line produced by a trailing newline.
     if matches!(
@@ -60,7 +63,7 @@ pub fn parse(src: &str) -> (Program, Vec<Diag>) {
         version: lexed.version,
         lines,
     };
-    if program.version < (0, 3) {
+    if program.version < (0, 4) {
         super::features::gate(&program, &mut diags);
     }
     crate::diag::sort(&mut diags);
@@ -141,7 +144,7 @@ fn opens_block(line: &[Token], rest: &[Token]) -> bool {
     is_graph && matches!(next.map(|t| &t.tok), None | Some(Tok::Nl | Tok::Eof))
 }
 
-fn parse_line(raw: RawLine, diags: &mut Vec<Diag>) -> Line {
+fn parse_line(raw: RawLine, version: (u32, u32), diags: &mut Vec<Diag>) -> Line {
     let comment = match raw.comments.len() {
         0 => None,
         _ => Some(raw.comments.join(" //")),
@@ -158,6 +161,7 @@ fn parse_line(raw: RawLine, diags: &mut Vec<Diag>) -> Line {
         toks: &raw.toks,
         pos: 0,
         end: raw.end,
+        v04: version >= (0, 4),
     };
     match p.statement() {
         Ok(stmt) => Line {
@@ -177,6 +181,9 @@ struct P<'t> {
     pos: usize,
     /// Span of the line terminator, used for "found end of line".
     end: Span,
+    /// The header is 0.4 or later: named types and variant patterns parse
+    /// (older files keep their old P001 messages for these).
+    v04: bool,
 }
 
 impl<'t> P<'t> {
@@ -286,6 +293,15 @@ impl<'t> P<'t> {
             Tok::Ident(w) if w == "graph" && self.word_then(Tok::LParen) => {
                 (self.graph_header(), HELP_GRAPH)
             }
+            Tok::Ident(w) if w == "import" && matches!(self.peek_at(1), Tok::Str(_)) => {
+                (self.import(), HELP_IMPORT)
+            }
+            Tok::Ident(w) if w == "type" && self.word_then(Tok::Assign) => {
+                (self.type_alias(), HELP_TYPE)
+            }
+            Tok::Ident(w) if w == "enum" && self.word_then(Tok::LBrace) => {
+                (self.enum_decl(), HELP_ENUM)
+            }
             Tok::RBrace if self.toks.len() == 1 => {
                 let span = self.bump().span;
                 (Ok(Stmt::GraphEnd(Pos(span))), HELP_GRAPH)
@@ -330,6 +346,71 @@ impl<'t> P<'t> {
     fn word_then(&self, then: Tok) -> bool {
         matches!(self.peek_at(1), Tok::Ident(_))
             && std::mem::discriminant(self.peek_at(2)) == std::mem::discriminant(&then)
+    }
+
+    fn import(&mut self) -> PResult<Stmt> {
+        let start = self.bump().span;
+        let Tok::Str(path) = self.bump().tok else {
+            return Err(self.error("a path in quotes"));
+        };
+        Ok(Stmt::Import(Import {
+            path,
+            pos: self.since(start),
+        }))
+    }
+
+    fn type_alias(&mut self) -> PResult<Stmt> {
+        let start = self.bump().span;
+        let name = self.ident("a type name")?;
+        self.bump(); // `=`, checked by dispatch
+        let ty = self.ty()?;
+        Ok(Stmt::TypeAlias(TypeAlias {
+            name,
+            ty,
+            pos: self.since(start),
+        }))
+    }
+
+    fn enum_decl(&mut self) -> PResult<Stmt> {
+        let start = self.bump().span;
+        let name = self.ident("an enum name")?;
+        self.bump(); // `{`, checked by dispatch
+        let variants = self.list(Tok::RBrace, "an enum", |p| p.ident("a variant name"))?;
+        if variants.is_empty() {
+            return Err(Diag::new(Code::P001, self.since(start).0, "empty enum")
+                .label("enums need at least one variant")
+                .help(HELP_ENUM));
+        }
+        Ok(Stmt::Enum(EnumDecl {
+            name,
+            variants,
+            pos: self.since(start),
+        }))
+    }
+
+    /// A record field name: any identifier, or a keyword (D-063).
+    fn field_name(&mut self, what: &str) -> PResult<Ident> {
+        let word = match self.peek() {
+            Tok::Ident(n) => n.clone(),
+            t @ (Tok::Extern
+            | Tok::In
+            | Tok::Out
+            | Tok::Fail
+            | Tok::Sink
+            | Tok::Fx
+            | Tok::F
+            | Tok::Match
+            | Tok::Assert
+            | Tok::Err
+            | Tok::True
+            | Tok::False) => t.ascii().to_string(),
+            _ => return Err(self.error(what)),
+        };
+        let span = self.bump().span;
+        Ok(Ident {
+            name: word,
+            pos: Pos(span),
+        })
     }
 
     fn const_decl(&mut self) -> PResult<Stmt> {
@@ -615,8 +696,13 @@ impl<'t> P<'t> {
         let span = self.span();
         let pat = match self.peek().clone() {
             Tok::Underscore => Pat::Wild(Pos(span)),
+            Tok::Ident(name) if self.v04 => Pat::Variant(Ident {
+                name,
+                pos: Pos(span),
+            }),
             tok => match lit_of(&tok) {
                 Some(l) => Pat::Lit(l, Pos(span)),
+                None if self.v04 => return Err(self.error("a literal, a variant, or `_`")),
                 None => return Err(self.error("a literal or `_`")),
             },
         };
@@ -672,10 +758,20 @@ impl<'t> P<'t> {
         })
     }
 
+    /// A field of a record type; keywords are allowed as names (D-063).
+    fn field_ty(&mut self) -> PResult<Field> {
+        let name = self.field_name("a field name")?;
+        self.expect(Tok::Colon, "`:`")?;
+        Ok(Field {
+            name,
+            ty: self.ty()?,
+        })
+    }
+
     fn ty(&mut self) -> PResult<Ty> {
         let start = self.span();
         if self.eat(&Tok::LBrace) {
-            let fields = self.list(Tok::RBrace, "a record type", |p| p.field())?;
+            let fields = self.list(Tok::RBrace, "a record type", |p| p.field_ty())?;
             if fields.is_empty() {
                 return Err(
                     Diag::new(Code::P001, self.since(start).0, "empty record type")
@@ -706,6 +802,8 @@ impl<'t> P<'t> {
                 "dec" => TyKind::Dec,
                 "bool" => TyKind::Bool,
                 "str" => TyKind::Str,
+                "date" => TyKind::Date,
+                _ if self.v04 => TyKind::Named(n.clone()),
                 _ => return Err(type_error(self.span(), n)),
             },
             _ => return Err(self.error("a type")),
@@ -838,7 +936,7 @@ impl P<'_> {
         let mut e = self.atom()?;
         loop {
             if self.eat(&Tok::Dot) {
-                let field = self.ident("a field name after `.`")?;
+                let field = self.field_name("a field name after `.`")?;
                 let pos = Pos(e.span().to(field.span()));
                 e = Expr {
                     kind: ExprKind::Field(Box::new(e), field),
@@ -965,7 +1063,7 @@ impl P<'_> {
     fn record_lit(&mut self) -> PResult<Expr> {
         let start = self.bump().span;
         let fields = self.list(Tok::RBrace, "a record", |p| {
-            let name = p.ident("a field name")?;
+            let name = p.field_name("a field name")?;
             p.expect(Tok::Colon, "`:` after the field name")?;
             Ok((name, p.expr()?))
         })?;

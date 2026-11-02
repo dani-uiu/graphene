@@ -90,6 +90,32 @@ pub enum Stmt {
     Fail(FailStmt),
     AssertTotal(Pos),
     AssertIndep(Ident, Pos),
+    /// v0.4 `import "path.grph"`.
+    Import(Import),
+    /// v0.4 `type Name = T`.
+    TypeAlias(TypeAlias),
+    /// v0.4 `enum Name { A, B }`.
+    Enum(EnumDecl),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Import {
+    pub path: String,
+    pub pos: Pos,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeAlias {
+    pub name: Ident,
+    pub ty: Ty,
+    pub pos: Pos,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumDecl {
+    pub name: Ident,
+    pub variants: Vec<Ident>,
+    pub pos: Pos,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -232,12 +258,15 @@ pub struct Arm {
 pub enum Pat {
     Lit(Lit, Pos),
     Wild(Pos),
+    /// v0.4 bare enum variant, e.g. `Spain`.
+    Variant(Ident),
 }
 
 impl Pat {
     pub fn span(&self) -> Span {
         match self {
             Pat::Lit(_, p) | Pat::Wild(p) => p.0,
+            Pat::Variant(v) => v.span(),
         }
     }
 }
@@ -282,6 +311,10 @@ pub enum TyKind {
     Record(Vec<Field>),
     /// v0.3 `[T]`.
     List(Box<Ty>),
+    /// v0.4 calendar date.
+    Date,
+    /// v0.4 a type alias or an enum, by name.
+    Named(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -351,10 +384,18 @@ pub enum Builtin {
     Lower,
     StartsWith,
     EndsWith,
+    // v0.4 (D-062)
+    Date,
+    DaysBetween,
+    AddDays,
+    Year,
+    Month,
+    Day,
+    Weekday,
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 22] = [
+    pub const ALL: [Builtin; 29] = [
         Builtin::Len,
         Builtin::Sum,
         Builtin::Min,
@@ -377,6 +418,13 @@ impl Builtin {
         Builtin::Lower,
         Builtin::StartsWith,
         Builtin::EndsWith,
+        Builtin::Date,
+        Builtin::DaysBetween,
+        Builtin::AddDays,
+        Builtin::Year,
+        Builtin::Month,
+        Builtin::Day,
+        Builtin::Weekday,
     ];
 
     pub fn name(self) -> &'static str {
@@ -403,22 +451,36 @@ impl Builtin {
             Builtin::Lower => "lower",
             Builtin::StartsWith => "starts_with",
             Builtin::EndsWith => "ends_with",
+            Builtin::Date => "date",
+            Builtin::DaysBetween => "days_between",
+            Builtin::AddDays => "add_days",
+            Builtin::Year => "year",
+            Builtin::Month => "month",
+            Builtin::Day => "day",
+            Builtin::Weekday => "weekday",
         }
+    }
+
+    fn index(self) -> usize {
+        Builtin::ALL.iter().position(|&b| b == self).unwrap_or(0)
     }
 
     /// True for the functions added in v0.3.1.
     pub fn is_v031(self) -> bool {
-        Builtin::ALL
-            .iter()
-            .position(|&b| b == self)
-            .is_some_and(|i| i >= 10)
+        (10..22).contains(&self.index())
+    }
+
+    /// True for the functions added in v0.4 (the date functions).
+    pub fn is_v04(self) -> bool {
+        self.index() >= 22
     }
 
     pub fn from_name(n: &str) -> Option<Builtin> {
         Builtin::ALL.into_iter().find(|b| b.name() == n)
     }
 
-    /// Number of arguments the function takes.
+    /// Number of arguments the function takes. `min` and `max` also take
+    /// two values since v0.4 (see `accepts`).
     pub fn arity(self) -> usize {
         match self {
             Builtin::Contains
@@ -427,9 +489,16 @@ impl Builtin {
             | Builtin::Ceil
             | Builtin::Pow
             | Builtin::StartsWith
-            | Builtin::EndsWith => 2,
+            | Builtin::EndsWith
+            | Builtin::DaysBetween
+            | Builtin::AddDays => 2,
             _ => 1,
         }
+    }
+
+    /// True if the function can be called with `n` arguments.
+    pub fn accepts(self, n: usize) -> bool {
+        n == self.arity() || (matches!(self, Builtin::Min | Builtin::Max) && n == 2)
     }
 }
 

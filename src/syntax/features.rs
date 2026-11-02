@@ -53,17 +53,34 @@ fn stmt_span(stmt: &Stmt) -> Span {
         Stmt::Match(m) => m.pos.0,
         Stmt::Out(o) => o.pos.0,
         Stmt::Fail(f) => f.pos.0,
+        Stmt::Import(i) => i.pos.0,
+        Stmt::TypeAlias(a) => a.pos.0,
+        Stmt::Enum(e) => e.pos.0,
     }
 }
 
 const V2: (u32, u32) = (0, 2);
 const V3: (u32, u32) = (0, 3);
+const V4: (u32, u32) = (0, 4);
 
 /// The newest-version construct in a statement, if any.
 fn first_new(stmt: &Stmt) -> Found {
     match stmt {
-        Stmt::Const(c) => Some((c.pos.0, "a constant", V3)),
-        Stmt::GraphHeader(g) => Some((g.pos.0, "a subgraph", V3)),
+        Stmt::Import(i) => Some((i.pos.0, "`import`", V4)),
+        Stmt::TypeAlias(a) => Some((a.pos.0, "a type alias", V4)),
+        Stmt::Enum(e) => Some((e.pos.0, "`enum`", V4)),
+        Stmt::Const(c) => newest(
+            Some((c.pos.0, "a constant", V3)),
+            newest(ty(&c.ty), expr(&c.value)),
+        ),
+        Stmt::GraphHeader(g) => newest(
+            Some((g.pos.0, "a subgraph", V3)),
+            g.params
+                .iter()
+                .map(|p| &p.ty)
+                .chain([&g.ret])
+                .fold(None, |acc, t| newest(acc, ty(t))),
+        ),
         Stmt::GraphEnd(p) => Some((p.0, "a subgraph", V3)),
         Stmt::Input(i) => ty(&i.ty).or(if i.node.is_none() {
             Some((i.pos.0, "an input without a node", V2))
@@ -72,7 +89,13 @@ fn first_new(stmt: &Stmt) -> Found {
         }),
         Stmt::Extern(e) => e.params.iter().map(|p| &p.ty).chain(&e.ret).find_map(ty),
         Stmt::Flow(f) => flow(f),
-        Stmt::Match(m) => expr(&m.scrutinee),
+        Stmt::Match(m) => newest(
+            expr(&m.scrutinee),
+            m.arms.iter().find_map(|a| match &a.pat {
+                Pat::Variant(v) => Some((v.span(), "an enum variant pattern", V4)),
+                _ => None,
+            }),
+        ),
         Stmt::Out(o) if o.name.is_none() => Some((o.pos.0, "a bare `out`", V3)),
         Stmt::Out(o) => o.ty.as_ref().and_then(ty),
         _ => None,
@@ -81,9 +104,11 @@ fn first_new(stmt: &Stmt) -> Found {
 
 fn ty(t: &Ty) -> Found {
     match &t.kind {
-        TyKind::List(_) => Some((t.pos.0, "a list type", V3)),
+        TyKind::List(inner) => newest(Some((t.pos.0, "a list type", V3)), ty(inner)),
         TyKind::DecScale(_) => Some((t.pos.0, "an output scale `dec(N)`", V3)),
-        TyKind::Record(fields) => fields.iter().find_map(|f| ty(&f.ty)),
+        TyKind::Record(fields) => fields.iter().fold(None, |acc, f| newest(acc, ty(&f.ty))),
+        TyKind::Date => Some((t.pos.0, "the `date` type", V4)),
+        TyKind::Named(_) => Some((t.pos.0, "a named type", V4)),
         _ => None,
     }
 }
@@ -131,7 +156,16 @@ impl CallKind {
 fn expr(e: &Expr) -> Found {
     match &e.kind {
         ExprKind::List(_) => Some((e.span(), "a list literal", V3)),
-        ExprKind::Builtin(b, _) => Some((e.span(), builtin_feature(*b), V3)),
+        ExprKind::Builtin(b, args) => {
+            let own = if b.is_v04() {
+                Some((e.span(), "a date function", V4))
+            } else if args.len() == 2 && matches!(b, Builtin::Min | Builtin::Max) {
+                Some((e.span(), "two-value `min` and `max`", V4))
+            } else {
+                Some((e.span(), builtin_feature(*b), V3))
+            };
+            args.iter().fold(own, |acc, a| newest(acc, expr(a)))
+        }
         ExprKind::Record(fields) => newest(
             Some((e.span(), "a record literal", V2)),
             fields.iter().fold(None, |acc, (_, x)| newest(acc, expr(x))),

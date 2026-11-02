@@ -373,6 +373,9 @@ fn placeholder(t: &Ty) -> String {
         TyKind::List(_) => "[]".into(),
         TyKind::Bool => "false".into(),
         TyKind::Str => "\"\"".into(),
+        TyKind::Date => "date(\"2026-01-01\")".into(),
+        // An alias or enum: its name marks the spot to fill in.
+        TyKind::Named(n) => n.clone(),
         TyKind::Record(fields) => {
             let parts: Vec<String> = fields
                 .iter()

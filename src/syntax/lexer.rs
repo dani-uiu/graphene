@@ -17,10 +17,10 @@ use super::token::{Raw, Tok, Token};
 use crate::diag::{Code, Diag, Span};
 
 /// Versions accepted by this implementation (D-036).
-pub const VERSIONS: [(u32, u32); 3] = [(0, 1), (0, 2), (0, 3)];
+pub const VERSIONS: [(u32, u32); 4] = [(0, 1), (0, 2), (0, 3), (0, 4)];
 
 /// The newest version; used when the header is missing or unsupported.
-pub const LATEST: (u32, u32) = (0, 3);
+pub const LATEST: (u32, u32) = (0, 4);
 
 pub struct Lexed {
     pub tokens: Vec<Token>,

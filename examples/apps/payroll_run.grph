@@ -10,8 +10,14 @@ const FROZEN: [str] = ["2026-12"]
 // Outside systems. Ledger balances are whole cents and can be negative.
 extern fx TaxTable(region: str) -> {rate: dec, credit: dec} ! UnknownRegion | TableDown
 extern fx Ledger(account: str) -> i64 ! LedgerDown
-extern fx Pay(slip: {id: u64, name: str, gross: dec, tax: dec, net: dec, overtime: bool, remote: bool}, period: str) -> str ! Rejected | BankDown
-extern fx~ SendPayslip(slip: {id: u64, name: str, gross: dec, tax: dec, net: dec, overtime: bool, remote: bool}, period: str)
+extern fx Pay(
+  slip: {id: u64, name: str, gross: dec, tax: dec, net: dec, overtime: bool, remote: bool},
+  period: str,
+) -> str ! Rejected | BankDown
+extern fx~ SendPayslip(
+  slip: {id: u64, name: str, gross: dec, tax: dec, net: dec, overtime: bool, remote: bool},
+  period: str,
+)
 extern fx~ Alert(message: str)
 extern fx~ Audit(event: str, count: u64, total: dec)
 
