@@ -68,8 +68,8 @@ pub const CODES: &[Code] = &[
       "Fire-and-forget results are sinks: nothing may read them or continue from them."),
     c("G011", "structure", "Zero or multiple `out` statements",
       "A program (and each subgraph body) has exactly one `out`. Merge alternatives into one node first."),
-    c("G012", "types", "Division by a non-literal or zero divisor",
-      "Divide only by a non-zero literal, so division can never fail at runtime."),
+    c("G012", "types", "Division by zero, or by a value not proven non-zero",
+      "Division can never fail at runtime. Divide by a non-zero literal, or (0.3) rule out zero first: `if n > 0 then a / n else 0`, or divide in the branch of `match n { 0 => NONE, _ => SOME }` that runs when `n` is not zero."),
     c("G013", "names", "Duplicate definition, including a repeated record field",
       "Each node, input, constant, effect and subgraph name is defined once. Rename one of them."),
     c("G014", "types", "Redundant match arm or error edge",
@@ -98,6 +98,8 @@ pub const CODES: &[Code] = &[
       "Check the list is non-empty first (`len(xs) > 0` in a `match`), or use `sum`, which is 0 for an empty list."),
     c("R007", "runtime", "Real host failure (timeout, transport, malformed answer)",
       "The effect could not be answered. This is an environment problem, not a program error: check the host configuration, URL, command and timeout."),
+    c("R008", "runtime", "A list index is out of range",
+      "`xs[i]` counts from 0, so the last element is `xs[len(xs) - 1]`. Check `i < len(xs)` first, for example `if i < len(xs) then xs[i] else 0`."),
 ];
 
 /// The entry for `code`, ignoring case.

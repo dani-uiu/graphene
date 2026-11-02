@@ -362,6 +362,19 @@ impl Writer {
                 let parts: Vec<String> = args.iter().map(|x| self.expr(x)).collect();
                 format!("{}({})", b.name(), parts.join(", "))
             }
+            ExprKind::If(c, a, b) => format!(
+                "if {} then {} else {}",
+                self.expr(c),
+                self.expr(a),
+                self.expr(b)
+            ),
+            ExprKind::Index(base, i) => {
+                format!(
+                    "{}[{}]",
+                    self.paren(base, prec(base) < POSTFIX),
+                    self.expr(i)
+                )
+            }
         }
     }
 
@@ -462,6 +475,8 @@ impl Writer {
     }
 }
 
+/// `if ... then ... else ...` binds loosest: it extends to the right.
+const IF: u8 = 0;
 const UNARY: u8 = 6;
 const POSTFIX: u8 = 7;
 const ATOM: u8 = 8;
@@ -470,7 +485,8 @@ fn prec(e: &Expr) -> u8 {
     match &e.kind {
         ExprKind::Binary(op, ..) => op.prec(),
         ExprKind::Unary(..) => UNARY,
-        ExprKind::Field(..) => POSTFIX,
+        ExprKind::Field(..) | ExprKind::Index(..) => POSTFIX,
+        ExprKind::If(..) => IF,
         ExprKind::Lit(_)
         | ExprKind::Name(_)
         | ExprKind::Record(_)

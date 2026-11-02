@@ -92,6 +92,8 @@ pub(crate) enum Raw {
     Pipe,
     #[token("!")]
     Bang,
+    #[token("++")]
+    PlusPlus,
     #[token("+")]
     Plus,
     #[token("-")]
@@ -101,6 +103,8 @@ pub(crate) enum Raw {
     Star,
     #[token("/")]
     Slash,
+    #[token("%")]
+    Percent,
     #[token("(")]
     LParen,
     #[token(")")]
@@ -159,10 +163,12 @@ pub enum Tok {
     OrOr,
     Pipe,
     Bang,
+    PlusPlus,
     Plus,
     Minus,
     Star,
     Slash,
+    Percent,
     LParen,
     RParen,
     LBrace,
@@ -224,6 +230,8 @@ impl Tok {
             Tok::OrOr => "||",
             Tok::Pipe => "|",
             Tok::Bang => "!",
+            Tok::PlusPlus => "++",
+            Tok::Percent => "%",
             Tok::Plus => "+",
             Tok::Minus => "-",
             Tok::Star => "*",

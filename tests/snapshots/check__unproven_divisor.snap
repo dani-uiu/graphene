@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G012
+
+  × the divisor could be zero
+   ╭─[unproven_divisor.grph:6:16]
+ 5 │ in guests: u64
+ 6 │ T -> f(total / dec(guests)) -> SHARE
+   ·                ─────┬─────
+   ·                     ╰── not known to be non-zero
+ 7 │ SHARE -> out share: dec
+   ╰────
+  help: rule out zero first: divide inside `if n > 0 then a / n else 0`, or in the branch of
+        `match n > 0 { true => OK, false => ZERO }` that runs when it is not zero

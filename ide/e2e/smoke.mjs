@@ -181,6 +181,11 @@ await settle(600);
 check("coverage report shows totals", /Coverage: \d+\/\d+ outcomes/.test(await page.$eval(".coverage", (e) => e.textContent)));
 await shot("11-coverage");
 
+// 7c. v0.3.1 syntax (if, %, ++, indexing, new functions) checks in the IDE.
+await open("examples/valid/invoice_split.grph");
+a = await g(() => window.__graphene.store.analysis);
+check("invoice_split (v0.3.1) checks", a.checked === true, JSON.stringify(a.diags));
+
 // 8. Local graph, settings, light theme, palette.
 await g(() => window.__graphene.app.selectNodes(["v:RATE"], false));
 await page.click(".graph-toolbar button:last-child");

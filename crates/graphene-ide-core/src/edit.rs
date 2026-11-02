@@ -730,9 +730,14 @@ fn expr_spans(e: &Expr, name: &str, out: &mut Vec<graphene::diag::Span>) {
         ExprKind::Field(b, _) | ExprKind::Unary(_, b) | ExprKind::Convert(_, b) => {
             expr_spans(b, name, out)
         }
-        ExprKind::Binary(_, l, r) => {
+        ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => {
             expr_spans(l, name, out);
             expr_spans(r, name, out);
+        }
+        ExprKind::If(c, a, b) => {
+            for x in [c, a, b] {
+                expr_spans(x, name, out);
+            }
         }
         ExprKind::Record(fields) => {
             for (_, x) in fields {

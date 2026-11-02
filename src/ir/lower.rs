@@ -806,6 +806,14 @@ impl Lower<'_> {
             ExprKind::Record(fields) => self.record_lit(fields)?,
             ExprKind::List(items) => IKind::List(self.exprs(items)?),
             ExprKind::Builtin(b, args) => IKind::Builtin(*b, self.exprs(args)?),
+            ExprKind::If(c, a, b) => {
+                let (c, a, b) = (self.expr(c), self.expr(a), self.expr(b));
+                IKind::If(Box::new(c?), Box::new(a?), Box::new(b?))
+            }
+            ExprKind::Index(b, i) => {
+                let (b, i) = (self.expr(b), self.expr(i));
+                IKind::Index(Box::new(b?), Box::new(i?))
+            }
             ExprKind::Convert(to, x) => {
                 let to = match to {
                     NumTy::U64 => Type::U64,

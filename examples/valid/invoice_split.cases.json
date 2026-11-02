@@ -1,0 +1,149 @@
+[
+  {
+    "name": "VIP, late, 4 lines: (263.00 + 4.50) * 0.90 * 1.01^3 = 248.04, three shares of 82.68",
+    "inputs": {
+      "customer": "vip-ana",
+      "late": true,
+      "deposit": "100.00",
+      "payers": 3,
+      "lines": [
+        {
+          "sku": "mug",
+          "qty": 14,
+          "price": "4.00"
+        },
+        {
+          "sku": "desk",
+          "qty": 1,
+          "price": "150.00"
+        },
+        {
+          "sku": "lamp",
+          "qty": 2,
+          "price": "22.50"
+        },
+        {
+          "sku": "pen",
+          "qty": 10,
+          "price": "1.20"
+        }
+      ]
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "report": {
+            "average": "65.75",
+            "balance": "due 148.04",
+            "boxes": 2,
+            "cheapest": "12.00",
+            "customer": "VIP-ANA",
+            "first_payer_extra": "0.00",
+            "last_sku": "pen",
+            "loose": 3,
+            "priciest": "150.00",
+            "share": "82.68",
+            "skus": [
+              "desk",
+              "lamp",
+              "mug",
+              "pen"
+            ],
+            "summary": "Invoice for VIP-ANA: 248.04 in 3 shares",
+            "total": "248.04"
+          }
+        }
+      },
+      "effects": []
+    }
+  },
+  {
+    "name": "regular, on time: 34.50 split four ways is 8.62 each, the first payer adds 0.02; deposit is refunded",
+    "inputs": {
+      "customer": "bo",
+      "late": false,
+      "deposit": "100.00",
+      "payers": 4,
+      "lines": [
+        {
+          "sku": "mug",
+          "qty": 3,
+          "price": "4.00"
+        },
+        {
+          "sku": "lamp",
+          "qty": 1,
+          "price": "22.50"
+        }
+      ]
+    },
+    "expect": {
+      "result": {
+        "ok": {
+          "report": {
+            "average": "17.25",
+            "balance": "refund 65.50",
+            "boxes": 0,
+            "cheapest": "12.00",
+            "customer": "BO",
+            "first_payer_extra": "0.02",
+            "last_sku": "lamp",
+            "loose": 4,
+            "priciest": "22.50",
+            "share": "8.62",
+            "skus": [
+              "lamp",
+              "mug"
+            ],
+            "summary": "Invoice for BO: 34.50 in 4 shares",
+            "total": "34.50"
+          }
+        }
+      },
+      "effects": []
+    }
+  },
+  {
+    "name": "an empty order fails",
+    "inputs": {
+      "customer": "cy",
+      "late": false,
+      "deposit": "0.00",
+      "payers": 2,
+      "lines": []
+    },
+    "expect": {
+      "result": {
+        "err": "EmptyOrder"
+      },
+      "effects": []
+    }
+  },
+  {
+    "name": "zero payers fails instead of dividing by zero",
+    "inputs": {
+      "customer": "cy",
+      "late": false,
+      "deposit": "0.00",
+      "payers": 0,
+      "lines": [
+        {
+          "sku": "mug",
+          "qty": 3,
+          "price": "4.00"
+        },
+        {
+          "sku": "lamp",
+          "qty": 1,
+          "price": "22.50"
+        }
+      ]
+    },
+    "expect": {
+      "result": {
+        "err": "NoPayers"
+      },
+      "effects": []
+    }
+  }
+]

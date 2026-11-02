@@ -1326,7 +1326,7 @@ dependencies = [
 
 [[package]]
 name = "graphene"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "clap",
  "logos",
@@ -1341,7 +1341,7 @@ dependencies = [
 
 [[package]]
 name = "graphene-ide"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "graphene",
  "graphene-ide-core",
@@ -1354,7 +1354,7 @@ dependencies = [
 
 [[package]]
 name = "graphene-ide-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "graphene",
  "serde",

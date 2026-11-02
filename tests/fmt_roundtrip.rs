@@ -91,7 +91,9 @@ fn ex(kind: ExprKind) -> Expr {
 
 fn bin_op() -> impl Strategy<Value = BinOp> {
     use BinOp::*;
-    prop::sample::select(vec![Or, And, Eq, Ne, Lt, Le, Gt, Ge, Add, Sub, Mul, Div])
+    prop::sample::select(vec![
+        Or, And, Eq, Ne, Lt, Le, Gt, Ge, Add, Sub, Mul, Div, Rem, Concat,
+    ])
 }
 
 fn expr() -> impl Strategy<Value = Expr> {
@@ -119,6 +121,13 @@ fn expr() -> impl Strategy<Value = Expr> {
             )
                 .prop_map(|(t, e)| ex(ExprKind::Convert(t, Box::new(e)))),
             prop::collection::vec(inner.clone(), 0..3).prop_map(|xs| ex(ExprKind::List(xs))),
+            (inner.clone(), inner.clone(), inner.clone()).prop_map(|(c, a, b)| ex(ExprKind::If(
+                Box::new(c),
+                Box::new(a),
+                Box::new(b)
+            ))),
+            (inner.clone(), inner.clone())
+                .prop_map(|(b, i)| ex(ExprKind::Index(Box::new(b), Box::new(i)))),
             (
                 prop::sample::select(Builtin::ALL.to_vec()),
                 prop::collection::vec(inner, 1..3)

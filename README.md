@@ -7,9 +7,22 @@ Graphene is a deterministic dataflow language meant to be written by LLMs and ch
 - background effects such as logging can never influence the output (`assert indep`);
 - parallel execution gives exactly the same result and effect log as sequential execution.
 
-**New to Graphene?** Open [`docs/learn.html`](docs/learn.html) in a browser: 14 short lessons, from a first program to subgraphs, lists, testing and real effects.
+**New to Graphene?** Open [`docs/learn.html`](docs/learn.html) in a browser: 15 short lessons, from a first program to subgraphs, lists, testing and real effects.
 
-This is the v0.3 reference implementation, written in Rust. It accepts `#!graphene 0.1`, `0.2` and `0.3` files; an older file means exactly what it meant in its own version.
+This is the v0.3.1 reference implementation, written in Rust. It accepts `#!graphene 0.1`, `0.2` and `0.3` files; an older file means exactly what it meant in its own version.
+
+## What's new in v0.3.1
+
+```
+SPLIT -> f(floor(TOTAL / dec(payers), 2)) -> SHARE        // legal: a match ruled out payers == 0
+PRICED -> f(if len(AMOUNTS) > 3 then AMOUNTS ++ [HANDLING] else AMOUNTS) -> CHARGES
+summary: "Invoice for " + upper(customer) + ": " + str(TOTAL)
+```
+
+- **Division by a value**, when the program has ruled out zero first (`if n > 0 then a / n else 0`, or a `match` arm). Division by zero is still impossible at runtime.
+- **Operators:** `%` (remainder), `++` (join lists), `xs[i]` (index; out of range is the new fault R008), `<` / `>` on text, and `if c then a else b`, which only evaluates the branch it takes.
+- **Functions:** `str`, `abs`, `pow`, `avg`, `first`, `last`, `sort`, `reverse`, `upper`, `lower`, `starts_with`, `ends_with`; `len` and `contains` also work on text.
+- Files still start with `#!graphene 0.3`: every valid 0.3 program keeps its meaning. See `examples/valid/invoice_split.grph`.
 
 ## What's new in v0.3
 
@@ -173,6 +186,7 @@ Every program in `examples/valid/` has a `.cases.json` file next to it. `graphen
 | `constants_and_rounding` | v0.3: `const`, `round` / `floor` / `ceil`, a `dec(4)` output, string `+` |
 | `relaxed_join` | v0.3: the v0.2 join that was illegal, now accepted because one branch's condition implies the other's |
 | `cart_checkout` | v0.3: `map` and `filter` over a cart, `each` on effects, releasing partial holds |
+| `invoice_split` | v0.3.1: `if`, `%`, `++`, indexing, `str`, `pow`, `avg`, `sort`, text functions, and a division proven safe by a `match` |
 | **`payroll_run`** | **Everything in v0.3 in one program**, below |
 
 **`payroll_run.grph`** is the v0.3 flagship: a monthly payroll in about 150 lines, with 14 possible outcomes and 6 effects. Its 12 cases reach every outcome, branch and effect (`graphene test --coverage`). It uses every feature of the language:
@@ -220,7 +234,7 @@ Every diagnostic has a stable code, points at the exact source span, and include
 | G009 | flow | Reference violates the dominance rule (input names are exempt in 0.2) |
 | G010 | structure | `fx~` target is not a sink, or a sink is referenced or has outgoing edges |
 | G011 | structure | Zero or multiple `out` statements |
-| G012 | types | Division by a non-literal or zero divisor |
+| G012 | types | Division by zero, or by a value not proven non-zero |
 | G013 | names | Duplicate definition, including a repeated record field |
 | G014 | types | Redundant match arm or error edge |
 | G015 | structure | Recursive subgraphs (a cycle in the call graph) |
@@ -235,6 +249,7 @@ Every diagnostic has a stable code, points at the exact source span, and include
 | R005 | runtime | An input is missing, unknown, or does not parse as its type |
 | R006 | runtime | `min` / `max` of an empty list |
 | R007 | runtime | Real host failure (timeout, transport, malformed answer) |
+| R008 | runtime | A list index is out of range |
 
 ## Layout
 

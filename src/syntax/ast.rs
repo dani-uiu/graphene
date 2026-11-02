@@ -319,6 +319,10 @@ pub enum ExprKind {
     List(Vec<Expr>),
     /// v0.3 built-in function call, e.g. `len(xs)`, `round(x, 2)`.
     Builtin(Builtin, Vec<Expr>),
+    /// v0.3.1 `if c then a else b`; only the chosen branch is evaluated.
+    If(Box<Expr>, Box<Expr>, Box<Expr>),
+    /// v0.3.1 list indexing `xs[i]`, from 0; out of range is R008.
+    Index(Box<Expr>, Box<Expr>),
 }
 
 /// v0.3 built-in functions (names stay ordinary identifiers, D-044).
@@ -334,10 +338,23 @@ pub enum Builtin {
     Round,
     Floor,
     Ceil,
+    // v0.3.1 (D-055)
+    Str,
+    Abs,
+    Pow,
+    Avg,
+    First,
+    Last,
+    Sort,
+    Reverse,
+    Upper,
+    Lower,
+    StartsWith,
+    EndsWith,
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 10] = [
+    pub const ALL: [Builtin; 22] = [
         Builtin::Len,
         Builtin::Sum,
         Builtin::Min,
@@ -348,6 +365,18 @@ impl Builtin {
         Builtin::Round,
         Builtin::Floor,
         Builtin::Ceil,
+        Builtin::Str,
+        Builtin::Abs,
+        Builtin::Pow,
+        Builtin::Avg,
+        Builtin::First,
+        Builtin::Last,
+        Builtin::Sort,
+        Builtin::Reverse,
+        Builtin::Upper,
+        Builtin::Lower,
+        Builtin::StartsWith,
+        Builtin::EndsWith,
     ];
 
     pub fn name(self) -> &'static str {
@@ -362,7 +391,27 @@ impl Builtin {
             Builtin::Round => "round",
             Builtin::Floor => "floor",
             Builtin::Ceil => "ceil",
+            Builtin::Str => "str",
+            Builtin::Abs => "abs",
+            Builtin::Pow => "pow",
+            Builtin::Avg => "avg",
+            Builtin::First => "first",
+            Builtin::Last => "last",
+            Builtin::Sort => "sort",
+            Builtin::Reverse => "reverse",
+            Builtin::Upper => "upper",
+            Builtin::Lower => "lower",
+            Builtin::StartsWith => "starts_with",
+            Builtin::EndsWith => "ends_with",
         }
+    }
+
+    /// True for the functions added in v0.3.1.
+    pub fn is_v031(self) -> bool {
+        Builtin::ALL
+            .iter()
+            .position(|&b| b == self)
+            .is_some_and(|i| i >= 10)
     }
 
     pub fn from_name(n: &str) -> Option<Builtin> {
@@ -372,7 +421,13 @@ impl Builtin {
     /// Number of arguments the function takes.
     pub fn arity(self) -> usize {
         match self {
-            Builtin::Contains | Builtin::Round | Builtin::Floor | Builtin::Ceil => 2,
+            Builtin::Contains
+            | Builtin::Round
+            | Builtin::Floor
+            | Builtin::Ceil
+            | Builtin::Pow
+            | Builtin::StartsWith
+            | Builtin::EndsWith => 2,
             _ => 1,
         }
     }
@@ -425,6 +480,10 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
+    /// v0.3.1 remainder `%` (integers; same divisor rule as `/`).
+    Rem,
+    /// v0.3.1 list concatenation `++`.
+    Concat,
 }
 
 impl BinOp {
@@ -434,8 +493,8 @@ impl BinOp {
             BinOp::Or => 1,
             BinOp::And => 2,
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => 3,
-            BinOp::Add | BinOp::Sub => 4,
-            BinOp::Mul | BinOp::Div => 5,
+            BinOp::Add | BinOp::Sub | BinOp::Concat => 4,
+            BinOp::Mul | BinOp::Div | BinOp::Rem => 5,
         }
     }
 
@@ -461,6 +520,8 @@ impl BinOp {
             BinOp::Sub => "-",
             BinOp::Mul => "*",
             BinOp::Div => "/",
+            BinOp::Rem => "%",
+            BinOp::Concat => "++",
         }
     }
 }

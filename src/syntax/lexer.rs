@@ -144,6 +144,8 @@ fn simple(raw: Raw) -> Tok {
         Raw::Pipe => Tok::Pipe,
         Raw::Bang => Tok::Bang,
         Raw::Plus => Tok::Plus,
+        Raw::PlusPlus => Tok::PlusPlus,
+        Raw::Percent => Tok::Percent,
         Raw::Minus => Tok::Minus,
         Raw::Star => Tok::Star,
         Raw::Slash => Tok::Slash,

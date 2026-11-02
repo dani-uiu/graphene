@@ -1,0 +1,67 @@
+#!graphene 0.3
+@intent "Bill a group order: price every line, discount VIPs, add interest when late, and split the bill between payers"
+
+const HANDLING: dec = 4.50
+const INTEREST: dec = 1.01
+const DOZEN: u64 = 12
+
+graph LineTotal(line: {sku: str, qty: u64, price: dec} -> L) -> dec {
+  L -> f(dec(line.qty) * line.price) -> T
+  T -> out
+}
+
+in customer: str
+in late: bool
+in deposit: dec
+in payers: u64
+in lines: [{sku: str, qty: u64, price: dec}] -> LINES
+
+// 1. Price every line; an empty order is an error.
+LINES -> map LineTotal(line: each lines) -> AMOUNTS
+AMOUNTS -> match len(AMOUNTS) { 0 => EMPTY, _ => PRICED }
+EMPTY -> fail EmptyOrder
+
+// 2. Big orders get a handling line, VIPs get 10% off, and late bills
+//    earn three months of 1% interest.
+PRICED -> f(if len(AMOUNTS) > 3 then AMOUNTS ++ [HANDLING] else AMOUNTS) -> CHARGES
+CHARGES -> f(round(sum(CHARGES) * (if starts_with(upper(customer), "VIP") then 0.90 else 1.00) * (if late then pow(INTEREST, 3) else 1.00), 2)) -> TOTAL
+
+// 3. Split between payers. Ruling out zero payers first is what makes
+//    the division legal.
+TOTAL -> match payers { 0 => NOBODY, _ => SPLIT }
+NOBODY -> fail NoPayers
+SPLIT -> f(floor(TOTAL / dec(payers), 2)) -> SHARE
+
+// 4. The report.
+SHARE -> f({
+  customer: upper(customer),
+  skus: sort(lines.sku),
+  last_sku: lines[len(lines) - 1].sku,
+  cheapest: first(sort(AMOUNTS)),
+  priciest: last(sort(AMOUNTS)),
+  average: round(avg(AMOUNTS), 2),
+  boxes: sum(lines.qty) / DOZEN,
+  loose: sum(lines.qty) % DOZEN,
+  total: TOTAL,
+  share: SHARE,
+  first_payer_extra: TOTAL - SHARE * dec(payers),
+  balance: if TOTAL >= deposit then "due " + str(TOTAL - deposit) else "refund " + str(abs(TOTAL - deposit)),
+  summary: "Invoice for " + upper(customer) + ": " + str(TOTAL) + " in " + str(payers) + " shares",
+}) -> REPORT
+REPORT -> out report: {
+  customer: str,
+  skus: [str],
+  last_sku: str,
+  cheapest: dec,
+  priciest: dec,
+  average: dec,
+  boxes: u64,
+  loose: u64,
+  total: dec,
+  share: dec,
+  first_payer_extra: dec,
+  balance: str,
+  summary: str,
+}
+
+assert total

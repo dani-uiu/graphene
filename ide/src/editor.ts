@@ -26,7 +26,21 @@ import {
 import { tags as t } from "@lezer/highlight";
 import type { Analysis, DiagView, TextEdit } from "./api";
 
-const KEYWORDS = new Set(["in", "out", "fail", "sink", "extern", "f", "match", "assert", "err", "true", "false"]);
+const KEYWORDS = new Set([
+  "in", "out", "fail", "sink", "extern", "f", "match", "assert", "err", "true", "false",
+  // v0.3 (contextual) and v0.3.1
+  "graph", "call", "map", "filter", "each", "const", "if", "then", "else",
+]);
+
+/** Built-in functions, offered by autocomplete with their argument shape. */
+const FUNCTIONS: [string, string][] = [
+  ["len", "len(xs)"], ["sum", "sum(xs)"], ["min", "min(xs)"], ["max", "max(xs)"], ["avg", "avg(xs)"],
+  ["all", "all(xs)"], ["any", "any(xs)"], ["contains", "contains(xs, v)"],
+  ["first", "first(xs)"], ["last", "last(xs)"], ["sort", "sort(xs)"], ["reverse", "reverse(xs)"],
+  ["round", "round(x, 2)"], ["floor", "floor(x, 2)"], ["ceil", "ceil(x, 2)"],
+  ["abs", "abs(x)"], ["pow", "pow(x, 2)"], ["str", "str(x)"],
+  ["upper", "upper(s)"], ["lower", "lower(s)"], ["starts_with", "starts_with(s, p)"], ["ends_with", "ends_with(s, p)"],
+];
 
 /** Line tokenizer for Graphene; also accepts the Unicode aliases. */
 export const graphene = StreamLanguage.define<{ header: boolean }>({
@@ -48,13 +62,13 @@ export const graphene = StreamLanguage.define<{ header: boolean }>({
     if (stream.match(/^\d+(\.\d+)?/)) return "number";
     if (stream.match("fx~") || stream.match(/^fx\b/)) return "keyword";
     if (stream.match(/^[➔⚙⊗×⫫]/u) || stream.match("𝑓")) return "keyword";
-    if (stream.match(/^(->|=>|\|\||&&|==|!=|<=|>=|[|!<>+\-*/])/)) return "operator";
+    if (stream.match(/^(->|=>|\|\||&&|==|!=|<=|>=|\+\+|[|!<>+\-*/%])/)) return "operator";
     if (stream.match(/^[A-Za-z_][A-Za-z0-9_]*/)) {
       const w = stream.current();
       if (KEYWORDS.has(w)) return "keyword";
       if (w === "total" || w === "indep") return "keyword";
-      if (/^(u64|i64|dec|bool|str)$/.test(w)) return "typeName";
       if (stream.peek() === "(") return "function";
+      if (/^(u64|i64|dec|bool|str)$/.test(w)) return "typeName";
       return /^[A-Z]/.test(w) ? "variableName.definition" : "variableName";
     }
     stream.next();
@@ -112,6 +126,7 @@ export class Editor {
       if (!word || (word.from === word.to && !ctx.explicit)) return null;
       const options = [...KEYWORDS, "fx", "fx~", "total", "indep", "u64", "i64", "dec", "bool", "str"]
         .map((label) => ({ label, type: "keyword" }))
+        .concat(FUNCTIONS.map(([label, detail]) => ({ label, type: "function", detail })))
         .concat(hooks.completions().map((label) => ({ label, type: "variable" })));
       return { from: word.from, options };
     };

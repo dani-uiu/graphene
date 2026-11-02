@@ -12,6 +12,8 @@
 //!   decided it (`check::types`): the other operand, or the hint;
 //! - all arithmetic is checked; overflow is fault R001.
 
+mod more;
+
 use std::cmp::Ordering;
 
 use std::collections::BTreeMap;
@@ -129,7 +131,30 @@ pub fn eval(e: &IExpr, env: &Env, hint: Option<&Type>) -> Result<Value, Fault> {
             Ok(Value::List(out))
         }
         IKind::Builtin(b, args) => builtin(*b, args, env, hint, e.span),
+        IKind::If(c, a, b) => conditional(c, a, b, env, hint, e.span),
+        IKind::Index(b, i) => more::index(b, i, env, e.span),
     }
+}
+
+/// `if c then a else b`: only the chosen branch runs (D-056). Its type
+/// comes from the checker when the branch is an untyped literal.
+fn conditional(
+    c: &IExpr,
+    a: &IExpr,
+    b: &IExpr,
+    env: &Env,
+    hint: Option<&Type>,
+    span: Span,
+) -> Result<Value, Fault> {
+    let chosen = match eval(c, env, Some(&Type::Bool))? {
+        Value::Bool(true) => a,
+        Value::Bool(false) => b,
+        _ => return Err(internal(span, "`if` needs a bool")),
+    };
+    let ty = hint
+        .cloned()
+        .or_else(|| SUMS.with(|s| s.borrow().get(&span).cloned()));
+    eval(chosen, env, ty.as_ref())
 }
 
 /// Built-in functions (D-044, D-052); the checker guarantees arities and
@@ -141,8 +166,14 @@ fn builtin(
     hint: Option<&Type>,
     span: Span,
 ) -> Result<Value, Fault> {
+    if b.is_v031() {
+        return more::builtin(b, args, env, hint, span);
+    }
     let list_hint = hint.map(|t| Type::List(Box::new(t.clone())));
     let first = eval(&args[0], env, list_hint.as_ref())?;
+    if let Value::Str(s) = first {
+        return more::text_len_contains(b, s, args, env, span);
+    }
     match b {
         Builtin::Round | Builtin::Floor | Builtin::Ceil => round(b, first, &args[1], span),
         Builtin::Contains => {
@@ -297,7 +328,8 @@ fn binary(
     };
     match op {
         BinOp::And | BinOp::Or => logic(op, lv, rv, span),
-        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => arith(op, lv, rv, span),
+        BinOp::Concat => more::concat(lv, rv, span),
+        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => arith(op, lv, rv, span),
         _ => compare(op, &lv, &rv, span).map(Value::Bool),
     }
 }
@@ -317,6 +349,7 @@ macro_rules! checked {
             BinOp::Add => $a.checked_add($b),
             BinOp::Sub => $a.checked_sub($b),
             BinOp::Mul => $a.checked_mul($b),
+            BinOp::Rem => $a.checked_rem($b),
             _ => $a.checked_div($b),
         }
     };

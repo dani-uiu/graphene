@@ -474,7 +474,7 @@ checksum = "1033caf0b349c518623b5396bfb2cf0bddf44f0306d543a250e5743297aafd10"
 
 [[package]]
 name = "graphene"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "clap",
  "insta",
@@ -492,7 +492,7 @@ dependencies = [
 
 [[package]]
 name = "graphene-ide-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "graphene",
  "proptest",

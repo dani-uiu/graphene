@@ -483,3 +483,53 @@ Hosts are chosen outside the program (CLI `--host config.json`, or the IDE). The
 
 A case covers the items that are active in its sequential run. `graphene test --coverage` reports, per program, the covered and total counts and the items no case covers.
 
+
+## 8. Version 0.3.1
+
+v0.3.1 adds operators and functions to the 0.3 language without a new header (D-055). Every construct below was an error before, so every valid 0.3 program keeps its exact meaning. Under a `0.1` or `0.2` header the new syntax is **P006** ("requires `#!graphene 0.3`").
+
+### 8.1 Operators
+
+| Expression | Typing | Value |
+|---|---|---|
+| `a % b` | both `u64` or both `i64` (G003 for `dec`) | the remainder; its sign follows `a` (`-7 % 3` is `-1`). Divisor rule as for `/` (§8.3). |
+| `xs ++ ys` | both `[T]` | the elements of `xs`, then `ys`. `[]` takes its type from the other side. |
+| `xs[i]` | `xs : [T]`, `i : u64` gives `T` | the element at index `i`, counting from 0. Past the end is **R008**. |
+| `s < t` (and `<=`, `>`, `>=`) | both `str` | ordering by Unicode code points |
+| `if c then a else b` | `c : bool`; `a` and `b` of one type (G003) | the value of the chosen branch. **Only that branch is evaluated** (D-056), so `if len(xs) > 0 then first(xs) else 0` never faults. |
+
+`%` binds like `*` and `/`; `++` like `+` and `-`; indexing like `.field`. `if` binds loosest: its else-branch extends as far right as possible. Wrap it in parentheses inside a larger expression.
+
+### 8.2 Functions (D-057)
+
+| Function | Typing | Value |
+|---|---|---|
+| `str(x)` | any scalar gives `str` | integers and bools as written; a `dec` with the scale it carries (use `str(round(x, 2))` for two places) |
+| `abs(x)` | numeric gives the same type | the value without its sign. `abs` of the smallest `i64` is R001. |
+| `pow(x, n)` | numeric `x`; `n` an integer literal from 0 to 1000 | `x` multiplied by itself `n` times; `pow(x, 0)` is 1. Exact for `dec`; overflow is R001. |
+| `avg(xs)` | `[N]` numeric gives `N` | `sum(xs) / len(xs)` with that type's division (integers truncate). Empty is **R006**. |
+| `first(xs)`, `last(xs)` | `[T]` gives `T` | the first or last element. Empty is **R006**. |
+| `sort(xs)` | `[N]` numeric or `[str]` | ascending, stable |
+| `reverse(xs)` | `[T]` | the elements in reverse order |
+| `upper(s)`, `lower(s)` | `str` | Unicode upper or lower case |
+| `starts_with(s, p)`, `ends_with(s, p)` | two `str` give `bool` | prefix and suffix tests |
+| `len(s)` | also `str` gives `u64` | the number of characters (Unicode scalar values) |
+| `contains(s, p)` | also two `str` give `bool` | substring test |
+
+Function names stay ordinary identifiers: `IDENT (` is the only call syntax.
+
+### 8.3 Division by a value (D-058)
+
+Under a 0.3 header, `a / d` and `a % d` with a non-literal divisor `d` are accepted only when the program has already ruled out `d == 0`. Otherwise it is **G012**, "the divisor could be zero". A literal or constant zero divisor is always G012.
+
+`d` is proven non-zero at a division when either:
+- the division sits inside `if c then … else …`, and `c` (in the then-branch) or `!c` (in the else-branch) implies `d != 0`; or
+- every minterm of the op's guard (§4.1) contains a match outcome that implies it: a match on `d` itself that took a non-zero literal arm, or `_` when an arm for `0` exists; or a `bool` match on a condition that implies it.
+
+A condition implies `d != 0` when it compares `d` with a literal in a way that excludes zero (`d > 0`, `d >= 1`, `d != 0`, `d < 0`, `0 < d`, …), when its negation does and the branch taken is the false one, or when it is such a condition inside `&&` (true) or `||` (false). Expressions are compared structurally. A proof about `n` also covers `dec(n)`, because converting to `dec` is exact.
+
+Division by zero therefore remains impossible at runtime.
+
+### 8.4 New fault
+
+**R008:** a list index is out of range. The message shows the index and the list's length.

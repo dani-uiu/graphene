@@ -833,17 +833,54 @@ impl P<'_> {
         })
     }
 
+    /// `e.field` and (v0.3.1) `e[i]`, left to right.
     fn postfix(&mut self) -> PResult<Expr> {
         let mut e = self.atom()?;
-        while self.eat(&Tok::Dot) {
-            let field = self.ident("a field name after `.`")?;
-            let pos = Pos(e.span().to(field.span()));
-            e = Expr {
-                kind: ExprKind::Field(Box::new(e), field),
-                pos,
-            };
+        loop {
+            if self.eat(&Tok::Dot) {
+                let field = self.ident("a field name after `.`")?;
+                let pos = Pos(e.span().to(field.span()));
+                e = Expr {
+                    kind: ExprKind::Field(Box::new(e), field),
+                    pos,
+                };
+            } else if self.eat(&Tok::LBracket) {
+                let index = self.expr()?;
+                self.expect(Tok::RBracket, "`]` after the index")?;
+                e = Expr {
+                    pos: self.since(e.span()),
+                    kind: ExprKind::Index(Box::new(e), Box::new(index)),
+                };
+            } else {
+                return Ok(e);
+            }
         }
-        Ok(e)
+    }
+
+    /// v0.3.1 `if c then a else b`; the caller saw the word `if` followed
+    /// by the start of an expression (a contextual keyword, like `each`).
+    fn if_expr(&mut self) -> PResult<Expr> {
+        let start = self.bump().span;
+        let cond = self.expr()?;
+        self.word("then")?;
+        let then = self.expr()?;
+        self.word("else")?;
+        let other = self.expr()?;
+        Ok(Expr {
+            pos: self.since(start),
+            kind: ExprKind::If(Box::new(cond), Box::new(then), Box::new(other)),
+        })
+    }
+
+    /// Expect the contextual word `w` (lexed as an identifier).
+    fn word(&mut self, w: &str) -> PResult<()> {
+        if matches!(self.peek(), Tok::Ident(n) if n == w) {
+            self.bump();
+            return Ok(());
+        }
+        Err(self.error(&format!("`{w}`")).help(format!(
+            "write a conditional as `if condition then value else other`; `{w}` is missing"
+        )))
     }
 
     fn atom(&mut self) -> PResult<Expr> {
@@ -857,6 +894,7 @@ impl P<'_> {
             });
         }
         match tok {
+            Tok::Ident(ref w) if w == "if" && starts_expr(self.peek_at(1)) => self.if_expr(),
             Tok::Ident(_) if matches!(self.peek_at(1), Tok::LParen) => self.conversion(),
             Tok::Ident(_) => {
                 let id = self.ident("a name")?;
@@ -957,8 +995,28 @@ fn bin_op(t: &Tok) -> Option<BinOp> {
         Tok::Minus => BinOp::Sub,
         Tok::Star => BinOp::Mul,
         Tok::Slash => BinOp::Div,
+        Tok::Percent => BinOp::Rem,
+        Tok::PlusPlus => BinOp::Concat,
         _ => return None,
     })
+}
+
+/// Tokens that can begin an expression (for the contextual `if`).
+fn starts_expr(t: &Tok) -> bool {
+    matches!(
+        t,
+        Tok::Ident(_)
+            | Tok::Int(_)
+            | Tok::Dec(_)
+            | Tok::Str(_)
+            | Tok::True
+            | Tok::False
+            | Tok::LParen
+            | Tok::LBracket
+            | Tok::LBrace
+            | Tok::Bang
+            | Tok::Minus
+    )
 }
 
 fn binary(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {

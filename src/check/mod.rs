@@ -15,6 +15,7 @@ pub mod asserts;
 pub mod calls;
 pub mod coverage;
 pub mod cycles;
+pub mod divisors;
 pub mod effects;
 pub mod guards;
 pub mod join;
@@ -90,6 +91,7 @@ pub fn check_program(program: &Program, src: &str) -> Result<Checked, Vec<Diag>>
         join::check(g, gs, &mut diags);
         scope::check(g, &scope::Dom::new(g), gs, &mut diags);
         merge::check(g, gs, &mut diags);
+        divisors::check(g, gs, &mut diags);
         coverage::check(g, &mut diags);
     }
     coverage::unused_consts(&unused_consts, &mut diags);

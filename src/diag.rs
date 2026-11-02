@@ -68,6 +68,7 @@ pub enum Code {
     R005,
     R006,
     R007,
+    R008,
 }
 
 impl fmt::Display for Code {

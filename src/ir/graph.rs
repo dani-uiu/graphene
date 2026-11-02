@@ -94,6 +94,10 @@ pub enum IKind {
     Builtin(Builtin, Vec<IExpr>),
     /// v0.3 constant, inlined with its declared type (D-051).
     Typed(Box<IExpr>, Type, String),
+    /// v0.3.1 `if c then a else b`; only the chosen branch is evaluated.
+    If(Box<IExpr>, Box<IExpr>, Box<IExpr>),
+    /// v0.3.1 `xs[i]`.
+    Index(Box<IExpr>, Box<IExpr>),
 }
 
 impl IExpr {
@@ -109,9 +113,14 @@ impl IExpr {
                     e.refs(out);
                 }
             }
-            IKind::Binary(_, l, r) => {
+            IKind::Binary(_, l, r) | IKind::Index(l, r) => {
                 l.refs(out);
                 r.refs(out);
+            }
+            IKind::If(c, a, b) => {
+                c.refs(out);
+                a.refs(out);
+                b.refs(out);
             }
             IKind::Record(fields) => {
                 for (_, e) in fields {

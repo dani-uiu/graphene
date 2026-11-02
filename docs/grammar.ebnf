@@ -184,14 +184,18 @@ arg         = IDENT , ":" , [ "each" ] , expr ;                (* v0.3: each *)
 (*  E. EXPRESSIONS  (lowest to highest precedence)                        *)
 (* --------------------------------------------------------------------- *)
 
-expr        = or_expr ;
+expr        = if_expr | or_expr ;
+if_expr     = "if" , expr , "then" , expr , "else" , expr ;  (* v0.3.1 *)
+              (* `if`, `then`, `else` are contextual: `if` starts a        *)
+              (* conditional only when an expression follows it. The       *)
+              (* else-branch extends as far right as possible.             *)
 or_expr     = and_expr , { "||" , and_expr } ;                 (* left-assoc *)
 and_expr    = cmp_expr , { "&&" , cmp_expr } ;                 (* left-assoc *)
 cmp_expr    = sum , [ ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) , sum ] ;  (* non-assoc *)
-sum         = prod , { ( "+" | "-" ) , prod } ;                (* left-assoc *)
-prod        = unary , { ( "*" | "/" ) , unary } ;              (* left-assoc *)
+sum         = prod , { ( "+" | "-" | "++" ) , prod } ;         (* left-assoc; ++ v0.3.1 *)
+prod        = unary , { ( "*" | "/" | "%" ) , unary } ;        (* left-assoc; % v0.3.1 *)
 unary       = [ "!" | "-" ] , postfix ;                        (* at most one prefix *)
-postfix     = atom , { "." , IDENT } ;
+postfix     = atom , { "." , IDENT | "[" , expr , "]" } ;      (* [i]: v0.3.1 *)
 atom        = literal | IDENT | "(" , expr , ")"
             | record_lit                                     (* v0.2 *)
             | conversion                                     (* v0.2 *)
@@ -201,9 +205,13 @@ list_lit    = "[" , [ expr , { "," , expr } , [ "," ] ] , "]" ;
               (* checked (G003): one element type; `[]` needs an expected  *)
               (*                 type from an annotation or parameter.     *)
 builtin     = ( "len" | "sum" | "min" | "max" | "all" | "any" | "contains"
-              | "round" | "floor" | "ceil" ) , "(" , expr , { "," , expr } , ")" ;
+              | "round" | "floor" | "ceil"
+              | "str" | "abs" | "pow" | "avg" | "first" | "last"        (* v0.3.1 *)
+              | "sort" | "reverse" | "upper" | "lower"
+              | "starts_with" | "ends_with" ) , "(" , expr , { "," , expr } , ")" ;
               (* names stay identifiers: IDENT "(" only ever means a call. *)
-              (* round/floor/ceil take an INT literal scale as 2nd arg.    *)
+              (* round/floor/ceil take an INT literal scale as 2nd arg;    *)
+              (* pow takes an INT literal exponent (0 to 1000).            *)
 record_lit  = "{" , field_init , { "," , field_init } , [ "," ] , "}" ;
 field_init  = IDENT , ":" , expr ;
               (* checked (G013): field names unique within the literal.   *)
@@ -211,5 +219,6 @@ conversion  = ( "u64" | "i64" | "dec" ) , "(" , expr , ")" ;
               (* the type names stay ordinary identifiers: IDENT "(" never *)
               (* starts anything else, so there is no ambiguity.            *)
 literal     = INT | DECIMAL | STRING | "true" | "false" ;
-              (* checked (G012): the right operand of "/" must be a bare  *)
-              (*                 non-zero INT or DECIMAL literal.          *)
+              (* checked (G012): before 0.3 the right operand of "/" must *)
+              (*   be a bare non-zero literal; from 0.3 on, a non-literal  *)
+              (*   divisor of "/" or "%" must be proven non-zero (§8.3).   *)

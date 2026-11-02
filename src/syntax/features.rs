@@ -139,7 +139,22 @@ fn expr(e: &Expr) -> Found {
         ExprKind::Convert(_, x) => newest(Some((e.span(), "a numeric conversion", V2)), expr(x)),
         ExprKind::Lit(_) | ExprKind::Name(_) => None,
         ExprKind::Field(b, _) | ExprKind::Unary(_, b) => expr(b),
-        ExprKind::Binary(_, l, r) => newest(expr(l), expr(r)),
+        ExprKind::Binary(op, l, r) => {
+            let own = match op {
+                BinOp::Rem => Some((e.span(), "the `%` operator", V3)),
+                BinOp::Concat => Some((e.span(), "the `++` operator", V3)),
+                _ => None,
+            };
+            newest(own, newest(expr(l), expr(r)))
+        }
+        ExprKind::If(c, a, b) => newest(
+            Some((e.span(), "an `if` expression", V3)),
+            newest(expr(c), newest(expr(a), expr(b))),
+        ),
+        ExprKind::Index(b, i) => newest(
+            Some((e.span(), "list indexing", V3)),
+            newest(expr(b), expr(i)),
+        ),
     }
 }
 

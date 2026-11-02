@@ -1,6 +1,8 @@
 //! Stage 4 type checking: G003 (types, effect signatures and arguments,
-//! merge writers, `out`), G004 (exhaustive match), G012 (literal
-//! divisors), G014 (redundant arms). G005 lives in `effects`.
+//! merge writers, `out`), G004 (exhaustive match), G012 (zero literal
+//! divisors; non-literal ones before 0.3), G014 (redundant arms). G005
+//! lives in `effects`; proving a variable divisor non-zero (0.3) lives in
+//! `divisors`, which needs guards.
 //!
 //! Depends on: `ir::graph`, `syntax::ast` (operators, literals), `diag`.
 //!
@@ -12,6 +14,8 @@
 //! - once a vertex fails to type, its users are skipped silently
 //!   (`Stop::Silent`), so one mistake yields one diagnostic.
 
+mod more;
+
 use std::collections::BTreeMap;
 
 use crate::diag::{suggest, Code, Diag, Span};
@@ -21,8 +25,9 @@ use crate::syntax::ast::{BinOp, Builtin, CallKind, Lit, UnOp};
 /// Type of every value vertex (`None` for sinks, root, and failures).
 pub type Types = Vec<Option<Type>>;
 
-/// Result type of every `sum(...)`, by expression span, so the runtime
-/// knows which zero an empty list sums to (D-044).
+/// Result type of every `sum(...)` and `if` expression, by span, so the
+/// runtime knows which zero an empty list sums to (D-044) and how to type
+/// an untyped literal in the one branch it evaluates (D-056).
 pub type SumTypes = BTreeMap<Span, Type>;
 
 enum Stop {
@@ -583,6 +588,8 @@ impl Checker<'_> {
             IKind::Record(fields) => self.record(fields, hint),
             IKind::List(items) => self.list(items, hint, e.span),
             IKind::Builtin(b, args) => self.builtin(*b, args, hint, e.span),
+            IKind::If(..) => self.if_expr(e, hint),
+            IKind::Index(b, i) => self.index(b, i),
             IKind::Typed(_, ty, _) => Ok(ty.clone()),
             IKind::Convert(to, x) => {
                 let t = self.infer(x, None)?;
@@ -702,6 +709,14 @@ impl Checker<'_> {
                 builtin_help(b),
             )
             .into());
+        }
+        if b.is_v031() {
+            return self.builtin_more(b, args, hint, span);
+        }
+        if matches!(b, Builtin::Len | Builtin::Contains) {
+            if let Some(t) = self.text_fn(b, args) {
+                return t;
+            }
         }
         match b {
             Builtin::Round | Builtin::Floor | Builtin::Ceil => self.rounding(b, args, span),
@@ -848,6 +863,9 @@ impl Checker<'_> {
             }
             return Ok(Type::Bool);
         }
+        if op == BinOp::Concat {
+            return self.concat(l, r, hint, span);
+        }
         let hint = if op.is_arith() { hint } else { None };
         let (lt, rt) = if is_int_lit(l) && !is_int_lit(r) {
             let rt = self.infer(r, hint)?;
@@ -864,8 +882,14 @@ impl Checker<'_> {
                 "mismatched operands",
                 "Graphene has no implicit conversions: make both sides the same type (e.g. write `2.00` for a dec)").into());
         }
+        if op == BinOp::Rem && lt == Type::Dec {
+            return Err(g003(span, "`%` is not defined for `dec`", "not a whole number",
+                "`%` gives the remainder of whole numbers (u64 or i64); for decimals use `floor` or `round`").into());
+        }
+        let ordered_text = lt == Type::Str && self.g.version >= (0, 3);
         let ok = match op {
             BinOp::Eq | BinOp::Ne => lt.is_scalar(),
+            BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => lt.is_numeric() || ordered_text,
             _ => lt.is_numeric(),
         };
         if !ok {
@@ -877,8 +901,8 @@ impl Checker<'_> {
             )
             .into());
         }
-        if op == BinOp::Div {
-            check_divisor(r)?;
+        if matches!(op, BinOp::Div | BinOp::Rem) {
+            check_divisor(r, self.g.version)?;
         }
         Ok(if op.is_cmp() { Type::Bool } else { lt })
     }
@@ -905,14 +929,24 @@ fn lit_type(l: &Lit, hint: Option<&Type>, span: Span) -> R<Type> {
     })
 }
 
-fn check_divisor(r: &IExpr) -> R<()> {
-    let ok = match &r.kind {
-        IKind::Lit(Lit::Int(n)) => *n != 0,
-        IKind::Lit(Lit::Dec(d)) => !d.is_zero(),
-        _ => false,
+/// A literal zero divisor is always G012. Before 0.3 every divisor must
+/// be a literal; from 0.3 on, `divisors` must prove a variable one
+/// non-zero once guards are known (D-058).
+fn check_divisor(r: &IExpr, version: (u32, u32)) -> R<()> {
+    let zero = match &r.kind {
+        IKind::Lit(Lit::Int(n)) => *n == 0,
+        IKind::Lit(Lit::Dec(d)) => d.is_zero(),
+        _ if version >= (0, 3) => return Ok(()),
+        _ => true,
     };
-    if ok {
+    if !zero {
         return Ok(());
+    }
+    if version >= (0, 3) {
+        return Err(Diag::new(Code::G012, r.span, "division by zero")
+            .label("this is zero")
+            .help("divide by a non-zero value")
+            .into());
     }
     Err(Diag::new(Code::G012, r.span, "divisor must be a non-zero literal")
         .label("could be zero")
@@ -934,6 +968,20 @@ fn builtin_help(b: Builtin) -> String {
             "`{}(x, 2)` rounds a dec to a literal number of places (0 to 28)",
             b.name()
         ),
+        Builtin::Str => "`str(x)` turns a number or bool into text; round decimals first, e.g. `str(round(x, 2))`".into(),
+        Builtin::Abs => "`abs(x)` gives the size of a number without its sign".into(),
+        Builtin::Pow => "`pow(x, 3)` multiplies a number by itself a literal number of times (0 to 1000)".into(),
+        Builtin::Avg => "`avg(xs)` is `sum(xs) / len(xs)` for a list of numbers; an empty list is fault R006".into(),
+        Builtin::First | Builtin::Last => format!(
+            "`{}(xs)` takes any list; an empty list is fault R006",
+            b.name()
+        ),
+        Builtin::Sort => "`sort(xs)` orders a list of numbers or strings, smallest first".into(),
+        Builtin::Reverse => "`reverse(xs)` takes any list".into(),
+        Builtin::Upper | Builtin::Lower => format!("`{}(s)` takes a str", b.name()),
+        Builtin::StartsWith | Builtin::EndsWith => {
+            format!("`{}(s, part)` takes two strs", b.name())
+        }
     }
 }
 

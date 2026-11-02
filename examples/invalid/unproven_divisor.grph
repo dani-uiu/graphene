@@ -1,0 +1,7 @@
+#!graphene 0.3
+@intent "Split a bill between guests; the divisor is not checked for zero"
+
+in total: dec -> T
+in guests: u64
+T -> f(total / dec(guests)) -> SHARE
+SHARE -> out share: dec

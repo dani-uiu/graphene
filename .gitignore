@@ -8,3 +8,7 @@ graphene_prompt.md
 *prompt*.md
 docs/plan.md
 docs/*-plan.md
+
+# Per-user IDE files: pinned graph layouts and recorded runs
+*.grph.layout.json
+*.recorded.json

@@ -619,9 +619,14 @@ pub fn collect_names(e: &Expr, out: &mut BTreeSet<String>) {
         ExprKind::Field(b, _) | ExprKind::Unary(_, b) | ExprKind::Convert(_, b) => {
             collect_names(b, out)
         }
-        ExprKind::Binary(_, l, r) => {
+        ExprKind::Binary(_, l, r) | ExprKind::Index(l, r) => {
             collect_names(l, out);
             collect_names(r, out);
+        }
+        ExprKind::If(c, a, b) => {
+            for x in [c, a, b] {
+                collect_names(x, out);
+            }
         }
         ExprKind::Record(fields) => {
             for (_, x) in fields {

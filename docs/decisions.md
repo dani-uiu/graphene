@@ -249,3 +249,15 @@ Coverage items are terminals, decision outcomes and effects, all of which the ch
 ## D-054 — CI and unsigned release builds · Approved
 GitHub Actions runs every check on Windows and Linux. Tagged commits build optimized IDE installers on CI, which avoids the local Smart App Control block. They are unsigned for now (no certificate budget), so SmartScreen warns on first install. Signing can be added later through a repository secret.
 
+
+## D-055 — v0.3.1: additions without a new header · Approved
+The new operators and functions only give meaning to programs that were errors before, so the language version stays 0.3 and no existing program changes meaning. Under 0.1 and 0.2 headers they are P006, like the rest of 0.3. `if` joins the contextual words (it is a keyword only when an expression follows it), so programs that use `if` as a name still work.
+
+## D-056 — `if` expressions evaluate one branch · Approved
+`if c then a else b` evaluates only the chosen branch, so a guard such as `if len(xs) > 0 then first(xs) else 0` can never fault. Expressions stay side-effect free, so this is unobservable except for faults it prevents. It is not a decision for guards or coverage: whole-flow branching stays `match`, which the checker can reason about.
+
+## D-057 — Text, list and number functions · Approved
+`str`, `abs`, `pow` (literal exponent, as repeated `*`), `avg`, `first`, `last`, `sort`, `reverse`, `upper`, `lower`, `starts_with` and `ends_with`, plus `len` and `contains` on text. Empty-list functions fault with R006, like `min` and `max`. `str` of a `dec` keeps its scale rather than guessing one, so money is written `str(round(x, 2))`. Fractional and negative exponents were rejected because their results are not exact decimals.
+
+## D-058 — Division by a value proven non-zero · Approved
+G012 used to accept only literal divisors. A variable divisor is now accepted when an `if` condition around the division, or the match arms leading to its op, rule out zero. This reuses the guard algebra (§4.1), so the proof is sound and structural. Runtime division by zero stays impossible, and no new fault was needed. Alternatives rejected: a runtime fault (breaks "division never fails") and a `safe_div` returning a default (hides mistakes).

@@ -169,7 +169,7 @@ th { color: var(--dim); font-weight: 600; }
 <nav class="side" id="side" aria-label="Lessons">
   <div class="brand"><span class="dot"></span> Learn Graphene</div>
   <div class="sub">Short lessons for <code>#!graphene 0.3</code></div>
-  <div class="progress"><span id="progText">0 of 14 lessons done</span><div class="bar"><span id="progBar"></span></div></div>
+  <div class="progress"><span id="progText">0 of 15 lessons done</span><div class="bar"><span id="progBar"></span></div></div>
   <ul class="toc" id="toc"></ul>
   <div class="side-actions">
     <button id="themeBtn" title="Switch light / dark">◐ Theme</button>
@@ -179,8 +179,8 @@ th { color: var(--dim); font-weight: 600; }
 
 <main>
 <header class="hero">
-  <span class="pill">Graphene v0.3</span>
-  <h1>Learn Graphene in 14 short lessons</h1>
+  <span class="pill">Graphene v0.3.1</span>
+  <h1>Learn Graphene in 15 short lessons</h1>
   <p>Graphene (<code>.grph</code>) is a small language for business logic. A program is a graph of values and effects, and the compiler proves it safe before anything runs: every input ends in exactly one result, every failure is handled, and running in parallel gives exactly the same answer as running in order.</p>
   <p>Each lesson takes a few minutes. Every program on this page passes <code>graphene check</code>, and every output shown is what <code>graphene run</code> really prints.</p>
 </header>
@@ -560,8 +560,51 @@ assert indep(TOLD, out)</pre></div>
 </section>
 
 <!-- ============================================================ 13 -->
+<section class="lesson" id="l12b" data-part="v0.3" data-title="Handy operators (v0.3.1)">
+  <div class="lesson-head"><span class="n">13</span><h2>Handy operators (v0.3.1)</h2></div>
+  <p class="goal">Use inline <code>if</code>, safe division by a value, and the text and list helpers.</p>
+  <div class="code" data-lang="grph" data-label="split.grph"><pre>#!graphene 0.3
+@intent "Share a bill between guests"
+
+in total: dec -> T
+in guests: u64
+in names: [str]
+T -> f({
+  each_pays: if guests > 0 then floor(total / dec(guests), 2) else total,
+  even: guests % 2 == 0,
+  host: upper(first(sort(names))),
+  everyone: names ++ ["the house"],
+  note: "split " + str(total) + " " + str(guests) + " ways",
+}) -> SPLIT
+SPLIT -> out split: {each_pays: dec, even: bool, host: str, everyone: [str], note: str}
+
+assert total</pre></div>
+  <div class="code out" data-lang="json" data-label="graphene run split.grph --arg total=90.00 --arg guests=4 --arg 'names=[&quot;luis&quot;,&quot;ana&quot;,&quot;bo&quot;]'"><pre>{ "result": { "ok": { "split": {
+  "each_pays": "22.50", "even": true, "host": "ANA",
+  "everyone": ["luis", "ana", "bo", "the house"], "note": "split 90.00 4 ways" } } }, "effects": [] }</pre></div>
+  <ul>
+    <li><code>if c then a else b</code> picks a value. Only the chosen side runs, so the division never sees a zero.</li>
+    <li><b>Dividing by a value is allowed once zero is ruled out</b>, by an <code>if</code> like this one or by the arm of a <code>match</code> that excludes zero. Otherwise:</li>
+  </ul>
+  <div class="code err" data-lang="grph" data-label="mistake"><pre>each_pays: floor(total / dec(guests), 2),</pre></div>
+  <div class="code out" data-lang="txt" data-label="graphene check"><pre>G012  × the divisor could be zero
+  help: rule out zero first: divide inside `if n > 0 then a / n else 0`, ...</pre></div>
+  <div class="table-wrap"><table>
+    <tr><th>Write</th><th>Gives</th></tr>
+    <tr><td><code>a % b</code></td><td>remainder of whole numbers</td></tr>
+    <tr><td><code>xs ++ ys</code>, <code>xs[0]</code></td><td>joined lists; one element, counting from 0 (past the end is R008)</td></tr>
+    <tr><td><code>str(x)</code></td><td>a number or bool as text; write <code>str(round(x, 2))</code> for money</td></tr>
+    <tr><td><code>abs(x)</code>, <code>pow(x, 3)</code></td><td>size without sign; a power with a whole-number literal exponent</td></tr>
+    <tr><td><code>avg</code>, <code>first</code>, <code>last</code>, <code>sort</code>, <code>reverse</code></td><td>list helpers (the first three fail with R006 on an empty list)</td></tr>
+    <tr><td><code>upper</code>, <code>lower</code>, <code>starts_with</code>, <code>ends_with</code>, <code>len(s)</code>, <code>contains(s, p)</code>, <code>s &lt; t</code></td><td>text helpers</td></tr>
+  </table></div>
+  <details class="quiz"><summary>Check yourself: what happens with <code>names=[]</code>?</summary>
+    <p>The run stops with R006: <code>first</code> of an empty list. Guard it with <code>if len(names) &gt; 0 then upper(first(sort(names))) else "nobody"</code>.</p></details>
+</section>
+
+<!-- ============================================================ 13 -->
 <section class="lesson" id="l13" data-part="Tools" data-title="Testing and coverage">
-  <div class="lesson-head"><span class="n">13</span><h2>Testing and coverage</h2></div>
+  <div class="lesson-head"><span class="n">14</span><h2>Testing and coverage</h2></div>
   <p class="goal">Save runs as test cases, and find the paths no test reaches.</p>
   <p>Next to <code>withdraw.grph</code> (lesson 7), create <code>withdraw.cases.json</code>. Each case is the inputs, an optional mock, and exactly what <code>graphene run</code> should print:</p>
   <div class="code" data-lang="json" data-label="withdraw.cases.json"><pre>[
@@ -588,7 +631,7 @@ assert indep(TOLD, out)</pre></div>
 
 <!-- ============================================================ 14 -->
 <section class="lesson" id="l14" data-part="Tools" data-title="Real effects and the IDE">
-  <div class="lesson-head"><span class="n">14</span><h2>Real effects, recording, and the IDE</h2></div>
+  <div class="lesson-head"><span class="n">15</span><h2>Real effects, recording, and the IDE</h2></div>
   <p class="goal">Answer effects for real, turn real runs into tests, and work visually.</p>
   <p>Mocks are for tests. A <b>host config</b> sends each effect to an HTTP endpoint or a local command instead:</p>
   <div class="code" data-lang="json" data-label="hosts.json"><pre>{
@@ -625,6 +668,7 @@ graphene run greet.grph --arg id=1 --mock replay.json     # the same run, offlin
     <tr><td>Input (with node / without)</td><td><code>in x: u64 -> X</code>, <code>in rate: dec</code></td></tr>
     <tr><td>Constant</td><td><code>const TAX: dec = 0.21</code></td></tr>
     <tr><td>Compute</td><td><code>X -> f(x * 2) -> Y</code></td></tr>
+    <tr><td>Pick a value</td><td><code>f(if n > 0 then a / n else 0)</code></td></tr>
     <tr><td>Join</td><td><code>(A, B) -> f(A + B) -> C</code></td></tr>
     <tr><td>Decide</td><td><code>X -> match x { 0 => ZERO, _ => SOME }</code></td></tr>
     <tr><td>Effect</td><td><code>extern fx Get(id: u64) -> T ! NotFound</code><br><code>X -> fx Get(id: x) -> R | err NotFound -> MISS</code></td></tr>
