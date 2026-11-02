@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Learn Graphene</title>
-<meta name="description" content="Short lessons that teach the Graphene (.grph) dataflow language, from a first program to subgraphs, lists, testing and real effects.">
+<meta name="description" content="Short lessons that teach the Graphene (.grph) dataflow language, from a first program to subgraphs, lists, enums, dates, imports, testing and real effects.">
 <style>
 :root {
   --bg: #fbfaf8;
@@ -168,8 +168,8 @@ th { color: var(--dim); font-weight: 600; }
 <div class="layout">
 <nav class="side" id="side" aria-label="Lessons">
   <div class="brand"><span class="dot"></span> Learn Graphene</div>
-  <div class="sub">Short lessons for <code>#!graphene 0.3</code></div>
-  <div class="progress"><span id="progText">0 of 15 lessons done</span><div class="bar"><span id="progBar"></span></div></div>
+  <div class="sub">Short lessons for <code>#!graphene 0.4</code></div>
+  <div class="progress"><span id="progText">0 of 18 lessons done</span><div class="bar"><span id="progBar"></span></div></div>
   <ul class="toc" id="toc"></ul>
   <div class="side-actions">
     <button id="themeBtn" title="Switch light / dark">◐ Theme</button>
@@ -179,8 +179,8 @@ th { color: var(--dim); font-weight: 600; }
 
 <main>
 <header class="hero">
-  <span class="pill">Graphene v0.3.1</span>
-  <h1>Learn Graphene in 15 short lessons</h1>
+  <span class="pill">Graphene v0.4</span>
+  <h1>Learn Graphene in 18 short lessons</h1>
   <p>Graphene (<code>.grph</code>) is a small language for business logic. A program is a graph of values and effects, and the compiler proves it safe before anything runs: every input ends in exactly one result, every failure is handled, and running in parallel gives exactly the same answer as running in order.</p>
   <p>Each lesson takes a few minutes. Every program on this page passes <code>graphene check</code>, and every output shown is what <code>graphene run</code> really prints.</p>
 </header>
@@ -602,9 +602,108 @@ assert total</pre></div>
     <p>The run stops with R006: <code>first</code> of an empty list. Guard it with <code>if len(names) &gt; 0 then upper(first(sort(names))) else "nobody"</code>.</p></details>
 </section>
 
-<!-- ============================================================ 13 -->
+<!-- ============================================================ v0.4 -->
+<section class="lesson" id="l15" data-part="v0.4" data-title="Types and enums">
+  <div class="lesson-head"><span class="n">14</span><h2>Types and enums</h2></div>
+  <p class="goal">Name a record type once, and give a fixed set of choices its own type.</p>
+  <div class="code" data-lang="grph" data-label="ship.grph"><pre>#!graphene 0.4
+@intent "Pick a shipping price by speed"
+
+enum Speed { Standard, Express, Overnight }
+type Quote = {speed: Speed, price: dec, tracked: bool}
+
+in speed: Speed -> S
+S -> match speed { Standard => CHEAP, Express => FAST, Overnight => FAST }
+CHEAP -> f(4.99) -> PRICE
+FAST -> f(if speed == Speed.Express then 9.99 else 19.99) -> PRICE
+PRICE -> f({speed: speed, price: PRICE, tracked: speed != Speed.Standard}) -> Q
+Q -> out quote: Quote
+
+assert total</pre></div>
+  <div class="code out" data-lang="json" data-label="graphene run ship.grph --arg speed=Express"><pre>{ "result": { "ok": { "quote": { "price": "9.99", "speed": "Express", "tracked": true } } }, "effects": [] }</pre></div>
+  <ul>
+    <li><code>type Quote = {...}</code> is just a name for the record. Writing the record out in full still works: they are the same type.</li>
+    <li>An <b>enum</b> value is written <code>Speed.Express</code>; in a <code>match</code> arm the bare name is enough. Enums compare with <code>==</code> and <code>!=</code>, never with text: <code>speed == "Express"</code> is G003.</li>
+    <li>An input that isn't a variant never reaches the program: <code>--arg speed=Rocket</code> stops with <b>R005</b> (<code>Rocket</code> is not a variant of Speed).</li>
+    <li>A <code>match</code> on an enum must handle every variant. Remove the <code>Overnight</code> arm and:</li>
+  </ul>
+  <div class="code out" data-lang="txt" data-label="graphene check"><pre>G004  × match on `Speed` is not exhaustive
+  help: add an arm for `Overnight`, or a `_ => Node` arm</pre></div>
+  <div class="note">This is the point of enums: add <code>Drone</code> to <code>Speed</code> later, and the checker lists every <code>match</code> you have to update.</div>
+  <details class="quiz"><summary>Check yourself: why not write <code>_ => FAST</code> instead of listing the speeds?</summary>
+    <p>It checks, but a new speed would then silently be priced as fast. Listing the variants makes the checker point at this match when the enum grows.</p></details>
+</section>
+
+<section class="lesson" id="l16" data-part="v0.4" data-title="Dates">
+  <div class="lesson-head"><span class="n">15</span><h2>Dates</h2></div>
+  <p class="goal">Count days between dates and move a date forward.</p>
+  <div class="code" data-lang="grph" data-label="rental.grph"><pre>#!graphene 0.4
+@intent "Price a car rental and say when it is due back"
+
+in picked_up: date -> P
+in returned: date
+P -> f(max(days_between(picked_up, returned), 1)) -> DAYS
+DAYS -> f({
+  days: DAYS,
+  price: dec(DAYS) * 35.00,
+  weekend_return: weekday(returned) >= 6,
+  next_service: add_days(returned, 90),
+}) -> BILL
+BILL -> out bill: {days: i64, price: dec, weekend_return: bool, next_service: date}
+
+assert total</pre></div>
+  <div class="code out" data-lang="json" data-label="graphene run rental.grph --arg picked_up=2026-10-29 --arg returned=2026-11-01"><pre>{ "result": { "ok": { "bill": {
+  "days": 3, "next_service": "2027-01-30", "price": "105.00", "weekend_return": true } } }, "effects": [] }</pre></div>
+  <ul>
+    <li>A <code>date</code> is a calendar day, written <code>"YYYY-MM-DD"</code>. <code>days_between(a, b)</code> is <code>b - a</code> in days (an <code>i64</code>, negative when <code>b</code> comes first); <code>add_days(d, n)</code> moves a date.</li>
+    <li><code>year</code>, <code>month</code>, <code>day</code> and <code>weekday</code> (1 = Monday … 7 = Sunday) take a date apart. Dates compare with <code>&lt;</code>, <code>==</code> and the rest, and work in <code>min</code>, <code>max</code> and <code>sort</code>.</li>
+    <li><code>max(a, b)</code> and <code>min(a, b)</code> take two values; the one-list form <code>max(xs)</code> still works.</li>
+    <li>A fixed date is <code>date("2026-12-25")</code>. February 30 is caught by <code>graphene check</code> (G003), and as an input it is R005.</li>
+  </ul>
+  <div class="note"><b>There is no "today".</b> Reading the clock would make two runs of the same program differ. Pass today's date as an input instead, and tests can pin it.</div>
+  <details class="quiz"><summary>Check yourself: what is <code>days</code> when the car comes back the same day?</summary>
+    <p>1. <code>days_between</code> gives 0, and <code>max(0, 1)</code> charges at least one day.</p></details>
+</section>
+
+<section class="lesson" id="l17" data-part="v0.4" data-title="Libraries and imports">
+  <div class="lesson-head"><span class="n">16</span><h2>Libraries and imports</h2></div>
+  <p class="goal">Share types, enums and subgraphs between programs.</p>
+  <div class="code" data-lang="grph" data-label="lib/shipping.grph"><pre>#!graphene 0.4
+// Shared by every program that ships things.
+
+enum Speed { Standard, Express, Overnight }
+
+graph Price(speed: Speed -> S) -> dec {
+  S -> f(if speed == Speed.Standard then 4.99 else 9.99) -> P
+  P -> out
+}</pre></div>
+  <div class="code" data-lang="grph" data-label="order.grph"><pre>#!graphene 0.4
+@intent "Add shipping to an order"
+
+import "lib/shipping.grph"
+
+in items: dec -> I
+in speed: Speed
+I -> call Price(speed: speed) -> SHIP
+SHIP -> f(items + SHIP) -> TOTAL
+TOTAL -> out total: dec
+
+assert total</pre></div>
+  <div class="code out" data-lang="json" data-label="graphene run order.grph --arg items=20.00 --arg speed=Express"><pre>{ "result": { "ok": { "total": "29.99" } }, "effects": [] }</pre></div>
+  <ul>
+    <li>A <b>library</b> has only declarations: <code>import</code>, <code>type</code>, <code>enum</code>, <code>const</code>, <code>extern</code> and <code>graph</code>. Importing a program (one with <code>in</code>, flows or <code>out</code>) is G018.</li>
+    <li>Paths are relative to the importing file. Everything the library declares can be used as if written here; a name declared in both files is G013.</li>
+    <li>A mistake inside the library is reported in the library's file, with its own line numbers. <code>graphene check lib/shipping.grph</code> checks the library on its own.</li>
+    <li>An import nothing uses is G008, and two libraries importing each other is G018.</li>
+  </ul>
+  <div class="note good">In the IDE, imported subgraphs appear in the graph marked with their file, and <b>F12</b> on a name opens the file that declares it.</div>
+  <details class="quiz"><summary>Check yourself: can <code>lib/shipping.grph</code> have its own <code>assert total</code>?</summary>
+    <p>No: <code>assert</code> belongs to a program. A subgraph body is always checked for totality anyway, so the library is safe without it.</p></details>
+</section>
+
+<!-- ============================================================ 17 -->
 <section class="lesson" id="l13" data-part="Tools" data-title="Testing and coverage">
-  <div class="lesson-head"><span class="n">14</span><h2>Testing and coverage</h2></div>
+  <div class="lesson-head"><span class="n">17</span><h2>Testing and coverage</h2></div>
   <p class="goal">Save runs as test cases, and find the paths no test reaches.</p>
   <p>Next to <code>withdraw.grph</code> (lesson 7), create <code>withdraw.cases.json</code>. Each case is the inputs, an optional mock, and exactly what <code>graphene run</code> should print:</p>
   <div class="code" data-lang="json" data-label="withdraw.cases.json"><pre>[
@@ -631,7 +730,7 @@ assert total</pre></div>
 
 <!-- ============================================================ 14 -->
 <section class="lesson" id="l14" data-part="Tools" data-title="Real effects and the IDE">
-  <div class="lesson-head"><span class="n">15</span><h2>Real effects, recording, and the IDE</h2></div>
+  <div class="lesson-head"><span class="n">18</span><h2>Real effects, recording, and the IDE</h2></div>
   <p class="goal">Answer effects for real, turn real runs into tests, and work visually.</p>
   <p>Mocks are for tests. A <b>host config</b> sends each effect to an HTTP endpoint or a local command instead:</p>
   <div class="code" data-lang="json" data-label="hosts.json"><pre>{
@@ -653,7 +752,7 @@ graphene run greet.grph --arg id=1 --mock replay.json     # the same run, offlin
   <div class="note good"><b>Graphene IDE</b> shows the same program as text and as a live graph. Edit either one, run with mocks or real hosts, step through a run, open subgraphs, and see untested branches dashed on the graph.</div>
   <h3>Where next</h3>
   <ul>
-    <li><code>examples/apps/payroll_run.grph</code>: every feature in one program, with 12 test cases.</li>
+    <li><code>examples/apps/payroll_run.grph</code>: every v0.3 feature in one program, with 12 test cases; <code>examples/apps/payroll.grph</code>: the same payroll as a v0.4 library plus a short program.</li>
     <li><code>docs/usage.md</code>: every command and flag. <code>docs/semantics.md</code>: the exact rules.</li>
     <li><code>graphene explain</code>: the list of every diagnostic code.</li>
   </ul>
@@ -664,9 +763,12 @@ graphene run greet.grph --arg id=1 --mock replay.json     # the same run, offlin
   <div class="lesson-head"><span class="n">★</span><h2>Cheat sheet</h2></div>
   <div class="table-wrap"><table>
     <tr><th>Statement</th><th>Example</th></tr>
-    <tr><td>Header, intent</td><td><code>#!graphene 0.3</code>, <code>@intent "..."</code></td></tr>
+    <tr><td>Header, intent</td><td><code>#!graphene 0.4</code>, <code>@intent "..."</code></td></tr>
+    <tr><td>Import a library</td><td><code>import "lib/shipping.grph"</code></td></tr>
+    <tr><td>Type, enum</td><td><code>type Quote = {price: dec}</code>, <code>enum Speed { Standard, Express }</code></td></tr>
     <tr><td>Input (with node / without)</td><td><code>in x: u64 -> X</code>, <code>in rate: dec</code></td></tr>
     <tr><td>Constant</td><td><code>const TAX: dec = 0.21</code></td></tr>
+    <tr><td>Enum value, date</td><td><code>Speed.Express</code>, <code>date("2026-12-25")</code>, <code>days_between(a, b)</code>, <code>add_days(d, 7)</code></td></tr>
     <tr><td>Compute</td><td><code>X -> f(x * 2) -> Y</code></td></tr>
     <tr><td>Pick a value</td><td><code>f(if n > 0 then a / n else 0)</code></td></tr>
     <tr><td>Join</td><td><code>(A, B) -> f(A + B) -> C</code></td></tr>
@@ -695,8 +797,8 @@ graphene run greet.grph --arg id=1 --mock replay.json     # the same run, offlin
 (function () {
   "use strict";
   var KEY = "graphene.learn.done";
-  var KW = ["in","extern","fx","f","match","out","fail","sink","err","assert","total","indep","graph","call","map","filter","each","const","true","false"];
-  var TY = ["u64","i64","dec","bool","str"];
+  var KW = ["in","extern","fx","f","match","out","fail","sink","err","assert","total","indep","graph","call","map","filter","each","const","true","false","type","enum","import"];
+  var TY = ["u64","i64","dec","bool","str","date"];
 
   function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
   function span(cls, s) { return '<span class="' + cls + '">' + esc(s) + "</span>"; }

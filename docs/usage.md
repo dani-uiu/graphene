@@ -138,6 +138,18 @@ graphene run examples/apps/cart_checkout.grph --arg buyer=7 \
 
 In the effect log, an entry made inside a subgraph has an `"at"` path, such as `[["PriceLine", 1]]` for the second element of a `map`.
 
+### Enums, dates and imports (v0.4)
+
+An enum input is one of its variant names, and a date is `YYYY-MM-DD`; both are checked when the input is read (R005):
+
+```
+graphene run examples/apps/late_invoices.grph --arg customer=acme --arg tier=Gold \
+  --arg due=2026-10-01 --arg today=2026-10-24 \
+  --arg 'lines=[{"sku":"desk","qty":1,"price":"150.00"}]'
+```
+
+A program that imports libraries is checked, run and tested as usual: every command follows its imports. A diagnostic inside a library is printed against the library's file and line. Checking a library on its own reports `ok: lib.grph (library: N subgraph(s))`; its declarations are not "unused", because they exist for the programs that import it.
+
 ### Real effects: `--host` and `--record` (v0.3)
 
 Mocks are for tests. To answer effects for real, describe where each one goes in a host config:
@@ -233,10 +245,10 @@ With that build, `pricing.grph` costs 202 tokens in ASCII and 228 in Unicode, so
 
 ## Writing your own program: a starting template
 
-Start new programs with `#!graphene 0.2`. Older `0.1` files keep working unchanged.
+Start new programs with `#!graphene 0.4`. Older files keep working unchanged.
 
 ```
-#!graphene 0.3
+#!graphene 0.4
 @intent "Double a number"
 
 in x: u64 -> A

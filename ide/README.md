@@ -11,12 +11,15 @@ A desktop app for writing, viewing, and running Graphene programs. The text edit
 | Add a step after a node | Right-click it, or use the inspector's step buttons: `f`, `⚙ fx`, `⊗ fx~`, `? match`, `out`, `fail`, and (once the program has subgraphs) `↳ call`, `∀ map`, `⊂ filter` |
 | Add a subgraph | Right-click the canvas → **Add subgraph…** (needs `#!graphene 0.3`; the palette can change the header) |
 | Open a subgraph | Double-click a `call`/`map`/`filter` node, or **Open …** in the inspector. **◂ Program** (or `Esc`) goes back. |
+| Extract into subgraph | Select whole statements in the editor, then the palette's **Extract selected lines into subgraph…**. It works when exactly one flow comes in and one goes out; otherwise it names the flow in the way. |
+| Work with imports (0.4) | Imports resolve against the program's folder and the other open tabs, even unsaved. Imported subgraphs show as read-only groups labelled with their library; right-click one to open the library. A problem inside a library names it in **Problems**; click it to jump there. |
+| Go to definition | `F12` on a name (type, enum, variant, constant, effect, subgraph or node) opens the file that declares it. |
 | Connect two nodes | `Shift`-drag from one node to the other. Drop on empty space to pick a new step instead. |
 | Join nodes | Select two or more, then right-click → **Join** |
 | Rename or delete | Inspector or right-click. Rename updates every use. |
 | Edit a statement directly | Select it and edit its line in the inspector, or type in the editor |
 | Fix a problem | **Problems** panel, or hover the squiggle in the editor → quick fix |
-| Run | **Run** panel: fill in the inputs (lists as JSON), pick a mock, then **▶ Run** (`Ctrl+Enter`). **Replay** steps through the run. |
+| Run | **Run** panel: fill in the inputs (lists as JSON; enums from a dropdown; dates with a date picker), pick a mock, then **▶ Run** (`Ctrl+Enter`). **Replay** steps through the run. |
 | Use real effects | **Run** panel → **Effects: Host config**, pick a `hosts.json`. Tick **record** to save the answers as `<program>.recorded.json`, a mock that replays the run. |
 | See one `map` element | After a run, **Show run of** picks an element; the graph opens its subgraph with that element's values. |
 | Test | **Tests** panel → **Run all cases**. **Save as test case** in the Run panel adds one. |
@@ -42,6 +45,7 @@ A desktop app for writing, viewing, and running Graphene programs. The text edit
 | `Ctrl+N` | New program |
 | `Ctrl+O` | Open file |
 | `F` | Fit the graph |
+| `F12` | Go to definition (in the editor) |
 | `Delete` | Remove the selected nodes |
 | `Esc` | Clear the selection |
 | `Ctrl+Z` | Undo, for typing and graph actions alike |

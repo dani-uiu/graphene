@@ -96,10 +96,12 @@ impl Ctx<'_> {
         let result = match outgoing.as_slice() {
             [one] => one.clone(),
             [] => return Err("nothing the selection produces is used afterwards".into()),
-            many => return Err(format!(
+            many => {
+                return Err(format!(
                 "{} are all used after the selection; extract works when exactly one flow goes out",
                 names(many)
-            )),
+            ))
+            }
         };
         // The parameter: an input keeps its name and node; a node `N`
         // becomes the parameter's node, read in expressions as `n`.

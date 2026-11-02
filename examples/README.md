@@ -5,6 +5,7 @@ Every program here passes `graphene check`. Each program in `learn/` and `apps/`
 ```
 learn/    small programs, one feature each: start here
 apps/     realistic programs that combine many features
+lib/      v0.4 libraries that apps import (declarations only, no cases)
 errors/   one program per diagnostic code, each with its expected code
 mocks/    fake effect answers used by the cases (`--mock examples/mocks/...`)
 ```
@@ -23,6 +24,8 @@ New to the language? Read `docs/learn.html` first, then the `learn/` programs in
 | `lists_and_aggregates` | 0.3 | List inputs, `filter`, `len`, `sum`, `min`, `max`, `contains` |
 | `constants_and_rounding` | 0.3 | `const`, `round` / `floor` / `ceil`, a `dec(4)` output, string `+` |
 | `relaxed_join` | 0.3 | Joining a branch that can fail with one that can't, legal because one condition implies the other |
+| `types_and_enums` | 0.4 | Enums for priority and team, an exhaustive `match` on an enum, a type alias for the result |
+| `dates` | 0.4 | `date` inputs, `days_between`, `add_days`, `weekday`, two-value `max`, a leap year |
 
 ## apps/
 
@@ -36,10 +39,19 @@ New to the language? Read `docs/learn.html` first, then the `learn/` programs in
 | `cart_checkout` | 0.3 | `map` and `filter` over a cart, `each` on effects, releasing partial holds |
 | `invoice_split` | 0.3 | v0.3.1: `if`, `%`, `++`, indexing, `str`, `pow`, `avg`, `sort`, text functions, a division proven safe by a `match` |
 | **`payroll_run`** | 0.3 | The v0.3 flagship: nested subgraphs, every list function, `each` on effects, a join by implication |
+| `late_invoices` | 0.4 | Imports `lib/billing.grph`; enum inputs, dates and a weekly late fee |
+| **`payroll`** | 0.4 | The v0.4 flagship: `payroll_run` split into `lib/payroll.grph` plus a short program, with enums for regions and approvers |
+
+## lib/
+
+| Library | Declares | Used by |
+|---|---|---|
+| `billing` | the `Line` type and the `LineTotal` subgraph | `late_invoices` |
+| `payroll` | `Region` and `Approver` enums, `Employee` and `Slip` types, `TaxTable`, and the `Gross`, `NetPay`, `Payable` subgraphs | `payroll` |
 
 ## errors/
 
-Each `NAME.grph` makes the checker report exactly the code and line in `NAME.expected` (for example `G007:6`). `graphene explain CODE` describes any code. The files are a quick way to learn the rules: read one, guess the problem, then run `graphene check` on it.
+Each `NAME.grph` makes the checker report exactly the code and line in `NAME.expected` (for example `G007:6`). `graphene explain CODE` describes any code. The files are a quick way to learn the rules: read one, guess the problem, then run `graphene check` on it. `errors/support/` holds small libraries that the import examples import.
 
 ## mocks/
 

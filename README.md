@@ -7,9 +7,33 @@ Graphene is a deterministic dataflow language meant to be written by LLMs and ch
 - background effects such as logging can never influence the output (`assert indep`);
 - parallel execution gives exactly the same result and effect log as sequential execution.
 
-**New to Graphene?** Open [`docs/learn.html`](docs/learn.html) in a browser: 15 short lessons, from a first program to subgraphs, lists, testing and real effects.
+**New to Graphene?** Open [`docs/learn.html`](docs/learn.html) in a browser: 18 short lessons, from a first program to subgraphs, lists, enums, dates, imports, testing and real effects.
 
-This is the v0.3.1 reference implementation, written in Rust. It accepts `#!graphene 0.1`, `0.2` and `0.3` files; an older file means exactly what it meant in its own version.
+This is the v0.4 reference implementation, written in Rust. It accepts `#!graphene 0.1` to `0.4` files; an older file means exactly what it meant in its own version.
+
+## What's new in v0.4
+
+```
+#!graphene 0.4
+import "../lib/billing.grph"                    // shared types, enums, constants, effects, subgraphs
+
+enum Tier { Standard, Gold }
+type Notice = {total: dec, days_late: i64, channel: Channel, remind_by: date}
+
+in tier: Tier
+in due: date
+in today: date
+SUBTOTAL -> f(days_between(due, today)) -> LATE
+OVERDUE -> match tier { Gold => WAIVED, Standard => CHARGED }   // every variant, or the checker says which is missing
+```
+
+- **Type aliases:** `type Slip = {...}` names a type once. Aliases are structural, so code that writes the record out keeps working. An alias that contains itself is G019.
+- **Enums:** `enum Region { Spain, RemoteEu }`, written `Region.Spain` in expressions and bare in `match` arms. A `match` on an enum must list every variant (or `_`), so adding a variant points at every match to update. Inputs and host answers are checked against the variants (R005, R004).
+- **Imports:** `import "lib/payroll.grph"` makes a library's declarations visible. Paths are relative to the importing file, with no search path. Problems with an import are G018; a library's diagnostics point into the library's own file.
+- **Dates:** `date`, `date("2026-11-02")`, comparisons, `days_between`, `add_days`, `year`, `month`, `day`, `weekday`. There is no way to read the clock: today's date is an input, so runs stay deterministic.
+- **Smaller fixes:** keywords as record field names (`{in: 1, out: 2}`, in every version), `min(a, b)` / `max(a, b)`, and a formatter that also wraps long `extern` lines, aliases, enums and expressions.
+- **IDE:** imports resolve against the open files, imported subgraphs are drawn as groups marked with their library, F12 goes to a definition in any file, enum inputs are dropdowns and dates have a date picker, and *Extract selected lines into subgraph* turns a selection into a `graph` block plus a `call`.
+- See `examples/apps/payroll.grph` (with `examples/lib/payroll.grph`) and `examples/apps/late_invoices.grph`, and `docs/v0.4.md` for the design.
 
 ## What's new in v0.3.1
 
@@ -103,6 +127,7 @@ A desktop app (`ide/`) for editing Graphene programs as text or as an Obsidian-s
   - recording of missing mock responses;
   - test cases, run as a list and saved from any run.
 - **v0.3:** subgraphs drawn as groups you can open, a picker for each `map` element's run, real hosts with a Record toggle, and a coverage overlay that dashes untested branches.
+- **v0.4:** programs that import libraries, with the imported subgraphs drawn read-only and problems shown in the right file; go to definition (F12) across files; dropdowns for enum inputs and date pickers; extract into subgraph.
 
 ```sh
 cd ide && npm install
@@ -172,10 +197,13 @@ The `examples/` folder is organized by purpose; `examples/README.md` describes e
 
 - **`learn/`**: small programs, one feature each. Start here.
 - **`apps/`**: realistic programs, including the flagships below.
+- **`lib/`**: v0.4 libraries the apps import (they have no inputs or results of their own).
 - **`errors/`**: one program per diagnostic code.
 - **`mocks/`**: the fake effect answers the test cases use.
 
 Every program in `learn/` and `apps/` has a `.cases.json` next to it. `graphene test --parallel` checks each case against the expected output, sequentially and in parallel.
+
+**`payroll.grph`** is the v0.4 flagship: the same payroll as `payroll_run.grph`, split into `lib/payroll.grph` (enums for regions and approvers, the `Employee` and `Slip` types, and the `NetPay` subgraphs) and a short program. Each record type is written once, a region outside the enum is rejected when the input is read, and the approval `match` lists every approver.
 
 **`payroll_run.grph`** is the v0.3 flagship: a monthly payroll in about 150 lines, with 14 possible outcomes and 6 effects. Its 12 cases reach every outcome, branch and effect (`graphene test --coverage`). It uses every feature of the language:
 - **subgraphs, nested:** `map NetPay` runs once per employee, and each run makes a `call Gross` and a tax lookup at the same time, then joins them; `filter Payable` drops zero pay;
@@ -252,7 +280,7 @@ src/
   runtime/  values, effect host and mock, step function, seq and par executors
   dot.rs    Graphviz export        tokens.rs  token counts        main.rs  CLI
   cases.rs  .cases.json loading, running, and diffing (graphene test)
-docs/       grammar (EBNF), semantics, decision log, v0.2 and v0.3 designs, usage guide
+docs/       grammar (EBNF), semantics, decision log, v0.2 to v0.4 designs, usage guide
 examples/   valid/*.grph with *.cases.json; invalid/*.grph with *.expected
 ```
 
