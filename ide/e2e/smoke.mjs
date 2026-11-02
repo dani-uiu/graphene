@@ -49,7 +49,7 @@ async function open(rel) {
 // 1. Open a program from the file tree; it checks and draws.
 await page.waitForSelector(".tree-file");
 check("file tree lists examples", (await page.$$eval(".tree-file", (els) => els.map((e) => e.textContent))).includes("pricing.grph"));
-await open("examples/valid/pricing.grph");
+await open("examples/learn/pricing.grph");
 let a = await g(() => window.__graphene.store.analysis);
 check("pricing checks", a.checked === true, JSON.stringify(a.diags));
 check("graph has value, op, and terminal nodes", ["value", "op", "match", "out", "fail", "sink", "input"].every((k) => a.nodes.some((n) => n.kind === k)));
@@ -75,8 +75,8 @@ await shot("2-selected");
   const other = await g(() => window.__graphene.app.graph.positionOf("v:D"));
   const view = await g(() => window.__graphene.app.graph.snapshot().view);
   check("dropped node stays pinned", await g(() => window.__graphene.app.graph.isPinned("v:B")));
-  await open("examples/valid/order_total.grph");
-  await g((p) => window.__graphene.app.openFile(p), join(REPO, "examples/valid/pricing.grph"));
+  await open("examples/learn/order_total.grph");
+  await g((p) => window.__graphene.app.openFile(p), join(REPO, "examples/learn/pricing.grph"));
   await settle(1200);
   const back = await g(() => window.__graphene.app.graph.positionOf("v:B"));
   const otherBack = await g(() => window.__graphene.app.graph.positionOf("v:D"));
@@ -114,7 +114,7 @@ await settle(600);
 await page.click(".side-tabs button:nth-child(4)");
 await settle(200);
 await page.type(".run-panel input[type=text]", "1");
-await page.select(".run-panel select.mock-select", join(REPO, "fixtures", "users.json"));
+await page.select(".run-panel select.mock-select", join(REPO, "examples", "mocks", "users.json"));
 await page.click(".run-panel button.primary");
 await page.waitForFunction(() => window.__graphene.store.run !== null);
 await settle(800);
@@ -124,7 +124,7 @@ check("taken branch active, other inactive", run.nodes.find((n) => n.id === "v:C
 await shot("3-run");
 
 // 6. Quick fix from the Problems panel.
-await open("examples/invalid/unhandled_err.grph");
+await open("examples/errors/unhandled_err.grph");
 a = await g(() => window.__graphene.store.analysis);
 check("invalid program shows G005", a.diags.some((d) => d.code === "G005"));
 await page.click(".side-tabs button:nth-child(3)");
@@ -136,8 +136,8 @@ a = await g(() => window.__graphene.store.analysis);
 check("quick fix removes G005", !a.diags.some((d) => d.code === "G005"), JSON.stringify(a.diags.map((d) => d.code)));
 
 // 7. Test cases for a v0.2 program, all passing (also in parallel).
-await open("examples/valid/checkout_v2.grph");
-const cases = await g((p) => window.__graphene.api.runCases(window.__graphene.app.editor.text, p, true), join(REPO, "examples/valid/checkout_v2.grph"));
+await open("examples/apps/checkout_v2.grph");
+const cases = await g((p) => window.__graphene.api.runCases(window.__graphene.app.editor.text, p, true), join(REPO, "examples/apps/checkout_v2.grph"));
 check("checkout_v2 cases all pass", cases.length === 7 && cases.every((c) => c.pass), JSON.stringify(cases.filter((c) => !c.pass)));
 await page.click(".side-tabs button:nth-child(5)");
 await page.click(".panel .row-actions button.primary");
@@ -145,14 +145,14 @@ await settle(900);
 await shot("5-tests");
 
 // 7b. v0.3: subgraphs, a map run with a list input, elements, coverage.
-await open("examples/valid/cart_checkout.grph");
+await open("examples/apps/cart_checkout.grph");
 a = await g(() => window.__graphene.store.analysis);
 check("cart_checkout checks", a.checked === true, JSON.stringify(a.diags));
 check("subgraphs become groups", a.groups.length >= 1 && a.nodes.some((n) => n.group !== null));
 const mapNode = a.nodes.find((n) => n.calls && n.op === "map");
 check("map step names its subgraph", !!mapNode, JSON.stringify(a.nodes.filter((n) => n.calls)));
 await shot("9-groups");
-const cartPath = join(REPO, "examples/valid/cart_checkout.grph");
+const cartPath = join(REPO, "examples/apps/cart_checkout.grph");
 const cartCases = await g((p) => window.__graphene.api.runCases(window.__graphene.app.editor.text, p, true), cartPath);
 check("cart_checkout cases all pass", cartCases.length > 0 && cartCases.every((c) => c.pass), JSON.stringify(cartCases.filter((c) => !c.pass)));
 await page.click(".side-tabs button:nth-child(4)");
@@ -182,7 +182,7 @@ check("coverage report shows totals", /Coverage: \d+\/\d+ outcomes/.test(await p
 await shot("11-coverage");
 
 // 7c. v0.3.1 syntax (if, %, ++, indexing, new functions) checks in the IDE.
-await open("examples/valid/invoice_split.grph");
+await open("examples/apps/invoice_split.grph");
 a = await g(() => window.__graphene.store.analysis);
 check("invoice_split (v0.3.1) checks", a.checked === true, JSON.stringify(a.diags));
 
@@ -213,6 +213,6 @@ await shot("8-palette");
 check("no page errors", errors.length === 0, errors.join(" | "));
 await browser.close();
 // The drag test pins a node, which writes a layout sidecar; remove it.
-rmSync(join(REPO, "examples/valid/pricing.grph.layout.json"), { force: true });
+rmSync(join(REPO, "examples/learn/pricing.grph.layout.json"), { force: true });
 console.log(failures ? `${failures} check(s) failed` : "all checks passed");
 process.exit(failures ? 1 : 0);

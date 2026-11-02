@@ -22,8 +22,8 @@ fn stderr(o: &Output) -> String {
 
 #[test]
 fn check_valid_exits_zero() {
-    for (name, _) in common::examples("valid") {
-        let o = graphene(&["check", &format!("examples/valid/{name}.grph")]);
+    for (name, path) in common::programs() {
+        let o = graphene(&["check", &path.to_string_lossy()]);
         assert_eq!(o.status.code(), Some(0), "{name}: {}", stderr(&o));
         assert!(stdout(&o).starts_with("ok:"));
     }
@@ -31,8 +31,8 @@ fn check_valid_exits_zero() {
 
 #[test]
 fn check_invalid_exits_one_with_code() {
-    for (name, path) in common::examples("invalid") {
-        let o = graphene(&["check", &format!("examples/invalid/{name}.grph")]);
+    for (name, path) in common::errors() {
+        let o = graphene(&["check", &format!("examples/errors/{name}.grph")]);
         assert_eq!(o.status.code(), Some(1), "{name}");
         let code = common::read(&path.with_extension("expected"));
         let code = code.trim().split(':').next().unwrap_or_default();
@@ -49,11 +49,11 @@ fn run_prints_result_and_log() {
     for parallel in [false, true] {
         let mut args = vec![
             "run",
-            "examples/valid/pricing.grph",
+            "examples/learn/pricing.grph",
             "--arg",
             "usr_id=1",
             "--mock",
-            "fixtures/users.json",
+            "examples/mocks/users.json",
         ];
         if parallel {
             args.push("--parallel");
@@ -70,39 +70,39 @@ fn run_prints_result_and_log() {
 fn run_error_result_and_fault_exit_codes() {
     let o = graphene(&[
         "run",
-        "examples/valid/pricing.grph",
+        "examples/learn/pricing.grph",
         "--arg",
         "usr_id=999",
         "--mock",
-        "fixtures/users.json",
+        "examples/mocks/users.json",
     ]);
     assert_eq!(o.status.code(), Some(0));
     assert!(stdout(&o).contains("NotFound"));
     // No mock: the DbFetch call has no response -> fault R003, exit 2.
-    let o = graphene(&["run", "examples/valid/pricing.grph", "--arg", "usr_id=1"]);
+    let o = graphene(&["run", "examples/learn/pricing.grph", "--arg", "usr_id=1"]);
     assert_eq!(o.status.code(), Some(2));
     assert!(stderr(&o).contains("R003"));
     // Missing input -> exit 1 with R005.
-    let o = graphene(&["run", "examples/valid/pricing.grph"]);
+    let o = graphene(&["run", "examples/learn/pricing.grph"]);
     assert_eq!(o.status.code(), Some(1));
     assert!(stderr(&o).contains("R005"));
 }
 
 #[test]
 fn fmt_ascii_and_unicode() {
-    let o = graphene(&["fmt", "examples/valid/order_total.grph"]);
+    let o = graphene(&["fmt", "examples/learn/order_total.grph"]);
     assert_eq!(o.status.code(), Some(0));
     assert_eq!(
         stdout(&o),
-        common::read(&common::root().join("examples/valid/order_total.grph"))
+        common::read(&common::root().join("examples/learn/order_total.grph"))
     );
-    let u = graphene(&["fmt", "--unicode", "examples/valid/pricing.grph"]);
+    let u = graphene(&["fmt", "--unicode", "examples/learn/pricing.grph"]);
     assert!(stdout(&u).contains('➔') && stdout(&u).contains('⊗'));
 }
 
 #[test]
 fn graph_emits_dot_with_dependency_vectors() {
-    let o = graphene(&["graph", "examples/valid/pricing.grph"]);
+    let o = graphene(&["graph", "examples/learn/pricing.grph"]);
     assert_eq!(o.status.code(), Some(0));
     let dot = stdout(&o);
     assert!(dot.starts_with("digraph graphene {"));
@@ -112,7 +112,7 @@ fn graph_emits_dot_with_dependency_vectors() {
 
 #[test]
 fn tokens_reports_both_forms() {
-    let o = graphene(&["tokens", "examples/valid/pricing.grph"]);
+    let o = graphene(&["tokens", "examples/learn/pricing.grph"]);
     assert_eq!(o.status.code(), Some(0));
     let out = stdout(&o);
     assert!(out.contains("ascii:") && out.contains("unicode:") && out.contains("method:"));
@@ -132,7 +132,7 @@ fn test_command_runs_every_cases_file() {
     let out = stdout(&o);
     assert!(out.contains("PASS") && !out.contains("FAIL"), "{out}");
     assert!(out.contains(" passed, 0 failed"), "{out}");
-    let one = graphene(&["test", "examples/valid/conversions.grph"]);
+    let one = graphene(&["test", "examples/learn/conversions.grph"]);
     assert!(
         stdout(&one).contains("3 passed, 0 failed"),
         "{}",
@@ -165,7 +165,7 @@ fn test_command_reports_a_failing_case() {
 
 #[test]
 fn check_json_lists_diagnostics() {
-    let o = graphene(&["check", "--json", "examples/invalid/unhandled_err.grph"]);
+    let o = graphene(&["check", "--json", "examples/errors/unhandled_err.grph"]);
     assert_eq!(o.status.code(), Some(1));
     let j: serde_json::Value = serde_json::from_str(&stdout(&o)).expect("json");
     assert_eq!(j[0]["code"], "G005");
@@ -173,14 +173,14 @@ fn check_json_lists_diagnostics() {
     assert_eq!(j[0]["span"]["col"], 1);
     assert!(j[0]["help"].as_str().is_some_and(|h| !h.is_empty()));
     assert_eq!(j[0]["labels"][0]["text"], "may raise NotFound | DbDown");
-    let ok = graphene(&["check", "--json", "examples/valid/pricing.grph"]);
+    let ok = graphene(&["check", "--json", "examples/learn/pricing.grph"]);
     assert_eq!(ok.status.code(), Some(0));
     assert_eq!(stdout(&ok).trim(), "[]");
 }
 
 #[test]
 fn graph_labels_v02_error_edges_and_parameters() {
-    let o = graphene(&["graph", "examples/valid/checkout_v2.grph"]);
+    let o = graphene(&["graph", "examples/apps/checkout_v2.grph"]);
     assert_eq!(o.status.code(), Some(0));
     let dot = stdout(&o);
     assert!(dot.contains("label=\"err NotFound\""), "{dot}");
@@ -191,14 +191,14 @@ fn graph_labels_v02_error_edges_and_parameters() {
 fn run_with_host_config_records_a_replayable_fixture() {
     let dir = std::env::temp_dir().join(format!("graphene-rec-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
-    let users = common::root().join("fixtures/users.json");
+    let users = common::root().join("examples/mocks/users.json");
     let cfg = dir.join("hosts.json");
     let config = serde_json::json!({ "default": format!("mock:{}", users.display()) });
     std::fs::write(&cfg, config.to_string()).expect("write config");
     let rec = dir.join("recorded.json");
     let live = graphene(&[
         "run",
-        "examples/valid/pricing.grph",
+        "examples/learn/pricing.grph",
         "--arg",
         "usr_id=1",
         "--host",
@@ -209,7 +209,7 @@ fn run_with_host_config_records_a_replayable_fixture() {
     assert_eq!(live.status.code(), Some(0), "{}", stderr(&live));
     let replay = graphene(&[
         "run",
-        "examples/valid/pricing.grph",
+        "examples/learn/pricing.grph",
         "--arg",
         "usr_id=1",
         "--mock",
@@ -223,7 +223,7 @@ fn run_with_host_config_records_a_replayable_fixture() {
 
 #[test]
 fn explain_covers_every_code_the_examples_produce() {
-    for (name, path) in common::examples("invalid") {
+    for (name, path) in common::errors() {
         let expected = common::read(&path.with_extension("expected"));
         let code = expected.trim().split(':').next().unwrap_or_default();
         let o = graphene(&["explain", code]);

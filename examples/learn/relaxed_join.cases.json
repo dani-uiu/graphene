@@ -6,7 +6,7 @@
       "zone": "north",
       "kg": "2.00"
     },
-    "mock": "../../fixtures/relaxed_join.json",
+    "mock": "../mocks/relaxed_join.json",
     "expect": {
       "result": {
         "ok": {
@@ -52,7 +52,7 @@
       "zone": "east",
       "kg": "2.00"
     },
-    "mock": "../../fixtures/relaxed_join.json",
+    "mock": "../mocks/relaxed_join.json",
     "expect": {
       "result": {
         "ok": {
@@ -95,7 +95,7 @@
       "zone": "north",
       "kg": "2.00"
     },
-    "mock": "../../fixtures/relaxed_join.json",
+    "mock": "../mocks/relaxed_join.json",
     "expect": {
       "result": {
         "err": "DbDown"
@@ -133,7 +133,7 @@
       "zone": "north",
       "kg": "2.00"
     },
-    "mock": "../../fixtures/relaxed_join.json",
+    "mock": "../mocks/relaxed_join.json",
     "expect": {
       "result": {
         "ok": {

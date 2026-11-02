@@ -7,9 +7,10 @@ use graphene_ide_core::{analyze, apply, Command, TextEdit};
 use proptest::prelude::*;
 
 fn examples() -> Vec<String> {
-    let dir = format!("{}/../../examples/valid", env!("CARGO_MANIFEST_DIR"));
-    let mut out: Vec<String> = std::fs::read_dir(dir)
-        .expect("examples")
+    let root = format!("{}/../../examples", env!("CARGO_MANIFEST_DIR"));
+    let mut out: Vec<String> = ["learn", "apps"]
+        .iter()
+        .flat_map(|d| std::fs::read_dir(format!("{root}/{d}")).expect("examples"))
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().is_some_and(|x| x == "grph"))
         .map(|p| std::fs::read_to_string(p).expect("read"))

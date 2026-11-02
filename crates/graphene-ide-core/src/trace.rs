@@ -238,8 +238,8 @@ fn value_of(state: &State) -> Option<Json> {
 mod tests {
     use super::*;
 
-    const PRICING: &str = include_str!("../../../examples/valid/pricing.grph");
-    const USERS: &str = include_str!("../../../fixtures/users.json");
+    const PRICING: &str = include_str!("../../../examples/learn/pricing.grph");
+    const USERS: &str = include_str!("../../../examples/mocks/users.json");
 
     fn args(k: &str, v: &str) -> Vec<(String, String)> {
         vec![(k.to_string(), v.to_string())]
@@ -281,8 +281,8 @@ mod tests {
 
     #[test]
     fn map_runs_report_one_element_per_item() {
-        let src = include_str!("../../../examples/valid/cart_checkout.grph");
-        let mock = include_str!("../../../fixtures/cart.json");
+        let src = include_str!("../../../examples/apps/cart_checkout.grph");
+        let mock = include_str!("../../../examples/mocks/cart.json");
         let cart = r#"[{"sku":"mug","qty":2},{"sku":"desk","qty":1}]"#;
         let a = vec![
             ("buyer".to_string(), "7".to_string()),

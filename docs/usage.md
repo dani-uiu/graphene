@@ -19,14 +19,14 @@ If PowerShell says `cargo` (or `dot`) is not recognized, the terminal was opened
 ### 1. `graphene check file.grph`: is the program valid?
 
 ```
-$ graphene check examples/valid/pricing.grph
-ok: examples/valid/pricing.grph (7 values, 7 operations)
+$ graphene check examples/learn/pricing.grph
+ok: examples/learn/pricing.grph (7 values, 7 operations)
 ```
 
 When something's wrong, it shows the error code, the exact spot in the source, and a `help:` line:
 
 ```
-$ graphene check examples/invalid/unhandled_err.grph
+$ graphene check examples/errors/unhandled_err.grph
 G005
   × `fx DbFetch` can fail but the error is not handled
  8 │ A -> fx DbFetch(table: "usr", key: usr_id) -> B
@@ -38,12 +38,12 @@ G005
 - You get one error at a time on purpose: fix it, then check again.
 - **`--json`** prints the same diagnostics as a JSON array, for tools or an LLM fix loop. Each entry has `code`, `message`, `file`, `span` (byte offsets plus 1-based line and column), `labels` and `help`. A valid program prints `[]`.
 - Every code (G001–G021, P001–P005) is listed in `README.md`.
-- The files in `examples/invalid/` each show one error. They're a good way to learn the rules.
+- The files in `examples/errors/` each show one error. They're a good way to learn the rules.
 
 ### 2. `graphene run file.grph --arg name=value --mock fixture.json`: run it
 
 ```
-$ graphene run examples/valid/pricing.grph --arg usr_id=2 --mock fixtures/users.json
+$ graphene run examples/learn/pricing.grph --arg usr_id=2 --mock examples/mocks/users.json
 {
   "result": { "ok": { "final_price": "100.00" } },
   "effects": [
@@ -72,7 +72,7 @@ $ graphene run examples/valid/pricing.grph --arg usr_id=2 --mock fixtures/users.
 
 ### Mock files: fake answers for your effects
 
-`fixtures/users.json`:
+`examples/mocks/users.json`:
 
 ```json
 {
@@ -105,7 +105,7 @@ PASS examples\valid\checkout_v2.grph: premium member, quoted shipping: 3.50*10*0
 24 passed, 0 failed
 ```
 
-- Finds every `X.cases.json` that sits next to an `X.grph`, in the current folder and below. You can also pass files or folders: `graphene test examples/valid/checkout_v2.grph`.
+- Finds every `X.cases.json` that sits next to an `X.grph`, in the current folder and below. You can also pass files or folders: `graphene test examples/apps/checkout_v2.grph`.
 - A case is `{"name", "inputs", "mock", "expect"}`, where `expect` is exactly what `graphene run` would print. That includes faults (`{"fault": {...}, "effects": [...]}`), so expected errors can be tested too.
 - The `mock` path is relative to the `.cases.json` file.
 - A failing case prints the first difference, for example `$.result.ok.y: expected 5, got 4`.
@@ -115,9 +115,9 @@ PASS examples\valid\checkout_v2.grph: premium member, quoted shipping: 3.50*10*0
 ### `graphene test --coverage`: what do the cases miss?
 
 ```
-$ graphene test --coverage examples/valid/subgraph_basics.grph
+$ graphene test --coverage examples/learn/subgraph_basics.grph
 PASS ...
-     examples/valid/subgraph_basics.grph: outcomes 4/5, branches 6/7, effects 0/0
+     examples/learn/subgraph_basics.grph: outcomes 4/5, branches 6/7, effects 0/0
        never reached: line 19: branch call Discount fails with Banned
        never reached: line 20: outcome fail (propagates the error)
 ```
@@ -132,8 +132,8 @@ PASS ...
 A list input is passed as JSON:
 
 ```
-graphene run examples/valid/cart_checkout.grph --arg buyer=7 \
-  --arg 'cart=[{"sku":"mug","qty":2},{"sku":"desk","qty":1}]' --mock fixtures/cart.json
+graphene run examples/apps/cart_checkout.grph --arg buyer=7 \
+  --arg 'cart=[{"sku":"mug","qty":2},{"sku":"desk","qty":1}]' --mock examples/mocks/cart.json
 ```
 
 In the effect log, an entry made inside a subgraph has an `"at"` path, such as `[["PriceLine", 1]]` for the second element of a `map`.
@@ -217,7 +217,7 @@ Solid arrows are the flow, red is the error path, and gray dashed lines show whi
 ### 5. `graphene tokens file.grph`: how many LLM tokens does it cost?
 
 ```
-$ graphene tokens examples/valid/pricing.grph
+$ graphene tokens examples/learn/pricing.grph
 method:  heuristic: characters / 4 (build with --features tokens for tiktoken)
 ascii:   138 tokens (551 bytes)
 unicode: 131 tokens (569 bytes)
@@ -253,7 +253,7 @@ $ graphene run double.grph --arg x=21        # → {"result":{"ok":{"doubled":42
 
 This program has no effects, so it doesn't need `--mock`.
 
-A good way to learn is to copy `examples/valid/pricing.grph` and break it on purpose, then run `check` each time. Some things to try:
+A good way to learn is to copy `examples/learn/pricing.grph` and break it on purpose, then run `check` each time. Some things to try:
 
 - Delete the `_ =>` arm.
 - Point a step back at an earlier box to make a loop.

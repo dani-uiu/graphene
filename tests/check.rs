@@ -14,7 +14,7 @@ fn expected(path: &std::path::Path) -> String {
 
 #[test]
 fn valid_examples_pass() {
-    for (name, path) in common::examples("valid") {
+    for (name, path) in common::programs() {
         let src = common::read(&path);
         if let Err(diags) = graphene::check(&src) {
             panic!("{name} should pass, got {diags:#?}");
@@ -25,7 +25,7 @@ fn valid_examples_pass() {
 #[test]
 fn invalid_examples_fail_with_expected_code_and_line() {
     let mut count = 0;
-    for (name, path) in common::examples("invalid") {
+    for (name, path) in common::errors() {
         let src = common::read(&path);
         let diags = graphene::check(&src).err().unwrap_or_default();
         let got: Vec<String> = diags
@@ -120,7 +120,7 @@ fn records_and_fields() {
 
 #[test]
 fn total_counterexample_names_the_branch() {
-    let path = common::root().join("examples/invalid/not_total.grph");
+    let path = common::root().join("examples/errors/not_total.grph");
     let src = common::read(&path);
     let diags = graphene::check(&src).err().unwrap_or_default();
     assert!(
@@ -165,7 +165,7 @@ const H2: &str = "#!graphene 0.2\n";
 fn relaxed_join_is_v03_only() {
     // D-046: RATE (ok ∨ NotFound) implies SHIP (always), so the join is
     // legal under 0.3; under 0.2 it is still G007, exactly as before.
-    let body = common::read(&common::root().join("examples/valid/relaxed_join.grph"));
+    let body = common::read(&common::root().join("examples/learn/relaxed_join.grph"));
     let as02 = body.replacen("#!graphene 0.3", "#!graphene 0.2", 1);
     assert_eq!(codes(&body), vec![]);
     assert_eq!(codes(&as02), vec![Code::G007]);

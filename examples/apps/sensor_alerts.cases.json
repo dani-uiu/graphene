@@ -6,7 +6,7 @@
       "temp_c": 99,
       "humidity": 40
     },
-    "mock": "../../fixtures/sensors.json",
+    "mock": "../mocks/sensors.json",
     "expect": {
       "result": {
         "ok": {
@@ -57,7 +57,7 @@
       "temp_c": 85,
       "humidity": 40
     },
-    "mock": "../../fixtures/sensors.json",
+    "mock": "../mocks/sensors.json",
     "expect": {
       "result": {
         "ok": {
@@ -100,7 +100,7 @@
       "temp_c": -35,
       "humidity": 40
     },
-    "mock": "../../fixtures/sensors.json",
+    "mock": "../mocks/sensors.json",
     "expect": {
       "result": {
         "ok": {
@@ -143,7 +143,7 @@
       "temp_c": -20,
       "humidity": 90
     },
-    "mock": "../../fixtures/sensors.json",
+    "mock": "../mocks/sensors.json",
     "expect": {
       "result": {
         "ok": {
@@ -186,7 +186,7 @@
       "temp_c": 50,
       "humidity": 40
     },
-    "mock": "../../fixtures/sensors.json",
+    "mock": "../mocks/sensors.json",
     "expect": {
       "result": {
         "ok": {
@@ -229,7 +229,7 @@
       "temp_c": 20,
       "humidity": 40
     },
-    "mock": "../../fixtures/sensors.json",
+    "mock": "../mocks/sensors.json",
     "expect": {
       "result": {
         "err": "UnknownDevice"

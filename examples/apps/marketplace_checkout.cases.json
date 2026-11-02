@@ -6,7 +6,7 @@
       "region": "EU",
       "coupon": "SAVE10"
     },
-    "mock": "../../fixtures/marketplace.json",
+    "mock": "../mocks/marketplace.json",
     "expect": {
       "result": {
         "ok": {
@@ -149,7 +149,7 @@
       "region": "US",
       "coupon": "FREESHIP"
     },
-    "mock": "../../fixtures/marketplace.json",
+    "mock": "../mocks/marketplace.json",
     "expect": {
       "result": {
         "ok": {
@@ -292,7 +292,7 @@
       "region": "EU",
       "coupon": ""
     },
-    "mock": "../../fixtures/marketplace.json",
+    "mock": "../mocks/marketplace.json",
     "expect": {
       "result": {
         "err": "FraudSuspected"
@@ -354,7 +354,7 @@
       "region": "EU",
       "coupon": ""
     },
-    "mock": "../../fixtures/marketplace.json",
+    "mock": "../mocks/marketplace.json",
     "expect": {
       "result": {
         "err": "OutOfStock"
@@ -441,7 +441,7 @@
       "region": "EU",
       "coupon": ""
     },
-    "mock": "../../fixtures/marketplace.json",
+    "mock": "../mocks/marketplace.json",
     "expect": {
       "result": {
         "err": "CardDeclined"
@@ -569,7 +569,7 @@
       "region": "EU",
       "coupon": ""
     },
-    "mock": "../../fixtures/marketplace.json",
+    "mock": "../mocks/marketplace.json",
     "expect": {
       "result": {
         "err": "GatewayDown"
@@ -689,7 +689,7 @@
       "region": "EU",
       "coupon": ""
     },
-    "mock": "../../fixtures/marketplace.json",
+    "mock": "../mocks/marketplace.json",
     "expect": {
       "result": {
         "err": "OverSpendingLimit"
@@ -798,7 +798,7 @@
       "region": "EU",
       "coupon": ""
     },
-    "mock": "../../fixtures/marketplace.json",
+    "mock": "../mocks/marketplace.json",
     "expect": {
       "result": {
         "err": "DbDown"
@@ -847,7 +847,7 @@
       "region": "EU",
       "coupon": ""
     },
-    "mock": "../../fixtures/marketplace.json",
+    "mock": "../mocks/marketplace.json",
     "expect": {
       "result": {
         "err": "NotFound"
@@ -873,7 +873,7 @@
       "region": "EU",
       "coupon": ""
     },
-    "mock": "../../fixtures/marketplace.json",
+    "mock": "../mocks/marketplace.json",
     "expect": {
       "result": {
         "err": "UnknownBuyer"
@@ -922,7 +922,7 @@
       "region": "EU",
       "coupon": ""
     },
-    "mock": "../../fixtures/marketplace.json",
+    "mock": "../mocks/marketplace.json",
     "expect": {
       "result": {
         "err": "UnknownSku"
@@ -986,7 +986,7 @@
       "region": "EU",
       "coupon": ""
     },
-    "mock": "../../fixtures/marketplace.json",
+    "mock": "../mocks/marketplace.json",
     "expect": {
       "result": {
         "err": "Locked"

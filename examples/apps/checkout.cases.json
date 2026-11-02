@@ -4,7 +4,7 @@
     "inputs": {
       "order_id": 1
     },
-    "mock": "../../fixtures/checkout.json",
+    "mock": "../mocks/checkout.json",
     "expect": {
       "result": {
         "ok": {
@@ -81,7 +81,7 @@
     "inputs": {
       "order_id": 2
     },
-    "mock": "../../fixtures/checkout.json",
+    "mock": "../mocks/checkout.json",
     "expect": {
       "result": {
         "ok": {
@@ -158,7 +158,7 @@
     "inputs": {
       "order_id": 3
     },
-    "mock": "../../fixtures/checkout.json",
+    "mock": "../mocks/checkout.json",
     "expect": {
       "result": {
         "err": "OutOfStock"
@@ -208,7 +208,7 @@
     "inputs": {
       "order_id": 4
     },
-    "mock": "../../fixtures/checkout.json",
+    "mock": "../mocks/checkout.json",
     "expect": {
       "result": {
         "err": "NeedsApproval"
@@ -283,7 +283,7 @@
     "inputs": {
       "order_id": 5
     },
-    "mock": "../../fixtures/checkout.json",
+    "mock": "../mocks/checkout.json",
     "expect": {
       "result": {
         "err": "UnknownSku"
@@ -322,7 +322,7 @@
     "inputs": {
       "order_id": 6
     },
-    "mock": "../../fixtures/checkout.json",
+    "mock": "../mocks/checkout.json",
     "expect": {
       "result": {
         "ok": {
@@ -388,7 +388,7 @@
     "inputs": {
       "order_id": 999
     },
-    "mock": "../../fixtures/checkout.json",
+    "mock": "../mocks/checkout.json",
     "expect": {
       "result": {
         "err": "NotFound"

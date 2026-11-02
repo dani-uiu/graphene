@@ -16,7 +16,7 @@ use graphene::runtime::{bind_inputs, run, RawInputs};
 use serde_json::{json, Value as Json};
 
 /// A tiny HTTP effect host on 127.0.0.1: answers DbFetch like
-/// `fixtures/users.json` and records every request body it receives.
+/// `examples/mocks/users.json` and records every request body it receives.
 fn serve() -> (String, Arc<Mutex<Vec<Json>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let url = format!("http://{}/effect", listener.local_addr().expect("addr"));
@@ -58,7 +58,7 @@ fn serve() -> (String, Arc<Mutex<Vec<Json>>>) {
 
 fn pricing() -> graphene::Checked {
     graphene::check(&common::read(
-        &common::root().join("examples/valid/pricing.grph"),
+        &common::root().join("examples/learn/pricing.grph"),
     ))
     .expect("checks")
 }
@@ -78,7 +78,8 @@ fn http_host_answers_like_the_mock_and_gets_emits_after_the_run() {
         .to_string();
     let host = RealHost::from_json_str(&cfg, Path::new(".")).expect("config");
     let checked = pricing();
-    let mock = MockHost::from_file(&common::root().join("fixtures/users.json")).expect("mock");
+    let mock =
+        MockHost::from_file(&common::root().join("examples/mocks/users.json")).expect("mock");
     for usr in [1, 999] {
         let real = run(&checked, &inputs(&checked, usr), &host, false);
         let mocked = run(&checked, &inputs(&checked, usr), &mock, false);

@@ -49,7 +49,7 @@ fn examples_roundtrip() {
 
 #[test]
 fn canonical_example_is_already_formatted() {
-    let path = common::root().join("examples/valid/order_total.grph");
+    let path = common::root().join("examples/learn/order_total.grph");
     let src = common::read(&path);
     let (prog, _) = parse(&src);
     assert_eq!(format(&prog, ASCII), src);

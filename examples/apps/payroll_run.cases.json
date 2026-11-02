@@ -28,7 +28,7 @@
         }
       ]
     },
-    "mock": "../../fixtures/payroll.json",
+    "mock": "../mocks/payroll.json",
     "expect": {
       "result": {
         "ok": {
@@ -322,7 +322,7 @@
         }
       ]
     },
-    "mock": "../../fixtures/payroll.json",
+    "mock": "../mocks/payroll.json",
     "expect": {
       "result": {
         "ok": {
@@ -490,7 +490,7 @@
         }
       ]
     },
-    "mock": "../../fixtures/payroll.json",
+    "mock": "../mocks/payroll.json",
     "expect": {
       "result": {
         "err": "InsufficientFunds"
@@ -588,7 +588,7 @@
         }
       ]
     },
-    "mock": "../../fixtures/payroll.json",
+    "mock": "../mocks/payroll.json",
     "expect": {
       "result": {
         "err": "InsufficientFunds"
@@ -648,7 +648,7 @@
         }
       ]
     },
-    "mock": "../../fixtures/payroll.json",
+    "mock": "../mocks/payroll.json",
     "expect": {
       "result": {
         "err": "InsufficientFunds"
@@ -722,7 +722,7 @@
         }
       ]
     },
-    "mock": "../../fixtures/payroll.json",
+    "mock": "../mocks/payroll.json",
     "expect": {
       "result": {
         "err": "PeriodFrozen"
@@ -752,7 +752,7 @@
         }
       ]
     },
-    "mock": "../../fixtures/payroll.json",
+    "mock": "../mocks/payroll.json",
     "expect": {
       "result": {
         "err": "UnknownRegion"
@@ -842,7 +842,7 @@
         }
       ]
     },
-    "mock": "../../fixtures/payroll.json",
+    "mock": "../mocks/payroll.json",
     "expect": {
       "result": {
         "err": "TaxServiceDown"
@@ -919,7 +919,7 @@
       "approver": "cfo",
       "staff": []
     },
-    "mock": "../../fixtures/payroll.json",
+    "mock": "../mocks/payroll.json",
     "expect": {
       "result": {
         "err": "NothingToPay"
@@ -967,7 +967,7 @@
         }
       ]
     },
-    "mock": "../../fixtures/payroll.json",
+    "mock": "../mocks/payroll.json",
     "expect": {
       "result": {
         "err": "NotApproved"
@@ -1065,7 +1065,7 @@
         }
       ]
     },
-    "mock": "../../fixtures/payroll.json",
+    "mock": "../mocks/payroll.json",
     "expect": {
       "result": {
         "err": "TransferRejected"
@@ -1194,7 +1194,7 @@
         }
       ]
     },
-    "mock": "../../fixtures/payroll.json",
+    "mock": "../mocks/payroll.json",
     "expect": {
       "result": {
         "err": "BankDown"

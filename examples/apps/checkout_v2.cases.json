@@ -7,7 +7,7 @@
       "qty": 10,
       "zone": "north"
     },
-    "mock": "../../fixtures/checkout_v2.json",
+    "mock": "../mocks/checkout_v2.json",
     "expect": {
       "result": {
         "ok": {
@@ -77,7 +77,7 @@
       "qty": 2,
       "zone": "south"
     },
-    "mock": "../../fixtures/checkout_v2.json",
+    "mock": "../mocks/checkout_v2.json",
     "expect": {
       "result": {
         "ok": {
@@ -147,7 +147,7 @@
       "qty": 1,
       "zone": "east"
     },
-    "mock": "../../fixtures/checkout_v2.json",
+    "mock": "../mocks/checkout_v2.json",
     "expect": {
       "result": {
         "ok": {
@@ -206,7 +206,7 @@
       "qty": 1,
       "zone": "north"
     },
-    "mock": "../../fixtures/checkout_v2.json",
+    "mock": "../mocks/checkout_v2.json",
     "expect": {
       "result": {
         "err": "DbDown"
@@ -248,7 +248,7 @@
       "qty": 9,
       "zone": "north"
     },
-    "mock": "../../fixtures/checkout_v2.json",
+    "mock": "../mocks/checkout_v2.json",
     "expect": {
       "result": {
         "err": "OutOfStock"
@@ -287,7 +287,7 @@
       "qty": 2,
       "zone": "north"
     },
-    "mock": "../../fixtures/checkout_v2.json",
+    "mock": "../mocks/checkout_v2.json",
     "expect": {
       "result": {
         "err": "NeedsApproval"
@@ -351,7 +351,7 @@
       "qty": 1,
       "zone": "north"
     },
-    "mock": "../../fixtures/checkout_v2.json",
+    "mock": "../mocks/checkout_v2.json",
     "expect": {
       "result": {
         "err": "UnknownSku"

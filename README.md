@@ -22,7 +22,7 @@ summary: "Invoice for " + upper(customer) + ": " + str(TOTAL)
 - **Division by a value**, when the program has ruled out zero first (`if n > 0 then a / n else 0`, or a `match` arm). Division by zero is still impossible at runtime.
 - **Operators:** `%` (remainder), `++` (join lists), `xs[i]` (index; out of range is the new fault R008), `<` / `>` on text, and `if c then a else b`, which only evaluates the branch it takes.
 - **Functions:** `str`, `abs`, `pow`, `avg`, `first`, `last`, `sort`, `reverse`, `upper`, `lower`, `starts_with`, `ends_with`; `len` and `contains` also work on text.
-- Files still start with `#!graphene 0.3`: every valid 0.3 program keeps its meaning. See `examples/valid/invoice_split.grph`.
+- Files still start with `#!graphene 0.3`: every valid 0.3 program keeps its meaning. See `examples/apps/invoice_split.grph`.
 
 ## What's new in v0.3
 
@@ -47,7 +47,7 @@ DECLINED -> fx~ Release(reservation: each TRIES.reservation) -> sink UNDO_DECLIN
 - **Real hosts:** `graphene run --host hosts.json` answers effects over HTTP or with local commands; `--record` saves a run as a mock fixture you can replay.
 - **Tooling:** `graphene test --coverage` lists outcomes and branches no case reaches, `graphene explain CODE` explains any code, and messages suggest the closest name ("did you mean `TOTAL`?").
 
-See `examples/valid/cart_checkout.grph` for most of it together, and `docs/v0.3.md` for the design.
+See `examples/apps/cart_checkout.grph` for most of it together, and `docs/v0.3.md` for the design.
 
 ## What's new in v0.2
 
@@ -65,7 +65,7 @@ SHIP -> f({subtotal: ITEM.price * dec(qty) * RATE, shipping: SHIP}) -> BILL
 - **Conversions** `u64()`, `i64()` and `dec()`. These are explicit and checked; out-of-range is R001.
 - **`graphene test`** runs every `.cases.json`. **`graphene check --json`** prints diagnostics as data.
 
-See `examples/valid/checkout_v2.grph` for all of them together, and `docs/v0.2.md` for the design.
+See `examples/apps/checkout_v2.grph` for all of them together, and `docs/v0.2.md` for the design.
 
 ```
 #!graphene 0.1
@@ -120,35 +120,35 @@ You need a stable Rust toolchain. On Windows without Visual Studio, use the GNU 
 cargo build --release
 
 # Check a program (exit 0 = valid, 1 = diagnostics)
-graphene check examples/valid/pricing.grph
-graphene check --json examples/invalid/unhandled_err.grph   # diagnostics as JSON
+graphene check examples/learn/pricing.grph
+graphene check --json examples/errors/unhandled_err.grph   # diagnostics as JSON
 
 # Run every X.cases.json next to an X.grph (exit 1 if any case fails)
 graphene test
-graphene test --parallel examples/valid/checkout_v2.grph
+graphene test --parallel examples/apps/checkout_v2.grph
 graphene test --coverage --min-outcomes 80     # which outcomes/branches no case reaches
 
 # What does a code mean, and how do I fix it?
 graphene explain G007
 
 # Run it against mocked effects (exit 2 = runtime fault)
-graphene run examples/valid/pricing.grph --arg usr_id=1 --mock fixtures/users.json
-graphene run examples/valid/pricing.grph --arg usr_id=1 --mock fixtures/users.json --parallel
+graphene run examples/learn/pricing.grph --arg usr_id=1 --mock examples/mocks/users.json
+graphene run examples/learn/pricing.grph --arg usr_id=1 --mock examples/mocks/users.json --parallel
 
 # List inputs are JSON; real hosts and record/replay (see docs/usage.md)
-graphene run examples/valid/cart_checkout.grph --arg buyer=7 --arg 'cart=[{"sku":"mug","qty":2}]' --mock fixtures/cart.json
+graphene run examples/apps/cart_checkout.grph --arg buyer=7 --arg 'cart=[{"sku":"mug","qty":2}]' --mock examples/mocks/cart.json
 graphene run order.grph --arg order_id=1 --host hosts.json --record replay.json
 
 # Canonical formatting, ASCII or Unicode
-graphene fmt examples/valid/pricing.grph
-graphene fmt --unicode examples/valid/pricing.grph
-graphene fmt --write examples/valid/pricing.grph
+graphene fmt examples/learn/pricing.grph
+graphene fmt --unicode examples/learn/pricing.grph
+graphene fmt --write examples/learn/pricing.grph
 
 # Graphviz DOT with order, guard, type, and dependency vector per node
-graphene graph examples/valid/order_total.grph | dot -Tsvg > order_total.svg
+graphene graph examples/learn/order_total.grph | dot -Tsvg > order_total.svg
 
 # Approximate token counts (heuristic; build with --features tokens for tiktoken)
-graphene tokens examples/valid/pricing.grph
+graphene tokens examples/learn/pricing.grph
 ```
 
 `run` prints JSON with the result first, then the effect log:
@@ -168,26 +168,14 @@ graphene tokens examples/valid/pricing.grph
 
 ## Examples
 
-Every program in `examples/valid/` has a `.cases.json` file next to it. `graphene test --parallel` checks each case against the expected output, sequentially and in parallel.
+The `examples/` folder is organized by purpose; `examples/README.md` describes every program.
 
-| Program | Shows |
-|---|---|
-| `pricing` | The reference program from the language brief: one effect, a match, an async log (v0.1) |
-| `order_total` | Two independent branches joined into one total |
-| `safe_balance` | Recovering from an error into a merge |
-| `checkout` / `checkout_v2` | The same order pipeline in v0.1 and v0.2 style, side by side |
-| `conversions` | Every numeric conversion, including truncation and out-of-range faults |
-| `loan_approval` | Error routing per variant with a default record, nested decision tiers, an affordability rule with `&&` |
-| `sensor_alerts` | Negative `i64` math, `\|\|` conditions, target annotations that type literals inside records |
-| `subscription_renewal` | Proration with exact decimals, credit-first logic, three payment errors routed separately, `u64()` truncation |
-| **`marketplace_checkout`** | The v0.2 flagship, below |
-| `subgraph_basics` | v0.3: one subgraph called twice with `call`; its declared error propagates |
-| `lists_and_aggregates` | v0.3: list inputs, `filter`, `len`, `sum`, `min`, `max`, `contains` |
-| `constants_and_rounding` | v0.3: `const`, `round` / `floor` / `ceil`, a `dec(4)` output, string `+` |
-| `relaxed_join` | v0.3: the v0.2 join that was illegal, now accepted because one branch's condition implies the other's |
-| `cart_checkout` | v0.3: `map` and `filter` over a cart, `each` on effects, releasing partial holds |
-| `invoice_split` | v0.3.1: `if`, `%`, `++`, indexing, `str`, `pow`, `avg`, `sort`, text functions, and a division proven safe by a `match` |
-| **`payroll_run`** | **Everything in v0.3 in one program**, below |
+- **`learn/`**: small programs, one feature each. Start here.
+- **`apps/`**: realistic programs, including the flagships below.
+- **`errors/`**: one program per diagnostic code.
+- **`mocks/`**: the fake effect answers the test cases use.
+
+Every program in `learn/` and `apps/` has a `.cases.json` next to it. `graphene test --parallel` checks each case against the expected output, sequentially and in parallel.
 
 **`payroll_run.grph`** is the v0.3 flagship: a monthly payroll in about 150 lines, with 14 possible outcomes and 6 effects. Its 12 cases reach every outcome, branch and effect (`graphene test --coverage`). It uses every feature of the language:
 - **subgraphs, nested:** `map NetPay` runs once per employee, and each run makes a `call Gross` and a tax lookup at the same time, then joins them; `filter Payable` drops zero pay;

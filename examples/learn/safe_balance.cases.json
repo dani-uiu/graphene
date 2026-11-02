@@ -2,7 +2,7 @@
   {
     "name": "balance above minimum",
     "inputs": { "usr_id": 1 },
-    "mock": "../../fixtures/users.json",
+    "mock": "../mocks/users.json",
     "expect": {
       "result": { "ok": { "balance": "100.00" } },
       "effects": [
@@ -14,7 +14,7 @@
   {
     "name": "balance below minimum",
     "inputs": { "usr_id": 3 },
-    "mock": "../../fixtures/users.json",
+    "mock": "../mocks/users.json",
     "expect": {
       "result": { "err": "LowBalance" },
       "effects": [
@@ -26,7 +26,7 @@
   {
     "name": "missing user recovers to 0.00, then fails the minimum",
     "inputs": { "usr_id": 999 },
-    "mock": "../../fixtures/users.json",
+    "mock": "../mocks/users.json",
     "expect": {
       "result": { "err": "LowBalance" },
       "effects": [

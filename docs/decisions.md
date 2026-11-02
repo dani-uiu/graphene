@@ -47,7 +47,7 @@ The determinism guarantee is stronger this way, because it covers the order and 
 
 ## D-008 — Merge exclusivity also accepts the ok/err branches of one effect · Proposed
 **Problem.** The brief says merge writers "must sit on different arms of the same `match`". That forbids error recovery such as `B -> f(B.bal) -> BAL` with `E -> f(0.00) -> BAL`, even though the success and error branches of one `fx` are exclusive by construction.
-**Choice.** Treat the two outcomes of an `fx` exactly like a two-arm match. Both cases fall out of one rule: the guard algebra in `semantics.md` §4.1. `examples/valid/safe_balance.grph` exercises this.
+**Choice.** Treat the two outcomes of an `fx` exactly like a two-arm match. Both cases fall out of one rule: the guard algebra in `semantics.md` §4.1. `examples/learn/safe_balance.grph` exercises this.
 
 ## D-009 — One guard algebra for G006, G007 and G020 · Proposed
 **Problem.** The brief describes merge, join and totality checks informally.

@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn dispatch_matches_direct_calls() {
-        let text = include_str!("../../../examples/valid/pricing.grph");
+        let text = include_str!("../../../examples/learn/pricing.grph");
         let a = dispatch("analyze", &json!({ "text": text })).expect("analyze");
         assert_eq!(a["checked"], true);
         let edits = dispatch(
@@ -359,13 +359,13 @@ mod tests {
 
     #[test]
     fn relative_paths_for_cases() {
-        let file = Path::new("/a/examples/valid/x.cases.json");
+        let file = Path::new("/a/examples/apps/x.cases.json");
         assert_eq!(
-            relative_to(file, Path::new("/a/fixtures/users.json")),
-            "../../fixtures/users.json"
+            relative_to(file, Path::new("/a/examples/mocks/users.json")),
+            "../mocks/users.json"
         );
         assert_eq!(
-            relative_to(file, Path::new("/a/examples/valid/m.json")),
+            relative_to(file, Path::new("/a/examples/apps/m.json")),
             "m.json"
         );
     }

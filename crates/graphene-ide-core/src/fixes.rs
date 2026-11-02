@@ -179,16 +179,16 @@ mod tests {
     #[test]
     fn fixes_resolve_their_diagnostic() {
         for (path, gone) in [
-            ("examples/invalid/unhandled_err.grph", "G005"),
-            ("examples/invalid/uncovered_variant.grph", "G005"),
-            ("examples/invalid/redundant_arm.grph", "G014"),
-            ("examples/invalid/redundant_catchall.grph", "G014"),
-            ("examples/invalid/two_outs.grph", "G011"),
-            ("examples/invalid/input_node_ref.grph", "G002"),
-            ("examples/invalid/unused_param.grph", "G008"),
-            ("examples/invalid/v01_feature.grph", "P006"),
-            ("examples/invalid/v01_input_scope.grph", "G009"),
-            ("examples/invalid/nonexhaustive.grph", "G004"),
+            ("examples/errors/unhandled_err.grph", "G005"),
+            ("examples/errors/uncovered_variant.grph", "G005"),
+            ("examples/errors/redundant_arm.grph", "G014"),
+            ("examples/errors/redundant_catchall.grph", "G014"),
+            ("examples/errors/two_outs.grph", "G011"),
+            ("examples/errors/input_node_ref.grph", "G002"),
+            ("examples/errors/unused_param.grph", "G008"),
+            ("examples/errors/v01_feature.grph", "P006"),
+            ("examples/errors/v01_input_scope.grph", "G009"),
+            ("examples/errors/nonexhaustive.grph", "G004"),
         ] {
             let out = fixed(path);
             let codes: Vec<String> = match graphene::check(&out) {

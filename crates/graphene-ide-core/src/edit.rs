@@ -757,7 +757,7 @@ mod tests {
     use super::*;
     use crate::text::apply_edits;
 
-    const PRICING: &str = include_str!("../../../examples/valid/pricing.grph");
+    const PRICING: &str = include_str!("../../../examples/learn/pricing.grph");
 
     fn run(src: &str, cmd: Command) -> String {
         let edits = apply(src, &cmd).unwrap_or_else(|e| panic!("{cmd:?}: {e}"));

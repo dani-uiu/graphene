@@ -6,7 +6,7 @@
       "amount": "20000.00",
       "months": 36
     },
-    "mock": "../../fixtures/loans.json",
+    "mock": "../mocks/loans.json",
     "expect": {
       "result": {
         "ok": {
@@ -60,7 +60,7 @@
       "amount": "10000.00",
       "months": 24
     },
-    "mock": "../../fixtures/loans.json",
+    "mock": "../mocks/loans.json",
     "expect": {
       "result": {
         "ok": {
@@ -114,7 +114,7 @@
       "amount": "50000.00",
       "months": 12
     },
-    "mock": "../../fixtures/loans.json",
+    "mock": "../mocks/loans.json",
     "expect": {
       "result": {
         "err": "TooMuchDebt"
@@ -161,7 +161,7 @@
       "amount": "5000.00",
       "months": 12
     },
-    "mock": "../../fixtures/loans.json",
+    "mock": "../mocks/loans.json",
     "expect": {
       "result": {
         "err": "CreditTooLow"
@@ -197,7 +197,7 @@
       "amount": "5000.00",
       "months": 12
     },
-    "mock": "../../fixtures/loans.json",
+    "mock": "../mocks/loans.json",
     "expect": {
       "result": {
         "err": "TooMuchDebt"
@@ -244,7 +244,7 @@
       "amount": "5000.00",
       "months": 12
     },
-    "mock": "../../fixtures/loans.json",
+    "mock": "../mocks/loans.json",
     "expect": {
       "result": {
         "err": "BureauDown"
@@ -270,7 +270,7 @@
       "amount": "5000.00",
       "months": 12
     },
-    "mock": "../../fixtures/loans.json",
+    "mock": "../mocks/loans.json",
     "expect": {
       "result": {
         "err": "IncomeUnverified"

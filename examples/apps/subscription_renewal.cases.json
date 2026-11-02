@@ -5,7 +5,7 @@
       "id": 1,
       "plan": "pro"
     },
-    "mock": "../../fixtures/subscriptions.json",
+    "mock": "../mocks/subscriptions.json",
     "expect": {
       "result": {
         "ok": {
@@ -48,7 +48,7 @@
       "id": 2,
       "plan": "team"
     },
-    "mock": "../../fixtures/subscriptions.json",
+    "mock": "../mocks/subscriptions.json",
     "expect": {
       "result": {
         "ok": {
@@ -102,7 +102,7 @@
       "id": 3,
       "plan": "pro"
     },
-    "mock": "../../fixtures/subscriptions.json",
+    "mock": "../mocks/subscriptions.json",
     "expect": {
       "result": {
         "err": "PaymentDeclined"
@@ -149,7 +149,7 @@
       "id": 4,
       "plan": "basic"
     },
-    "mock": "../../fixtures/subscriptions.json",
+    "mock": "../mocks/subscriptions.json",
     "expect": {
       "result": {
         "err": "CardExpired"
@@ -196,7 +196,7 @@
       "id": 5,
       "plan": "basic"
     },
-    "mock": "../../fixtures/subscriptions.json",
+    "mock": "../mocks/subscriptions.json",
     "expect": {
       "result": {
         "err": "GatewayDown"
@@ -235,7 +235,7 @@
       "id": 999,
       "plan": "pro"
     },
-    "mock": "../../fixtures/subscriptions.json",
+    "mock": "../mocks/subscriptions.json",
     "expect": {
       "result": {
         "err": "Closed"

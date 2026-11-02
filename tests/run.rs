@@ -1,4 +1,4 @@
-//! Runtime tests: every case in every `examples/valid/*.cases.json`
+//! Runtime tests: every case in every `.cases.json` under `examples/learn/` and `examples/apps/`
 //! produces the expected result and effect log under the sequential
 //! interpreter; faults R001–R005 are reported with the right code.
 
@@ -13,7 +13,7 @@ use serde_json::Value as Json;
 #[test]
 fn valid_examples_produce_expected_results_and_logs() {
     let mut total = 0;
-    for (name, path) in common::examples("valid") {
+    for (name, path) in common::programs() {
         let checked = graphene::check(&common::read(&path)).expect("valid example checks");
         for case in cases::load(&cases_path(&path)).expect("cases load") {
             let got = run_case(&checked, &case, false)
@@ -28,7 +28,7 @@ fn valid_examples_produce_expected_results_and_logs() {
 #[test]
 fn v01_examples_behave_the_same_under_a_02_header() {
     // D-036: v0.2 is a strict superset of v0.1.
-    for (name, path) in common::examples("valid") {
+    for (name, path) in common::programs() {
         let src = common::read(&path);
         if !src.starts_with("#!graphene 0.1") {
             continue;
@@ -78,7 +78,7 @@ fn overflow_is_r001() {
 
 #[test]
 fn no_result_is_r002() {
-    let src = common::read(&common::root().join("examples/invalid/not_total.grph"));
+    let src = common::read(&common::root().join("examples/errors/not_total.grph"));
     let src = src.replace("assert total", "");
     assert_eq!(
         fault_of(&src, serde_json::json!({"amount": "-1.00"}), None),
@@ -138,7 +138,7 @@ fn fault_keeps_only_the_log_prefix() {
 
 #[test]
 fn cli_style_args_bind_by_type() {
-    let path = common::root().join("examples/valid/order_total.grph");
+    let path = common::root().join("examples/learn/order_total.grph");
     let checked = graphene::check(&common::read(&path)).expect("checks");
     let args = vec![
         ("subtotal".to_string(), "1000.00".to_string()),
@@ -152,7 +152,7 @@ fn cli_style_args_bind_by_type() {
 #[test]
 fn v02_examples_behave_the_same_under_a_03_header() {
     // v0.3 is a strict superset of v0.2 (D-036 extended).
-    for (name, path) in common::examples("valid") {
+    for (name, path) in common::programs() {
         let src = common::read(&path);
         if !src.starts_with("#!graphene 0.2") {
             continue;
