@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G019
+
+  × type `Order` refers to itself
+   ╭─[alias_cycle.grph:4:6]
+ 3 │ 
+ 4 │ type Order = {id: u64, customer: Customer}
+   ·      ──┬──
+   ·        ╰── this type never ends
+ 5 │ type Customer = {name: str, last_order: Order}
+   ╰────
+  help: `Order` contains `Customer`, which contains `Order`; records must be finite, so refer to
+        the other record by an id instead, e.g. `order_id: u64`

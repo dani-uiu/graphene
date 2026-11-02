@@ -15,6 +15,7 @@
 //!   (`Stop::Silent`), so one mistake yields one diagnostic.
 
 mod more;
+mod v04;
 
 use std::collections::BTreeMap;
 
@@ -473,12 +474,35 @@ enum EachRule {
 impl Checker<'_> {
     fn match_op(&mut self, v: VId, scrutinee: &IExpr, arms: &[IArm]) -> R<()> {
         let st = self.infer(scrutinee, None)?;
+        if let Type::Enum(name, _) = &st {
+            self.match_enum(v, name, arms)?;
+            return self.match_targets(v);
+        }
+        if let Some(arm) = arms.iter().find(|a| a.variant.is_some()) {
+            return Err(g003(
+                arm.span,
+                format!(
+                    "`{}` is an enum variant, but the scrutinee is `{st}`",
+                    arm.text
+                ),
+                "not a literal",
+                format!(
+                    "match a `{st}` with literals or `_`; to match text, quote it: `\"{}\"`",
+                    arm.text
+                ),
+            )
+            .into());
+        }
         if !matches!(st, Type::Str | Type::U64 | Type::I64 | Type::Bool) {
             return Err(g003(
                 scrutinee.span,
                 format!("cannot match on `{st}`"),
                 "unsupported scrutinee",
-                "match on a str, u64, i64, or bool value",
+                if self.g.version >= (0, 4) {
+                    "match on a str, u64, i64, bool, or enum value"
+                } else {
+                    "match on a str, u64, i64, or bool value"
+                },
             )
             .into());
         }
@@ -521,6 +545,11 @@ impl Checker<'_> {
             .help(help)
             .into());
         }
+        self.match_targets(v)
+    }
+
+    /// Every arm target receives the match's source value.
+    fn match_targets(&mut self, v: VId) -> R<()> {
         let source_ty = self.ty_of(self.g.src(v))?;
         for (e, t) in self.g.outs(v) {
             let span = e.span;
@@ -591,6 +620,10 @@ impl Checker<'_> {
             IKind::If(..) => self.if_expr(e, hint),
             IKind::Index(b, i) => self.index(b, i),
             IKind::Typed(_, ty, _) => Ok(ty.clone()),
+            IKind::Variant(e, _) => Ok(Type::Enum(
+                e.clone(),
+                self.g.enums.get(e).cloned().unwrap_or_default(),
+            )),
             IKind::Convert(to, x) => {
                 let t = self.infer(x, None)?;
                 if !t.is_numeric() {
@@ -696,13 +729,18 @@ impl Checker<'_> {
 
     /// Built-in functions (D-044, D-052).
     fn builtin(&self, b: Builtin, args: &[IExpr], hint: Option<&Type>, span: Span) -> R<Type> {
-        if args.len() != b.arity() {
+        let two_ok = self.g.version >= (0, 4);
+        if !(args.len() == b.arity() || (two_ok && b.accepts(args.len()))) {
+            let takes = if two_ok && matches!(b, Builtin::Min | Builtin::Max) {
+                "1 or 2".to_string()
+            } else {
+                b.arity().to_string()
+            };
             return Err(g003(
                 span,
                 format!(
-                    "`{}` takes {} argument(s), got {}",
+                    "`{}` takes {takes} argument(s), got {}",
                     b.name(),
-                    b.arity(),
                     args.len()
                 ),
                 "wrong number of arguments",
@@ -712,6 +750,9 @@ impl Checker<'_> {
         }
         if b.is_v031() {
             return self.builtin_more(b, args, hint, span);
+        }
+        if b.is_v04() || args.len() == 2 && matches!(b, Builtin::Min | Builtin::Max) {
+            return self.builtin_v04(b, args, hint, span);
         }
         if matches!(b, Builtin::Len | Builtin::Contains) {
             if let Some(t) = self.text_fn(b, args) {
@@ -757,7 +798,9 @@ impl Checker<'_> {
         let ok = match b {
             Builtin::Len => true,
             Builtin::Sum => elem.is_numeric(),
-            Builtin::Min | Builtin::Max => elem.is_numeric() || elem == Type::Str,
+            Builtin::Min | Builtin::Max => {
+                elem.is_numeric() || elem == Type::Str || elem == Type::Date
+            }
             _ => elem == Type::Bool,
         };
         if !ok {
@@ -889,15 +932,22 @@ impl Checker<'_> {
         let ordered_text = lt == Type::Str && self.g.version >= (0, 3);
         let ok = match op {
             BinOp::Eq | BinOp::Ne => lt.is_scalar(),
-            BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => lt.is_numeric() || ordered_text,
+            BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                lt.is_numeric() || ordered_text || lt == Type::Date
+            }
             _ => lt.is_numeric(),
         };
         if !ok {
+            let help = match &lt {
+                Type::Enum(..) => "enum variants have no order; compare them with `==` or `!=`, or `match` on them",
+                Type::Date => "dates are compared with `<`, `==`, ...; count days with `days_between(a, b)` and move with `add_days(d, n)`",
+                _ => "arithmetic and ordering need u64, i64, or dec",
+            };
             return Err(g003(
                 span,
                 format!("`{}` is not defined for `{lt}`", op.ascii()),
                 "unsupported operand type",
-                "arithmetic and ordering need u64, i64, or dec",
+                help,
             )
             .into());
         }
@@ -959,7 +1009,7 @@ fn builtin_help(b: Builtin) -> String {
         Builtin::Len => "`len(xs)` counts the elements of any list".into(),
         Builtin::Sum => "`sum(xs)` adds a list of numbers; an empty list sums to 0".into(),
         Builtin::Min | Builtin::Max => format!(
-            "`{}(xs)` takes a list of numbers or strings; an empty list is fault R006",
+            "`{0}(xs)` takes a list of numbers, strings or dates (an empty list is fault R006); since v0.4 `{0}(a, b)` takes two values",
             b.name()
         ),
         Builtin::All | Builtin::Any => format!("`{}(xs)` takes a list of bools", b.name()),

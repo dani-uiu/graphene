@@ -18,7 +18,7 @@ const RUNS: usize = 200;
 #[test]
 fn parallel_matches_sequential_200_times() {
     for (name, path) in common::programs() {
-        let checked = graphene::check(&common::read(&path)).expect("checks");
+        let checked = graphene::check_file(&path).expect("checks");
         let cases = graphene::cases::load(&graphene::cases::cases_path(&path)).expect("cases");
         for case in cases {
             let host = match &case.mock {

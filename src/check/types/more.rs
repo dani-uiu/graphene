@@ -162,7 +162,7 @@ impl Checker<'_> {
         };
         let ok = match b {
             Builtin::Avg => elem.is_numeric(),
-            Builtin::Sort => elem.is_numeric() || **elem == Type::Str,
+            Builtin::Sort => elem.is_ordered(),
             _ => true,
         };
         if !ok {

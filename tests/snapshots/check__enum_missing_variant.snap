@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G004
+
+  × match on `Size` is not exhaustive
+   ╭─[enum_missing_variant.grph:7:1]
+ 6 │ in size: Size -> S
+ 7 │ S -> match size { Small => CHEAP, Medium => CHEAP }
+   · ─────────────────────────┬─────────────────────────
+   ·                          ╰── no arm for `Large`
+ 8 │ CHEAP -> f(1) -> R
+   ╰────
+  help: add an arm for `Large`, or a `_ => Node` arm

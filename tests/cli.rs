@@ -236,3 +236,76 @@ fn explain_covers_every_code_the_examples_produce() {
     assert_eq!(unknown.status.code(), Some(2));
     assert!(stderr(&unknown).contains("unknown code"));
 }
+
+#[test]
+fn multi_file_programs_check_run_and_test() {
+    // check: a program with imports, and a library on its own.
+    let o = graphene(&["check", "examples/apps/payroll.grph"]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let o = graphene(&["check", "examples/lib/payroll.grph"]);
+    assert!(stdout(&o).contains("library"), "{}", stdout(&o));
+    // run: an enum input and a date input, through an imported subgraph.
+    let o = graphene(&[
+        "run",
+        "examples/apps/late_invoices.grph",
+        "--arg",
+        "customer=acme",
+        "--arg",
+        "tier=Gold",
+        "--arg",
+        "due=2026-10-01",
+        "--arg",
+        "today=2026-10-24",
+        "--arg",
+        r#"lines=[{"sku": "desk", "qty": 1, "price": "150.00"}]"#,
+    ]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert!(
+        stdout(&o).contains("\"total\": \"150.00\""),
+        "{}",
+        stdout(&o)
+    );
+    let o = graphene(&[
+        "run",
+        "examples/apps/late_invoices.grph",
+        "--arg",
+        "customer=acme",
+        "--arg",
+        "tier=Platinum",
+        "--arg",
+        "due=2026-10-01",
+        "--arg",
+        "today=2026-10-24",
+        "--arg",
+        "lines=[]",
+    ]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(stderr(&o).contains("R005"), "{}", stderr(&o));
+    // test: coverage counts the imported subgraphs.
+    let o = graphene(&["test", "--coverage", "examples/apps/payroll.grph"]);
+    assert_eq!(o.status.code(), Some(0), "{}", stdout(&o));
+    assert!(stdout(&o).contains("6 passed, 0 failed"), "{}", stdout(&o));
+}
+
+#[test]
+fn diagnostics_name_the_file_they_point_into() {
+    let o = graphene(&["check", "examples/errors/import_name_clash.grph"]);
+    let err = stderr(&o);
+    assert!(
+        err.contains("G013") && err.contains("support/shapes.grph:4:6"),
+        "{err}"
+    );
+    let o = graphene(&["check", "--json", "examples/errors/import_name_clash.grph"]);
+    let j: serde_json::Value = serde_json::from_slice(&o.stdout).expect("json");
+    assert_eq!(j[0]["file"], "examples/errors/import_name_clash.grph");
+    assert_eq!(j[0]["span"]["line"], 6);
+}
+
+#[test]
+fn explain_covers_the_v04_codes() {
+    for code in ["G018", "G019"] {
+        let o = graphene(&["explain", code]);
+        assert_eq!(o.status.code(), Some(0));
+        assert!(stdout(&o).starts_with(code));
+    }
+}

@@ -195,6 +195,9 @@ pub struct CoverItem {
     pub kind: &'static str,
     /// Subgraph the item lives in (`None` for the main program).
     pub graph: Option<String>,
+    /// The library the item is written in, when it was imported (v0.4).
+    pub file: Option<String>,
+    /// Line in its own file.
     pub line: usize,
     pub label: String,
     /// For branches: the node the branch flows into.
@@ -202,12 +205,23 @@ pub struct CoverItem {
     pub covered: bool,
 }
 
+/// The library a declaration comes from, if it is not the checked file.
+fn imported_from(checked: &Checked, span: crate::diag::Span) -> Option<String> {
+    let i = checked.sources.file_at(span.start);
+    (i > 0).then(|| checked.sources.files[i].name.clone())
+}
+
 /// Every coverage item of a program, marked by what `cases` reached.
 pub fn coverage(checked: &Checked, cases: &[Case]) -> Result<Vec<CoverItem>, String> {
     let mut items = items_of(&checked.graph, None);
     for (i, sub) in checked.subs.iter().enumerate() {
-        let name = checked.graph.subs.get(i).map(|s| s.name.clone());
-        items.extend(items_of(&sub.graph, name));
+        let sig = checked.graph.subs.get(i);
+        let file = sig.and_then(|s| imported_from(checked, s.span));
+        let mut sub_items = items_of(&sub.graph, sig.map(|s| s.name.clone()));
+        for it in &mut sub_items {
+            it.file.clone_from(&file);
+        }
+        items.extend(sub_items);
     }
     items.extend(effect_items(checked));
     for case in cases {
@@ -247,6 +261,7 @@ fn items_of(g: &Graph, graph: Option<String>) -> Vec<CoverItem> {
         let item = |kind, label: String, target: Option<String>| CoverItem {
             kind,
             graph: graph.clone(),
+            file: None,
             line: vx.line,
             label,
             target,
@@ -307,6 +322,7 @@ fn effect_items(c: &Checked) -> Vec<CoverItem> {
         .map(|e| CoverItem {
             kind: "effect",
             graph: None,
+            file: imported_from(c, e.span),
             line: e.line,
             label: e.name.clone(),
             target: None,

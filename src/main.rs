@@ -189,21 +189,35 @@ fn report(path: &Path, src: &str, diags: &[Diag]) -> ExitCode {
     ExitCode::from(1)
 }
 
-/// Read and check a file, printing diagnostics on failure.
-fn load(path: &Path) -> Result<(String, graphene::Checked), ExitCode> {
-    let src = read(path)?;
-    match graphene::check(&src) {
-        Ok(c) => Ok((src, c)),
-        Err(diags) => Err(report(path, &src, &diags)),
+/// Print the diagnostics of a failed check, each against the file it
+/// points into (the program or one of its libraries, v0.4).
+fn report_failed(path: &Path, f: &graphene::Failed) -> ExitCode {
+    let color = std::io::stderr().is_terminal();
+    for d in &f.diags {
+        eprintln!("{}", f.sources.render(d, color));
     }
+    eprintln!("{} error(s) in {}", f.diags.len(), path.display());
+    ExitCode::from(1)
+}
+
+/// Read and check a file and its imports, printing diagnostics on failure.
+fn load(path: &Path) -> Result<graphene::Checked, ExitCode> {
+    read(path)?;
+    graphene::check_file(path).map_err(|f| report_failed(path, &f))
 }
 
 fn cmd_check(path: &Path) -> ExitCode {
     match load(path) {
-        Ok((_, c)) => {
+        Ok(c) => {
             let ops = c.graph.g.node_weights().filter(|v| v.kind.is_op()).count();
             let values = c.graph.g.node_count() - ops - 1;
-            println!("ok: {} ({values} values, {ops} operations)", path.display());
+            // A program always has an `out`; only a library has no ops.
+            if ops == 0 {
+                let n = c.graph.subs.len();
+                println!("ok: {} (library: {n} subgraph(s))", path.display());
+            } else {
+                println!("ok: {} ({values} values, {ops} operations)", path.display());
+            }
             ExitCode::SUCCESS
         }
         Err(code) => code,
@@ -211,13 +225,14 @@ fn cmd_check(path: &Path) -> ExitCode {
 }
 
 fn cmd_check_json(path: &Path) -> ExitCode {
-    let src = match read(path) {
-        Ok(s) => s,
-        Err(code) => return code,
+    if let Err(code) = read(path) {
+        return code;
+    }
+    let (sources, diags) = match graphene::check_file(path) {
+        Ok(_) => (graphene::SourceMap::default(), Vec::new()),
+        Err(f) => (f.sources, f.diags),
     };
-    let name = path.display().to_string();
-    let diags = graphene::check(&src).err().unwrap_or_default();
-    let list: Vec<serde_json::Value> = diags.iter().map(|d| d.to_json(&name, &src)).collect();
+    let list: Vec<serde_json::Value> = diags.iter().map(|d| sources.to_json(d)).collect();
     println!("{}", pretty(&serde_json::Value::Array(list)));
     if diags.is_empty() {
         ExitCode::SUCCESS
@@ -273,7 +288,7 @@ fn test_program(path: &Path, opts: &TestOpts) -> (usize, usize, bool) {
         }
     };
     let checked = match load(path) {
-        Ok((_, c)) => c,
+        Ok(c) => c,
         Err(_) => {
             println!("FAIL {name}: the program does not check");
             return (0, cases.len().max(1), false);
@@ -308,6 +323,10 @@ fn report_coverage(
             .graph
             .as_ref()
             .map_or(String::new(), |g| format!(" in `{g}`"));
+        let place = match &i.file {
+            Some(f) => format!("{place} ({f})"),
+            None => place,
+        };
         println!(
             "       never reached: line {}{place}: {} {}",
             i.line, i.kind, i.label
@@ -380,7 +399,7 @@ fn make_host(h: &Hosts) -> Result<Box<dyn EffectHost>, String> {
 }
 
 fn cmd_run(path: &Path, args: &[(String, String)], hosts: &Hosts, parallel: bool) -> ExitCode {
-    let (_, checked) = match load(path) {
+    let checked = match load(path) {
         Ok(x) => x,
         Err(code) => return code,
     };
@@ -451,7 +470,7 @@ fn cmd_fmt(path: &Path, unicode: bool, write: bool) -> ExitCode {
 
 fn cmd_graph(path: &Path) -> ExitCode {
     match load(path) {
-        Ok((_, c)) => {
+        Ok(c) => {
             print!("{}", graphene::dot::to_dot(&c));
             ExitCode::SUCCESS
         }

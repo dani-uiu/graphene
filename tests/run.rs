@@ -14,7 +14,8 @@ use serde_json::Value as Json;
 fn valid_examples_produce_expected_results_and_logs() {
     let mut total = 0;
     for (name, path) in common::programs() {
-        let checked = graphene::check(&common::read(&path)).expect("valid example checks");
+        let checked = graphene::check_file(&path)
+            .unwrap_or_else(|f| panic!("{name} should check: {:#?}", f.diags));
         for case in cases::load(&cases_path(&path)).expect("cases load") {
             let got = run_case(&checked, &case, false)
                 .unwrap_or_else(|e| panic!("{name} / {}: {e}", case.name));

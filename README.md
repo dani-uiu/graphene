@@ -212,25 +212,27 @@ Every diagnostic has a stable code, points at the exact source span, and include
 | P005 | lex | Invalid character (including `#` outside the header) |
 | P006 | parse | A construct newer than the file's `#!graphene` header |
 | G001 | structure | Cycle detected |
-| G002 | names | Undefined name, an input node used in an expression, or an unknown error variant |
-| G003 | types | Type mismatch: expressions, effect signatures and arguments, merge writers, `out` |
-| G004 | types | Non-exhaustive `match` |
+| G002 | names | Undefined name, an input node used in an expression, or an unknown error variant, type, enum or enum variant |
+| G003 | types | Type mismatch: expressions, effect signatures and arguments, merge writers, `out`; enums compared with other types or ordered; invalid date literals |
+| G004 | types | Non-exhaustive `match`, including a match on an enum that misses a variant |
 | G005 | types | An `fx` error variant has no error edge, or an error edge can never fire |
 | G006 | flow | Merge writers are not mutually exclusive |
 | G007 | flow | Join members can be inactive independently |
-| G008 | flow | Dead end: a value never reaches `out`, `fail`, or a sink; or an unused input or constant |
+| G008 | flow | Dead end: a value never reaches `out`, `fail`, or a sink; or an unused input, constant, type, enum or import |
 | G009 | flow | Reference violates the dominance rule (input names are exempt in 0.2) |
 | G010 | structure | `fx~` target is not a sink, or a sink is referenced or has outgoing edges |
 | G011 | structure | Zero or multiple `out` statements |
 | G012 | types | Division by zero, or by a value not proven non-zero |
-| G013 | names | Duplicate definition, including a repeated record field |
+| G013 | names | Duplicate definition, including a repeated record field or a name declared in two files |
 | G014 | types | Redundant match arm or error edge |
 | G015 | structure | Recursive subgraphs (a cycle in the call graph) |
 | G016 | types | `each` missing, repeated, or not a list |
 | G017 | types | Subgraph signature broken (wrong result type, undeclared error raised) |
+| G018 | names | An import can't be used: file not found, not a library, an import cycle, or no file path |
+| G019 | names | A type alias refers to itself, directly or through other aliases |
 | G020 | assert | `assert total` fails; the diagnostic includes a counterexample |
 | G021 | assert | `assert indep` fails; the diagnostic includes the offending path |
-| R001 | runtime | Arithmetic overflow or underflow |
+| R001 | runtime | Arithmetic overflow or underflow, or a date out of range |
 | R002 | runtime | No result, or more than one result, was reached |
 | R003 | runtime | The mock host has no response for an effect call |
 | R004 | runtime | The host returned a wrongly typed value or an undeclared error |

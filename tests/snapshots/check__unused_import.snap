@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G008
+
+  × nothing from `support/shapes.grph` is used
+   ╭─[unused_import.grph:4:1]
+ 3 │ 
+ 4 │ import "support/shapes.grph"
+   · ──────────────┬─────────────
+   ·               ╰── unused import
+ 5 │ 
+   ╰────
+  help: use one of its declarations, or remove the `import` line

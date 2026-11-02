@@ -14,10 +14,10 @@ fn expected(path: &std::path::Path) -> String {
 
 #[test]
 fn valid_examples_pass() {
-    for (name, path) in common::programs() {
-        let src = common::read(&path);
-        if let Err(diags) = graphene::check(&src) {
-            panic!("{name} should pass, got {diags:#?}");
+    // Libraries (v0.4) check on their own, in library mode.
+    for (name, path) in common::programs().into_iter().chain(common::libraries()) {
+        if let Err(f) = graphene::check_file(&path) {
+            panic!("{name} should pass, got {:#?}", f.diags);
         }
     }
 }
@@ -26,18 +26,23 @@ fn valid_examples_pass() {
 fn invalid_examples_fail_with_expected_code_and_line() {
     let mut count = 0;
     for (name, path) in common::errors() {
-        let src = common::read(&path);
-        let diags = graphene::check(&src).err().unwrap_or_default();
+        let (sources, diags) = match graphene::check_file(&path) {
+            Ok(_) => panic!("{name} should fail"),
+            Err(f) => (f.sources, f.diags),
+        };
         let got: Vec<String> = diags
             .iter()
-            .map(|d| format!("{}:{}", d.code, d.line(&src)))
+            .map(|d| format!("{}:{}", d.code, sources.diag_line(d)))
             .collect();
         assert_eq!(got, vec![expected(&path)], "{name}: {diags:#?}");
         assert!(
             diags.iter().all(|d| !d.help.is_empty()),
             "{name}: missing help"
         );
-        let rendered = render(&diags[0], &format!("{name}.grph"), &src, false);
+        // Every invalid example reports into its own file.
+        let (file, local) = sources.localize(&diags[0]);
+        assert_eq!(file.path, graphene::project::normalize(&path), "{name}");
+        let rendered = render(&local, &format!("{name}.grph"), &file.text, false);
         insta::assert_snapshot!(name.clone(), rendered);
         count += 1;
     }

@@ -84,17 +84,30 @@ fn referenced(graph: &Graph) -> Vec<bool> {
     used
 }
 
-/// G008 for constants nothing reads (D-051).
-pub fn unused_consts(unused: &[(String, crate::diag::Span)], diags: &mut Vec<Diag>) {
-    for (name, span) in unused {
+/// G008 for constants (D-051), and since v0.4 types and enums, that
+/// nothing uses.
+pub fn unused_decls(unused: &[(&str, String, crate::diag::Span)], diags: &mut Vec<Diag>) {
+    for (kind, name, span) in unused {
+        let help = match *kind {
+            "constant" => "read it in an expression, or remove the `const` line",
+            "enum" => "use it as a type or a value (`Name.Variant`), or remove the `enum` line",
+            _ => "use it as a type, or remove the `type` line",
+        };
         diags.push(
-            Diag::new(
-                Code::G008,
-                *span,
-                format!("constant `{name}` is never used"),
-            )
-            .label("unused constant")
-            .help("read it in an expression, or remove the `const` line"),
+            Diag::new(Code::G008, *span, format!("{kind} `{name}` is never used"))
+                .label(format!("unused {kind}"))
+                .help(help),
+        );
+    }
+}
+
+/// G008 for imports that contribute nothing used (D-061).
+pub fn unused_imports(unused: &[(String, crate::diag::Span)], diags: &mut Vec<Diag>) {
+    for (path, span) in unused {
+        diags.push(
+            Diag::new(Code::G008, *span, format!("nothing from `{path}` is used"))
+                .label("unused import")
+                .help("use one of its declarations, or remove the `import` line"),
         );
     }
 }

@@ -49,7 +49,80 @@ fn text(v: Value) -> String {
         Value::I64(n) => n.to_string(),
         Value::Dec(d) => d.to_string(),
         Value::Bool(b) => b.to_string(),
+        Value::Enum(v) => v,
+        Value::Date(d) => crate::calendar::format(d),
         other => shown(&other),
+    }
+}
+
+/// v0.4: the date functions and two-value `min` / `max` (D-062, D-063).
+pub(super) fn builtin_v04(
+    b: Builtin,
+    args: &[IExpr],
+    env: &Env,
+    hint: Option<&Type>,
+    span: Span,
+) -> Result<Value, Fault> {
+    let date = |i: usize| -> Result<i64, Fault> {
+        match eval(&args[i], env, Some(&Type::Date))? {
+            Value::Date(d) => Ok(d),
+            _ => Err(internal(span, "date function needs a date")),
+        }
+    };
+    let part = |n: i64| Value::U64(u64::try_from(n).unwrap_or(0));
+    match b {
+        Builtin::Date => match &args[0].kind {
+            IKind::Lit(Lit::Str(s)) => crate::calendar::parse(s)
+                .map(Value::Date)
+                .ok_or_else(|| internal(span, "invalid date literal")),
+            _ => Err(internal(span, "`date` needs a literal")),
+        },
+        Builtin::DaysBetween => Ok(Value::I64(date(1)? - date(0)?)),
+        Builtin::AddDays => {
+            let d = date(0)?;
+            let n = match eval(&args[1], env, Some(&Type::I64))? {
+                Value::I64(n) => n,
+                _ => return Err(internal(span, "`add_days` needs an i64")),
+            };
+            match d.checked_add(n).filter(|x| crate::calendar::in_range(*x)) {
+                Some(x) => Ok(Value::Date(x)),
+                None => Err(Fault::new(
+                    Code::R001,
+                    span,
+                    format!(
+                        "`add_days({}, {n})` is outside 0001-01-01 to 9999-12-31",
+                        crate::calendar::format(d)
+                    ),
+                )),
+            }
+        }
+        Builtin::Year => Ok(part(crate::calendar::civil_from_days(date(0)?).0)),
+        Builtin::Month => Ok(part(i64::from(
+            crate::calendar::civil_from_days(date(0)?).1,
+        ))),
+        Builtin::Day => Ok(part(i64::from(
+            crate::calendar::civil_from_days(date(0)?).2,
+        ))),
+        Builtin::Weekday => Ok(part(i64::from(crate::calendar::weekday(date(0)?)))),
+        _ => {
+            // `min(a, b)` / `max(a, b)`: like the binary operators, an
+            // integer literal takes the other side's type.
+            let (l, r) = (&args[0], &args[1]);
+            let (lv, rv) = if super::is_int_lit(l) && !super::is_int_lit(r) {
+                let rv = eval(r, env, hint)?;
+                (eval(l, env, type_of(&rv).as_ref())?, rv)
+            } else {
+                let lv = eval(l, env, hint)?;
+                let rv = eval(r, env, type_of(&lv).as_ref())?;
+                (lv, rv)
+            };
+            let take_right = if b == Builtin::Min {
+                compare(BinOp::Lt, &rv, &lv, span)?
+            } else {
+                compare(BinOp::Gt, &rv, &lv, span)?
+            };
+            Ok(if take_right { rv } else { lv })
+        }
     }
 }
 

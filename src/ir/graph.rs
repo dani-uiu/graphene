@@ -39,6 +39,11 @@ pub enum Type {
     List(Box<Type>),
     /// Value of an error node: the variant raised by effect `E`.
     Err(String),
+    /// v0.4 enum: its name (enums are nominal, D-060) and its variants,
+    /// so values can be decoded from JSON without other context.
+    Enum(String, Vec<String>),
+    /// v0.4 calendar date (D-062).
+    Date,
 }
 
 impl Type {
@@ -46,14 +51,46 @@ impl Type {
         !matches!(self, Type::Record(_) | Type::List(_) | Type::Err(_))
     }
 
+    /// Types with an order: numbers, `str` (v0.3) and `date` (v0.4).
+    pub fn is_ordered(&self) -> bool {
+        self.is_numeric() || matches!(self, Type::Str | Type::Date)
+    }
+
     pub fn is_numeric(&self) -> bool {
         matches!(self, Type::U64 | Type::I64 | Type::Dec)
     }
 }
 
+thread_local! {
+    /// Type aliases in scope while checking, so messages can print `Slip`
+    /// instead of the record it names (D-059).
+    static ALIASES: std::cell::RefCell<Vec<(String, Type)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Run `f` with `aliases` used for printing types.
+pub fn with_aliases<T>(aliases: &[(String, Type)], f: impl FnOnce() -> T) -> T {
+    let prev = ALIASES.with(|a| std::mem::replace(&mut *a.borrow_mut(), aliases.to_vec()));
+    let out = f();
+    ALIASES.with(|a| *a.borrow_mut() = prev);
+    out
+}
+
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if matches!(self, Type::Record(_)) {
+            let alias = ALIASES.with(|a| {
+                a.borrow()
+                    .iter()
+                    .find(|(_, t)| t == self)
+                    .map(|(n, _)| n.clone())
+            });
+            if let Some(n) = alias {
+                return f.write_str(&n);
+            }
+        }
         match self {
+            Type::Enum(n, _) => f.write_str(n),
+            Type::Date => f.write_str("date"),
             Type::U64 => f.write_str("u64"),
             Type::I64 => f.write_str("i64"),
             Type::Dec => f.write_str("dec"),
@@ -98,13 +135,15 @@ pub enum IKind {
     If(Box<IExpr>, Box<IExpr>, Box<IExpr>),
     /// v0.3.1 `xs[i]`.
     Index(Box<IExpr>, Box<IExpr>),
+    /// v0.4 `Enum.Variant`: the enum's name and the variant.
+    Variant(String, String),
 }
 
 impl IExpr {
     /// Every reference in this expression, in source order.
     pub fn refs(&self, out: &mut Vec<(VId, Span, String)>) {
         match &self.kind {
-            IKind::Lit(_) => {}
+            IKind::Lit(_) | IKind::Variant(..) => {}
             IKind::Ref(v, name) => out.push((*v, self.span, name.clone())),
             IKind::Field(b, _) | IKind::Unary(_, b) | IKind::Convert(_, b) => b.refs(out),
             IKind::Typed(..) => {}
@@ -142,8 +181,10 @@ pub struct IArg {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IArm {
-    /// `None` is the wildcard `_`.
+    /// A literal pattern; with `variant` also `None`, the wildcard `_`.
     pub pat: Option<Lit>,
+    /// v0.4 a bare enum variant pattern.
+    pub variant: Option<String>,
     pub span: Span,
     /// The pattern as written, for messages.
     pub text: String,
@@ -338,6 +379,10 @@ pub struct Graph {
     pub order: Vec<VId>,
     /// Position of each vertex in `order`, indexed by `VId::index()`.
     pub pos: Vec<usize>,
+    /// v0.4 enums and their variants, in declaration order.
+    pub enums: BTreeMap<String, Vec<String>>,
+    /// v0.4 type aliases, resolved (for messages).
+    pub aliases: Vec<(String, Type)>,
 }
 
 impl Graph {

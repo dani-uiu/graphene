@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+P006
+
+  × `enum` requires `#!graphene 0.4`
+   ╭─[v03_header_uses_v04.grph:4:1]
+ 3 │ 
+ 4 │ enum Size { Small, Large }
+   · ─────────────┬────────────
+   ·              ╰── v0.4 feature
+ 5 │ 
+   ╰────
+  help: change the header to `#!graphene 0.4`; v0.4 accepts every older program

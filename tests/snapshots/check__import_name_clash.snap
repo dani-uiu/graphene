@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G013
+
+  × type `Shape` is already defined
+   ╭─[import_name_clash.grph:6:6]
+ 5 │ 
+ 6 │ enum Shape { Circle, Triangle }
+   ·      ──┬──
+   ·        ╰── second definition
+ 7 │ 
+   ╰────
+  help: types and enums share one namespace; rename one of them
+        note: first defined at support/shapes.grph:4:6

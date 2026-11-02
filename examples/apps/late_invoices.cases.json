@@ -30,7 +30,18 @@
             "remind_by": "2026-10-27"
           }
         }
-      }
+      },
+      "effects": [
+        {
+          "kind": "fx~",
+          "effect": "Remind",
+          "args": {
+            "amount": "176.00",
+            "channel": "Phone",
+            "customer": "acme"
+          }
+        }
+      ]
     }
   },
   {
@@ -64,7 +75,18 @@
             "remind_by": "2026-10-27"
           }
         }
-      }
+      },
+      "effects": [
+        {
+          "kind": "fx~",
+          "effect": "Remind",
+          "args": {
+            "amount": "166.00",
+            "channel": "Phone",
+            "customer": "acme"
+          }
+        }
+      ]
     }
   },
   {
@@ -98,7 +120,18 @@
             "remind_by": "2026-10-01"
           }
         }
-      }
+      },
+      "effects": [
+        {
+          "kind": "fx~",
+          "effect": "Remind",
+          "args": {
+            "amount": "166.00",
+            "channel": "Email",
+            "customer": "acme"
+          }
+        }
+      ]
     }
   },
   {
@@ -132,7 +165,18 @@
             "remind_by": "2026-10-13"
           }
         }
-      }
+      },
+      "effects": [
+        {
+          "kind": "fx~",
+          "effect": "Remind",
+          "args": {
+            "amount": "191.00",
+            "channel": "Letter",
+            "customer": "acme"
+          }
+        }
+      ]
     }
   }
 ]

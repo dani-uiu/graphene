@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G003
+
+  × `2026-02-30` is not a valid date
+   ╭─[bad_date_literal.grph:5:26]
+ 4 │ in today: date -> T
+ 5 │ T -> f(days_between(date("2026-02-30"), today)) -> R
+   ·                          ──────┬─────
+   ·                                ╰── no such date
+ 6 │ R -> out days: i64
+   ╰────
+  help: write a real calendar date as `YYYY-MM-DD`, from 0001-01-01 to 9999-12-31

@@ -133,6 +133,7 @@ pub fn eval(e: &IExpr, env: &Env, hint: Option<&Type>) -> Result<Value, Fault> {
         IKind::Builtin(b, args) => builtin(*b, args, env, hint, e.span),
         IKind::If(c, a, b) => conditional(c, a, b, env, hint, e.span),
         IKind::Index(b, i) => more::index(b, i, env, e.span),
+        IKind::Variant(_, v) => Ok(Value::Enum(v.clone())),
     }
 }
 
@@ -168,6 +169,9 @@ fn builtin(
 ) -> Result<Value, Fault> {
     if b.is_v031() {
         return more::builtin(b, args, env, hint, span);
+    }
+    if b.is_v04() || args.len() == 2 && matches!(b, Builtin::Min | Builtin::Max) {
+        return more::builtin_v04(b, args, env, hint, span);
     }
     let list_hint = hint.map(|t| Type::List(Box::new(t.clone())));
     let first = eval(&args[0], env, list_hint.as_ref())?;
@@ -392,6 +396,8 @@ fn compare(op: BinOp, l: &Value, r: &Value, span: Span) -> Result<bool, Fault> {
         (Value::Dec(a), Value::Dec(b)) => a.cmp(b),
         (Value::Str(a), Value::Str(b)) => a.cmp(b),
         (Value::Bool(a), Value::Bool(b)) => a.cmp(b),
+        (Value::Date(a), Value::Date(b)) => a.cmp(b),
+        (Value::Enum(a), Value::Enum(b)) => a.cmp(b),
         _ => return Err(internal(span, "bad comparison operands")),
     };
     Ok(match op {

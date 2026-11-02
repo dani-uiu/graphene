@@ -165,7 +165,14 @@ pub(crate) fn show(rec: &Record) -> String {
 
 fn choose(arms: &[IArm], s: &Value, span: Span) -> Result<usize, Fault> {
     arms.iter()
-        .position(|a| a.pat.as_ref().is_some_and(|l| lit_matches(l, s)))
-        .or_else(|| arms.iter().position(|a| a.pat.is_none()))
+        .position(|a| match (&a.pat, &a.variant, s) {
+            (Some(l), _, _) => lit_matches(l, s),
+            (None, Some(v), Value::Enum(x)) => v == x,
+            _ => false,
+        })
+        .or_else(|| {
+            arms.iter()
+                .position(|a| a.pat.is_none() && a.variant.is_none())
+        })
         .ok_or_else(|| Fault::new(Code::R004, span, "no match arm applies"))
 }

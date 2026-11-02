@@ -1,9 +1,13 @@
 //! Lowering: AST -> graph IR, including name resolution (stage 2:
-//! G002 undefined names, G013 duplicate definitions).
+//! G002 undefined names, G013 duplicate definitions, and since v0.4 the
+//! type table: aliases, enums, G019 alias cycles).
 //!
 //! Depends on: `syntax::ast`, `ir::graph`, `diag`.
 //!
 //! Invariants:
+//! - types (aliases and enums) are defined and resolved before anything
+//!   else, so every declaration can use them; aliases are structural, so
+//!   a resolved alias is just its definition (D-059);
 //! - pass 1 defines every name in statement order, so a value node's
 //!   defining position is its first writer (semantics §2.1);
 //! - pass 2 builds op vertices and edges and resolves references;
@@ -16,8 +20,24 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use petgraph::graph::DiGraph;
 
 use super::graph::*;
-use crate::diag::{line_col, suggest, Code, Diag, Span};
+use crate::diag::{suggest, Code, Diag, Span};
+use crate::project::Project;
+use crate::source::SourceMap;
 use crate::syntax::ast::*;
+
+/// Built-in type names, which no alias or enum may reuse (G013).
+const BUILTIN_TYPES: [&str; 6] = ["u64", "i64", "dec", "bool", "str", "date"];
+
+/// An entry of the type table.
+#[derive(Debug, Clone)]
+enum TypeDef {
+    /// An alias not resolved yet (only while resolving).
+    Pending(Ty),
+    /// An alias that refers to itself (G019 already reported).
+    Broken,
+    Alias(Type),
+    Enum(Vec<String>),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Def {
@@ -30,18 +50,20 @@ enum Def {
     Sink(VId),
 }
 
-/// Declarations every graph of a program shares: effects, constants, and
-/// subgraph signatures, with their names.
+/// Declarations every graph of a program shares: effects, constants,
+/// subgraph signatures and types, with their names.
 #[derive(Clone, Default)]
 struct Shared {
     names: HashMap<String, (Def, Span)>,
     externs: Vec<ExternDecl>,
     consts: Vec<ConstVal>,
     subs: Vec<SubSig>,
+    types: BTreeMap<String, (TypeDef, Span)>,
 }
 
 struct Lower<'a> {
     src: &'a str,
+    sources: &'a SourceMap,
     version: (u32, u32),
     /// `Some(i)` while lowering the body of subgraph `i`.
     body: Option<usize>,
@@ -55,6 +77,17 @@ struct Lower<'a> {
     asserts: Vec<Assertion>,
     intent: Option<String>,
     used_consts: BTreeSet<usize>,
+    /// v0.4 types and enums by name, with where they are declared.
+    types: BTreeMap<String, (TypeDef, Span)>,
+    /// Top-level declarations some code uses (types, constants, effects,
+    /// subgraphs), for unused types and imports (G008).
+    used: BTreeSet<String>,
+    /// Uses written in the checked file itself.
+    used_here: BTreeSet<String>,
+    /// End of the checked file in the combined text (see `Project`).
+    main_end: usize,
+    /// Aliases being resolved, innermost last (G019).
+    resolving: Vec<String>,
     diags: Vec<Diag>,
 }
 
@@ -62,15 +95,22 @@ struct Lower<'a> {
 pub struct Lowered {
     pub main: Graph,
     pub bodies: Vec<Graph>,
-    /// Constants no expression reads (G008, reported with stage 5).
-    pub unused_consts: Vec<(String, Span)>,
+    /// Declarations of the checked file that nothing uses, as
+    /// `(kind, name, span)` with kind `constant`, `type` or `enum` (G008,
+    /// reported with stage 5). Imported declarations are never listed.
+    pub unused: Vec<(&'static str, String, Span)>,
+    /// Imports of the checked file that contribute nothing used (G008).
+    pub unused_imports: Vec<(String, Span)>,
 }
 
-/// Lower a parsed program. Returns the graphs plus stage-2 diagnostics.
-pub fn lower(program: &Program, src: &str) -> (Lowered, Vec<Diag>) {
+/// Lower a parsed (and, with imports, merged) program. Returns the graphs
+/// plus stage-2 diagnostics.
+pub fn lower(program: &Program, sources: &SourceMap, project: &Project) -> (Lowered, Vec<Diag>) {
     let mut diags = Vec::new();
     let (top, blocks) = super::blocks::split(program, &mut diags);
-    let mut main = Lower::new(src, program.version, None);
+    let mut main = Lower::new(sources, program.version, None);
+    main.main_end = project.main_end;
+    main.define_types(&top);
     for s in &top {
         main.define_shared(s);
     }
@@ -80,8 +120,11 @@ pub fn lower(program: &Program, src: &str) -> (Lowered, Vec<Diag>) {
     let shared = main.shared();
     let mut used = BTreeSet::new();
     let mut bodies = Vec::new();
+    let mut used_names = main.used.clone();
+    let mut used_here = main.used_here.clone();
     for (i, b) in blocks.iter().enumerate() {
-        let mut l = Lower::new(src, program.version, Some(i));
+        let mut l = Lower::new(sources, program.version, Some(i));
+        l.main_end = project.main_end;
         l.adopt(&shared);
         for p in &b.header.params {
             l.define_input(p);
@@ -92,29 +135,58 @@ pub fn lower(program: &Program, src: &str) -> (Lowered, Vec<Diag>) {
             l.asserts.push(Assertion::Total(b.header.name.span()));
         }
         used.extend(l.used_consts.iter().copied());
+        used_names.extend(l.used.iter().cloned());
+        used_here.extend(l.used_here.iter().cloned());
         diags.append(&mut l.diags);
         bodies.push(l.finish());
     }
     main.lower_stmts(&top);
     used.extend(main.used_consts.iter().copied());
+    used_names.extend(main.used.iter().cloned());
+    used_here.extend(main.used_here.iter().cloned());
     diags.append(&mut main.diags);
-    let unused_consts = main
+    // Declarations after the checked file are imported: they exist for
+    // their importers, so they are never unused here (D-061). Neither are
+    // a library's own declarations, when a library is checked directly.
+    let own = |span: Span| !project.library && span.start <= project.main_end;
+    let mut unused: Vec<(&'static str, String, Span)> = main
         .consts
         .iter()
         .enumerate()
-        .filter(|(i, _)| !used.contains(i))
-        .map(|(_, c)| (c.name.clone(), c.span))
+        .filter(|(i, c)| !used.contains(i) && own(c.span))
+        .map(|(_, c)| ("constant", c.name.clone(), c.span))
         .collect();
+    for (name, (def, span)) in &main.types {
+        if own(*span) && !used_names.contains(name) {
+            let kind = if matches!(def, TypeDef::Enum(_)) {
+                "enum"
+            } else {
+                "type"
+            };
+            unused.push((kind, name.clone(), *span));
+        }
+    }
+    let unused_imports = if project.library {
+        Vec::new()
+    } else {
+        project
+            .imports
+            .iter()
+            .filter(|i| i.names.is_disjoint(&used_here))
+            .map(|i| (i.path.clone(), i.span))
+            .collect()
+    };
     let lowered = Lowered {
         main: main.finish(),
         bodies,
-        unused_consts,
+        unused,
+        unused_imports,
     };
     (lowered, diags)
 }
 
 impl<'a> Lower<'a> {
-    fn new(src: &'a str, version: (u32, u32), body: Option<usize>) -> Lower<'a> {
+    fn new(sources: &'a SourceMap, version: (u32, u32), body: Option<usize>) -> Lower<'a> {
         let mut g = DiGraph::new();
         let root = g.add_node(Vertex {
             kind: VKind::Root,
@@ -125,7 +197,8 @@ impl<'a> Lower<'a> {
             line: 1,
         });
         Lower {
-            src,
+            src: &sources.text,
+            sources,
             version,
             body,
             g,
@@ -138,6 +211,11 @@ impl<'a> Lower<'a> {
             asserts: Vec::new(),
             intent: None,
             used_consts: BTreeSet::new(),
+            types: BTreeMap::new(),
+            used: BTreeSet::new(),
+            used_here: BTreeSet::new(),
+            main_end: usize::MAX,
+            resolving: Vec::new(),
             diags: Vec::new(),
         }
     }
@@ -148,6 +226,7 @@ impl<'a> Lower<'a> {
             externs: self.externs.clone(),
             consts: self.consts.clone(),
             subs: self.subs.clone(),
+            types: self.types.clone(),
         }
     }
 
@@ -156,6 +235,7 @@ impl<'a> Lower<'a> {
         self.externs = shared.externs.clone();
         self.consts = shared.consts.clone();
         self.subs = shared.subs.clone();
+        self.types = shared.types.clone();
     }
 
     /// Pass 1 (names) then pass 2 (ops, edges, references).
@@ -187,6 +267,22 @@ impl<'a> Lower<'a> {
             consts,
             order: Vec::new(),
             pos: Vec::new(),
+            enums: self
+                .types
+                .iter()
+                .filter_map(|(n, (d, _))| match d {
+                    TypeDef::Enum(vs) => Some((n.clone(), vs.clone())),
+                    _ => None,
+                })
+                .collect(),
+            aliases: self
+                .types
+                .iter()
+                .filter_map(|(n, (d, _))| match d {
+                    TypeDef::Alias(t) => Some((n.clone(), t.clone())),
+                    _ => None,
+                })
+                .collect(),
         }
     }
 }
@@ -196,8 +292,9 @@ impl<'a> Lower<'a> {
 // ---------------------------------------------------------------------
 
 impl Lower<'_> {
+    /// 1-based line within the file the span belongs to.
     fn line(&self, span: Span) -> usize {
-        line_col(self.src, span.start).0
+        self.sources.line(span.start)
     }
 
     fn add_vertex(&mut self, kind: VKind, name: &str, span: Span, key: usize) -> VId {
@@ -425,6 +522,148 @@ impl Lower<'_> {
             .insert(id.name.clone(), (Def::Sink(v), id.span()));
     }
 
+    /// v0.4: collect every alias and enum, then resolve the aliases (G013
+    /// for clashes, G019 for cycles).
+    fn define_types(&mut self, top: &[&Stmt]) {
+        let mut aliases = Vec::new();
+        for s in top {
+            match s {
+                Stmt::TypeAlias(a) => {
+                    if self.claim_type(&a.name, TypeDef::Pending(a.ty.clone())) {
+                        aliases.push(a.name.name.clone());
+                    }
+                }
+                Stmt::Enum(e) => {
+                    let mut vs: Vec<String> = Vec::new();
+                    for v in &e.variants {
+                        if vs.contains(&v.name) {
+                            self.dup_member(v, "variant");
+                        } else {
+                            vs.push(v.name.clone());
+                        }
+                    }
+                    self.claim_type(&e.name, TypeDef::Enum(vs));
+                }
+                _ => {}
+            }
+        }
+        for name in aliases {
+            self.resolve(&name);
+        }
+    }
+
+    fn claim_type(&mut self, id: &Ident, def: TypeDef) -> bool {
+        if BUILTIN_TYPES.contains(&id.name.as_str()) {
+            self.diags.push(
+                Diag::new(
+                    Code::G013,
+                    id.span(),
+                    format!("`{}` is a built-in type", id.name),
+                )
+                .label("cannot redefine a built-in type")
+                .help("give the type or enum another name, in CamelCase by convention"),
+            );
+            return false;
+        }
+        if let Some((_, prev)) = self.types.get(&id.name) {
+            let prev = *prev;
+            self.diags.push(
+                Diag::new(
+                    Code::G013,
+                    id.span(),
+                    format!("type `{}` is already defined", id.name),
+                )
+                .label("second definition")
+                .note(prev, "first defined here")
+                .help("types and enums share one namespace; rename one of them"),
+            );
+            return false;
+        }
+        self.types.insert(id.name.clone(), (def, id.span()));
+        true
+    }
+
+    /// Resolve alias `name`; `self.resolving` holds the aliases being
+    /// resolved, so meeting one again is a cycle (G019).
+    fn resolve(&mut self, name: &str) -> Option<Type> {
+        let (def, span) = self.types.get(name)?.clone();
+        let stack = self.resolving.clone();
+        match def {
+            TypeDef::Alias(t) => Some(t),
+            TypeDef::Broken => None,
+            TypeDef::Enum(vs) => Some(Type::Enum(name.to_string(), vs)),
+            TypeDef::Pending(_) if stack.iter().any(|n| n == name) => {
+                let start = stack.iter().position(|n| n == name).unwrap_or(0);
+                let mut chain = format!("`{}` contains `", stack[start]);
+                for n in &stack[start + 1..] {
+                    chain.push_str(&format!("{n}`, which contains `"));
+                }
+                chain.push_str(&format!("{name}`"));
+                let first_span = self.types.get(&stack[start]).map_or(span, |(_, s)| *s);
+                self.diags.push(
+                    Diag::new(
+                        Code::G019,
+                        first_span,
+                        format!("type `{}` refers to itself", stack[start]),
+                    )
+                    .label("this type never ends")
+                    .help(format!(
+                        "{chain}; records must be finite, so refer to the other record by an id instead, e.g. `order_id: u64`"
+                    )),
+                );
+                for n in &stack[start..] {
+                    if let Some(entry) = self.types.get_mut(n) {
+                        entry.0 = TypeDef::Broken;
+                    }
+                }
+                None
+            }
+            TypeDef::Pending(ast) => {
+                self.resolving.push(name.to_string());
+                let before = self.diags.len();
+                let t = self.ty(&ast);
+                self.resolving.pop();
+                let broken = matches!(self.types.get(name), Some((TypeDef::Broken, _)))
+                    || self.diags[before..].iter().any(|d| d.code == Code::G019);
+                let def = if broken {
+                    TypeDef::Broken
+                } else {
+                    TypeDef::Alias(t.clone())
+                };
+                if let Some(entry) = self.types.get_mut(name) {
+                    entry.0 = def;
+                }
+                (!broken).then_some(t)
+            }
+        }
+    }
+
+    /// A type name used in a type (G002 if unknown).
+    fn named(&mut self, name: &str, span: Span) -> Type {
+        if self.types.contains_key(name) {
+            self.mark(name, span);
+            // Aliases are resolved in source order; one used by an earlier
+            // alias is resolved on demand, with the cycle check.
+            return self.resolve(name).unwrap_or(Type::Bool);
+        }
+        let known: Vec<&str> = self
+            .types
+            .keys()
+            .map(String::as_str)
+            .chain(BUILTIN_TYPES)
+            .collect();
+        let near = suggest(name, known.iter().copied());
+        let label = near.map_or("unknown type".to_string(), |n| {
+            format!("did you mean `{n}`?")
+        });
+        self.diags.push(
+            Diag::new(Code::G002, span, format!("unknown type `{name}`"))
+                .label(label)
+                .help("declare it with `type Name = ...` or `enum Name { ... }`, or import the library that declares it"),
+        );
+        Type::Bool
+    }
+
     /// Convert a syntactic type, reporting duplicate record fields (G013).
     fn ty(&mut self, t: &Ty) -> Type {
         match &t.kind {
@@ -434,15 +673,8 @@ impl Lower<'_> {
             TyKind::List(inner) => Type::List(Box::new(self.ty(inner))),
             TyKind::Bool => Type::Bool,
             TyKind::Str => Type::Str,
-            // Placeholder until the checker knows v0.4 types (phase C).
-            TyKind::Date | TyKind::Named(_) => {
-                self.diags.push(Diag::new(
-                    Code::G002,
-                    t.pos.0,
-                    "v0.4 types are not checked yet",
-                ));
-                Type::U64
-            }
+            TyKind::Date => Type::Date,
+            TyKind::Named(n) => self.named(n, t.pos.0),
             TyKind::Record(fields) => {
                 let mut map = BTreeMap::new();
                 for f in fields {
@@ -618,7 +850,10 @@ impl Lower<'_> {
 
     fn effect(&mut self, id: &Ident) -> Option<usize> {
         match self.names.get(&id.name).map(|(d, _)| *d) {
-            Some(Def::Extern(i)) => Some(i),
+            Some(Def::Extern(i)) => {
+                self.mark(&id.name, id.span());
+                Some(i)
+            }
             _ => {
                 self.undefined(
                     id,
@@ -631,7 +866,10 @@ impl Lower<'_> {
 
     fn sub(&mut self, id: &Ident) -> Option<usize> {
         match self.names.get(&id.name).map(|(d, _)| *d) {
-            Some(Def::Sub(i)) => Some(i),
+            Some(Def::Sub(i)) => {
+                self.mark(&id.name, id.span());
+                Some(i)
+            }
             _ => {
                 let near = suggest(&id.name, self.subs.iter().map(|s| s.name.as_str()))
                     .map_or(String::new(), |s| format!("did you mean `{s}`? "));
@@ -785,6 +1023,10 @@ impl Lower<'_> {
                     Pat::Lit(l, _) => Some(l.clone()),
                     Pat::Wild(_) | Pat::Variant(_) => None,
                 },
+                variant: match &a.pat {
+                    Pat::Variant(v) => Some(v.name.clone()),
+                    _ => None,
+                },
                 span: a.pat.span(),
                 text: self.src[a.pat.span().start..a.pat.span().end].to_string(),
             })
@@ -803,10 +1045,13 @@ impl Lower<'_> {
         let kind = match &e.kind {
             ExprKind::Lit(l) => IKind::Lit(l.clone()),
             ExprKind::Name(id) => match self.names.get(&id.name).map(|(d, _)| *d) {
-                Some(Def::Const(i)) => self.const_ref(i)?,
+                Some(Def::Const(i)) => self.const_ref(i, id.span())?,
                 _ => IKind::Ref(self.reference(id)?, id.name.clone()),
             },
-            ExprKind::Field(b, f) => IKind::Field(Box::new(self.expr(b)?), f.name.clone()),
+            ExprKind::Field(b, f) => match &b.kind {
+                ExprKind::Name(id) if self.is_enum(&id.name) => self.variant(id, f)?,
+                _ => IKind::Field(Box::new(self.expr(b)?), f.name.clone()),
+            },
             ExprKind::Unary(op, x) => IKind::Unary(*op, Box::new(self.expr(x)?)),
             ExprKind::Binary(op, l, r) => {
                 let (l, r) = (self.expr(l), self.expr(r));
@@ -844,9 +1089,50 @@ impl Lower<'_> {
         lowered.into_iter().collect()
     }
 
+    /// Record a use of a top-level declaration; uses written in the
+    /// checked file also count for its imports (G008).
+    fn mark(&mut self, name: &str, at: Span) {
+        self.used.insert(name.to_string());
+        if at.start <= self.main_end {
+            self.used_here.insert(name.to_string());
+        }
+    }
+
+    fn is_enum(&self, name: &str) -> bool {
+        matches!(self.types.get(name), Some((TypeDef::Enum(_), _)))
+    }
+
+    /// `Enum.Variant` (v0.4); an unknown variant is G002.
+    fn variant(&mut self, e: &Ident, v: &Ident) -> Option<IKind> {
+        self.mark(&e.name, e.span());
+        let Some((TypeDef::Enum(vs), _)) = self.types.get(&e.name) else {
+            return None;
+        };
+        if vs.contains(&v.name) {
+            return Some(IKind::Variant(e.name.clone(), v.name.clone()));
+        }
+        let near = suggest(&v.name, vs.iter().map(String::as_str));
+        let label = near.map_or("unknown variant".to_string(), |n| {
+            format!("did you mean `{n}`?")
+        });
+        let list = vs.join(", ");
+        self.diags.push(
+            Diag::new(
+                Code::G002,
+                v.span(),
+                format!("`{}` has no variant `{}`", e.name, v.name),
+            )
+            .label(label)
+            .help(format!("the variants of `{}` are {list}", e.name)),
+        );
+        None
+    }
+
     /// A constant, inlined with its declared type (D-051).
-    fn const_ref(&mut self, i: usize) -> Option<IKind> {
+    fn const_ref(&mut self, i: usize, at: Span) -> Option<IKind> {
         self.used_consts.insert(i);
+        let name = self.consts.get(i)?.name.clone();
+        self.mark(&name, at);
         let c = self.consts.get(i)?;
         Some(IKind::Typed(
             Box::new(c.value.clone()),

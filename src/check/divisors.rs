@@ -92,7 +92,7 @@ fn walk<'e>(
                 walk(g, gs, op, x, facts, diags);
             }
         }
-        IKind::Lit(_) | IKind::Ref(..) | IKind::Typed(..) => {}
+        IKind::Lit(_) | IKind::Ref(..) | IKind::Typed(..) | IKind::Variant(..) => {}
     }
 }
 
@@ -129,6 +129,10 @@ fn outcome_proves(g: &Graph, dv: VId, o: usize, d: &IExpr) -> bool {
     let Some(arm) = arms.get(o) else {
         return false;
     };
+    if arms.iter().any(|a| a.variant.is_some()) {
+        // An enum match says nothing about numbers or bools.
+        return false;
+    }
     if same(scrutinee, d) {
         return match &arm.pat {
             Some(l) => !is_zero(l),

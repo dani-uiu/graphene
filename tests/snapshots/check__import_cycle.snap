@@ -1,0 +1,16 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G018
+
+  × import cycle
+   ╭─[import_cycle.grph:4:1]
+ 3 │ 
+ 4 │ import "support/cycle_a.grph"
+   · ──────────────┬──────────────
+   ·               ╰── this import leads back to itself
+ 5 │ 
+   ╰────
+  help: cycle_a.grph imports cycle_b.grph imports cycle_a.grph; move the shared declarations into
+        a library that both can import

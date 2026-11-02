@@ -29,6 +29,10 @@ pub enum Value {
     Record(Record),
     /// v0.3 list.
     List(Vec<Value>),
+    /// v0.4 enum value: the variant's name.
+    Enum(String),
+    /// v0.4 date: days since 1970-01-01 (`calendar`).
+    Date(i64),
     /// The variant held by an error node.
     Err(String),
     /// Marker held by the root and by sinks; carries no data.
@@ -92,6 +96,8 @@ impl Value {
             Value::Dec(d) => json!(dec(*d).to_string()),
             Value::Bool(b) => json!(b),
             Value::Str(s) => json!(s),
+            Value::Enum(v) => json!(v),
+            Value::Date(d) => json!(crate::calendar::format(*d)),
             Value::Err(e) => json!({ "err": e }),
             Value::Unit => Json::Null,
             Value::Record(r) => {
@@ -143,6 +149,19 @@ impl Value {
                     .collect::<Result<Vec<_>, _>>()
                     .map(Value::List)
             }
+            Type::Enum(name, variants) => match j.as_str() {
+                Some(s) if variants.iter().any(|v| v == s) => Ok(Value::Enum(s.to_string())),
+                Some(s) => Err(format!(
+                    "`{s}` is not a variant of {name} ({})",
+                    variants.join(", ")
+                )),
+                None => Err(bad()),
+            },
+            Type::Date => j
+                .as_str()
+                .and_then(crate::calendar::parse)
+                .map(Value::Date)
+                .ok_or_else(|| format!("expected a date as \"YYYY-MM-DD\", found {j}")),
             Type::Err(_) => Err(bad()),
         }
     }
@@ -164,6 +183,7 @@ impl Value {
                     .map_err(|_| format!("`{text}` is not valid JSON for {ty}"))?;
                 Value::from_json(&j, ty)
             }
+            Type::Enum(..) | Type::Date => Value::from_json(&Json::String(text.to_string()), ty),
             Type::Record(_) | Type::Err(_) => Err(format!("inputs of type {ty} are not supported")),
         }
     }
@@ -175,7 +195,8 @@ impl Value {
             Value::U64(n) => j.as_u64() == Some(*n),
             Value::I64(n) => j.as_i64() == Some(*n),
             Value::Bool(b) => j.as_bool() == Some(*b),
-            Value::Str(s) => j.as_str() == Some(s.as_str()),
+            Value::Str(s) | Value::Enum(s) => j.as_str() == Some(s.as_str()),
+            Value::Date(d) => j.as_str().and_then(crate::calendar::parse) == Some(*d),
             Value::Dec(d) => match j {
                 Json::String(s) => Decimal::from_str_exact(s).is_ok_and(|x| x == *d),
                 Json::Number(n) => Decimal::from_str_exact(&n.to_string()).is_ok_and(|x| x == *d),

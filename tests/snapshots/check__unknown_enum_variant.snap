@@ -1,0 +1,15 @@
+---
+source: tests/check.rs
+expression: rendered
+---
+G002
+
+  × `Size` has no variant `Larg`
+   ╭─[unknown_enum_variant.grph:7:21]
+ 6 │ in size: Size -> S
+ 7 │ S -> f(size == Size.Larg) -> R
+   ·                     ──┬─
+   ·                       ╰── did you mean `Large`?
+ 8 │ R -> out big: bool
+   ╰────
+  help: the variants of `Size` are Small, Medium, Large

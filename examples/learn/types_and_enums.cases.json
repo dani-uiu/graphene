@@ -17,7 +17,8 @@
             "label": "Urgent for Tech"
           }
         }
-      }
+      },
+      "effects": []
     }
   },
   {
@@ -38,7 +39,8 @@
             "label": "Low for Sales"
           }
         }
-      }
+      },
+      "effects": []
     }
   },
   {
@@ -59,7 +61,8 @@
             "label": "Normal for Billing"
           }
         }
-      }
+      },
+      "effects": []
     }
   }
 ]
